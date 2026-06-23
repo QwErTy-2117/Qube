@@ -17,6 +17,7 @@ export function TooltipIconButton({ tooltip, className, children, ...props }: To
       type="button"
       aria-label={tooltip}
       title={tooltip}
+      suppressHydrationWarning
       className={cn("inline-flex size-8 items-center justify-center rounded-md transition-colors hover:bg-muted disabled:opacity-50", className)}
       {...props}
     >

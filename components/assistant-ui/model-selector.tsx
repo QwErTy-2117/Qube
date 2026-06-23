@@ -266,13 +266,16 @@ export const modelSelectorTriggerVariants = cva(
 export type ModelSelectorTriggerProps = ComponentPropsWithoutRef<
   typeof PopoverTrigger
 > &
-  VariantProps<typeof modelSelectorTriggerVariants>;
+  VariantProps<typeof modelSelectorTriggerVariants> & {
+    arrowInverted?: boolean;
+  };
 
 function ModelSelectorTrigger({
   className,
   variant,
   size,
   children,
+  arrowInverted,
   ...props
 }: ModelSelectorTriggerProps) {
   return (
@@ -281,11 +284,16 @@ function ModelSelectorTrigger({
       data-variant={variant ?? "outline"}
       data-size={size ?? "default"}
       role="combobox"
-      className={cn(modelSelectorTriggerVariants({ variant, size }), className)}
+      className={cn(modelSelectorTriggerVariants({ variant, size }), "group", className)}
       {...props}
     >
       {children ?? <ModelSelectorValue />}
-      <ChevronDownIcon className="size-4 opacity-50" />
+      <ChevronDownIcon className={cn(
+        "size-4 opacity-50 transition-transform duration-200",
+        arrowInverted
+          ? "rotate-180 group-data-[state=open]:rotate-0"
+          : "group-data-[state=open]:rotate-180",
+      )} />
     </PopoverTrigger>
   );
 }
@@ -361,7 +369,7 @@ function ModelSelectorContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        "bg-popover/95 w-72 min-w-(--radix-popover-trigger-width) overflow-hidden rounded-xl p-0 shadow-lg backdrop-blur-sm",
+        "bg-popover w-72 min-w-(--radix-popover-trigger-width) overflow-hidden rounded-xl p-0 shadow-lg",
         className,
       )}
       {...props}
@@ -490,7 +498,7 @@ function ModelSelectorItem({
         setOpen(false);
         onSelect?.(selectedValue);
       }}
-      className={cn("relative gap-2 rounded-lg py-2 ps-3 pe-9", className)}
+      className={cn("relative gap-2 rounded-lg py-2 ps-3 pe-9 text-foreground", className)}
       {...props}
     >
       {children ?? (
@@ -581,6 +589,8 @@ export type ModelSelectorProps = Omit<ModelSelectorRootProps, "children"> &
     searchable?: boolean;
     className?: string;
     contentClassName?: string;
+    /** Flip the chevron rotation (for when popup opens upward). */
+    arrowInverted?: boolean;
   };
 
 /** Registers the selection with assistant-ui's ModelContext system. The
@@ -611,6 +621,7 @@ const ModelSelectorImpl = ({
   size,
   className,
   contentClassName,
+  arrowInverted,
   ...rootProps
 }: ModelSelectorProps) => {
   return (
@@ -620,6 +631,7 @@ const ModelSelectorImpl = ({
         variant={variant}
         size={size}
         className={className}
+        arrowInverted={arrowInverted}
       />
       <ModelSelectorContent className={contentClassName}>
         {searchable && <ModelSelectorSearch />}

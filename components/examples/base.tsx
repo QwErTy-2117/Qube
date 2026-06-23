@@ -129,6 +129,8 @@ const Sidebar: FC = () => {
 const models = docsModelOptions();
 
 const ModelPicker: FC = () => {
+  const hasMessages = useAuiState((s) => s.thread.messages.length > 0);
+
   return (
     <ModelSelector
       models={models}
@@ -136,6 +138,7 @@ const ModelPicker: FC = () => {
       variant="ghost"
       size="sm"
       className="h-7 rounded-full"
+      arrowInverted={hasMessages}
     />
   );
 };
@@ -195,9 +198,7 @@ const Thread: FC = () => {
               <Composer />
             </div>
             <div className="w-full max-w-(--thread-max-width)">
-              <AuiIf condition={(s) => s.composer.isEmpty}>
-                <ThreadSuggestions />
-              </AuiIf>
+              <ThreadSuggestions />
             </div>
           </div>
         </AuiIf>
@@ -727,10 +728,10 @@ const AssistantActionBar: FC = () => {
           side="bottom"
           align="start"
           sideOffset={6}
-          className="aui-action-bar-more-content bg-popover/95 text-popover-foreground data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:animate-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] overflow-hidden rounded-xl border p-1.5 shadow-lg backdrop-blur-sm"
+          className="aui-action-bar-more-content bg-popover text-popover-foreground data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:animate-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] overflow-hidden rounded-xl border p-0 shadow-lg"
         >
           <ActionBarPrimitive.ExportMarkdown asChild>
-            <ActionBarMorePrimitive.Item className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none">
+            <ActionBarMorePrimitive.Item className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm outline-none select-none">
               <DownloadIcon className="size-4" />
               Export as Markdown
             </ActionBarMorePrimitive.Item>

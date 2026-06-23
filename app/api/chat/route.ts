@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { mistral } from "@ai-sdk/mistral";
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -11,7 +11,7 @@ export const maxDuration = 30;
 export async function POST(req: Request) {
   const { messages } = await req.json();
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.MISTRAL_API_KEY) {
     const stream = createUIMessageStream({
       originalMessages: messages,
       execute: async ({ writer }) => {
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
           type: "text-delta",
           id: "fallback-text",
           delta:
-            "This starter is running without OPENAI_API_KEY. Add one to .env.local to enable live AI responses.",
+            "This starter is running without MISTRAL_API_KEY. Add one to .env.local to enable live AI responses.",
         });
       },
     });
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   }
 
   const result = streamText({
-    model: openai("gpt-4.1-mini"),
+    model: mistral("mistral-large-latest"),
     messages: await convertToModelMessages(messages),
   });
 

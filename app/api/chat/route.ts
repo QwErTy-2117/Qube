@@ -16,6 +16,10 @@ export async function POST(req: Request) {
       originalMessages: messages,
       execute: async ({ writer }) => {
         await writer.write({
+          type: "text-start",
+          id: "fallback-text",
+        });
+        await writer.write({
           type: "text-delta",
           id: "fallback-text",
           delta:

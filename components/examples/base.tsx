@@ -136,8 +136,7 @@ const ModelPicker: FC = () => {
       models={models}
       defaultValue={DEFAULT_MODEL_ID}
       variant="ghost"
-      size="sm"
-      className="h-7 rounded-full"
+      className="h-7 rounded-full text-sm"
       arrowInverted={hasMessages}
     />
   );

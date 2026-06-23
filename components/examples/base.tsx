@@ -205,7 +205,7 @@ const ThreadScrollToBottom: FC = () => {
         variant="outline"
         className="aui-thread-scroll-to-bottom dark:border-border dark:bg-background dark:hover:bg-accent absolute -top-12 z-10 self-center !size-9 rounded-full disabled:invisible"
       >
-        <ArrowDownIcon />
+        <ArrowDownIcon className="size-4 text-muted-foreground/50" />
       </TooltipIconButton>
     </ThreadPrimitive.ScrollToBottom>
   );

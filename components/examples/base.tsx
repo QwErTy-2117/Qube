@@ -70,6 +70,7 @@ import {
   MenuIcon,
   MicIcon,
   MoreHorizontalIcon,
+  PanelLeftIcon,
   PencilIcon,
   PencilLineIcon,
   PlusIcon,
@@ -84,7 +85,7 @@ import {
   type DirectiveChipProps,
 } from "@assistant-ui/react-lexical";
 import Image from "next/image";
-import { type FC, type ReactNode } from "react";
+import { useState, type FC, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ModelSelector } from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -103,27 +104,51 @@ const Logo: FC = () => {
   );
 };
 
-const Sidebar: FC = () => {
+const Sidebar: FC<{ collapsed?: boolean }> = ({ collapsed }) => {
   return (
-    <aside className="flex h-full w-12 flex-col overflow-hidden">
-      <div className="mt-2 flex h-12 shrink-0 items-center px-3.5">
+    <aside
+      className={cn(
+        "flex h-full flex-col overflow-hidden transition-all duration-200",
+        collapsed ? "w-12" : "w-65",
+      )}
+    >
+      <div
+        className={cn(
+          "mt-2 flex h-12 shrink-0 items-center transition-[padding] duration-200",
+          collapsed ? "px-3.5" : "px-6",
+        )}
+      >
         <Image
           src={logoPng}
           alt="logo"
           className="size-5 shrink-0 dark:hue-rotate-180 dark:invert"
         />
-      </div>
-      <ThreadListPrimitive.New asChild>
-        <TooltipIconButton
-          tooltip="New thread"
-          side="right"
-          variant="ghost"
-          size="icon"
-          className="mt-1 ml-2 size-8"
+        <span
+          className={cn(
+            "text-foreground/90 ml-2 text-sm font-medium whitespace-nowrap transition-opacity duration-200",
+            collapsed && "opacity-0",
+          )}
         >
-          <PlusIcon className="size-4" />
-        </TooltipIconButton>
-      </ThreadListPrimitive.New>
+          assistant-ui
+        </span>
+      </div>
+      {collapsed ? (
+        <ThreadListPrimitive.New asChild>
+          <TooltipIconButton
+            tooltip="New thread"
+            side="right"
+            variant="ghost"
+            size="icon"
+            className="mt-1 ml-2 size-8"
+          >
+            <PlusIcon className="size-4" />
+          </TooltipIconButton>
+        </ThreadListPrimitive.New>
+      ) : (
+        <div className="relative w-65 flex-1 overflow-y-auto p-3">
+          <ThreadList />
+        </div>
+      )}
     </aside>
   );
 };
@@ -180,10 +205,23 @@ const ThreadTitle: FC = () => {
   );
 };
 
-const Header: FC = () => {
+const Header: FC<{
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
+}> = ({ sidebarCollapsed, onToggleSidebar }) => {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 px-4">
       <MobileSidebar />
+      <TooltipIconButton
+        variant="ghost"
+        size="icon"
+        tooltip={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        side="bottom"
+        onClick={onToggleSidebar}
+        className="hidden !size-8 md:flex"
+      >
+        <PanelLeftIcon className="size-4" />
+      </TooltipIconButton>
       <ThreadTitle />
       <AnimatedThemeToggler
         variant="circle"
@@ -219,37 +257,42 @@ const Thread: FC = () => {
         className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth px-4 pt-4"
       >
         <AuiIf condition={isNewChatView}>
-          <div className="flex flex-1 items-center justify-center">
-            <ThreadWelcome />
-          </div>
-        </AuiIf>
-
-        <div
-          data-slot="aui_message-group"
-          className="mb-14 flex flex-col gap-y-6 empty:hidden"
-        >
-          <ThreadPrimitive.Messages>
-            {({ message }) => {
-              if (message.composer.isEditing) return <EditComposer />;
-              if (message.role === "user") return <UserMessage />;
-              return <AssistantMessage />;
-            }}
-          </ThreadPrimitive.Messages>
-        </div>
-
-        <ThreadPrimitive.ViewportFooter
-          className="aui-thread-viewport-footer bg-background mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible sticky bottom-0 mt-auto rounded-t-(--composer-radius) pb-4 md:pb-6"
-        >
-          <ThreadScrollToBottom />
-          <Composer />
-          <AuiIf condition={isNewChatView}>
-            <div className="aui-thread-welcome-suggestions-shell min-h-19">
+          <div className="flex flex-1 flex-col">
+            <div className="flex flex-1 items-center justify-center">
+              <ThreadWelcome />
+            </div>
+            <div className="aui-thread-welcome-suggestions-shell mx-auto w-full max-w-(--thread-max-width) min-h-19 pb-4">
               <AuiIf condition={(s) => s.composer.isEmpty}>
                 <ThreadSuggestions />
               </AuiIf>
             </div>
-          </AuiIf>
-        </ThreadPrimitive.ViewportFooter>
+          </div>
+          <div className="absolute left-1/2 top-1/2 z-10 w-full max-w-(--thread-max-width) -translate-x-1/2 -translate-y-1/2">
+            <ThreadScrollToBottom />
+            <Composer />
+          </div>
+        </AuiIf>
+
+        <AuiIf condition={(s) => !isNewChatView(s)}>
+          <div
+            data-slot="aui_message-group"
+            className="mb-14 flex flex-col gap-y-6 empty:hidden"
+          >
+            <ThreadPrimitive.Messages>
+              {({ message }) => {
+                if (message.composer.isEditing) return <EditComposer />;
+                if (message.role === "user") return <UserMessage />;
+                return <AssistantMessage />;
+              }}
+            </ThreadPrimitive.Messages>
+          </div>
+          <ThreadPrimitive.ViewportFooter
+            className="aui-thread-viewport-footer bg-background mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible sticky bottom-0 mt-auto rounded-t-(--composer-radius) pb-4 md:pb-6"
+          >
+            <ThreadScrollToBottom />
+            <Composer />
+          </ThreadPrimitive.ViewportFooter>
+        </AuiIf>
       </ThreadPrimitive.Viewport>
 
       <SelectionToolbar />
@@ -552,7 +595,7 @@ const ComposerAction: FC = () => {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="aui-composer-dictate size-7 rounded-full"
+                className="aui-composer-dictate !size-7 rounded-full"
                 aria-label="Start voice input"
               >
                 <MicIcon className="aui-composer-dictate-icon size-4" />
@@ -567,7 +610,7 @@ const ComposerAction: FC = () => {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="aui-composer-stop-dictation text-destructive size-7 rounded-full"
+                className="aui-composer-stop-dictation text-destructive !size-7 rounded-full"
                 aria-label="Stop voice input"
               >
                 <SquareIcon className="aui-composer-stop-dictation-icon size-3.5 animate-pulse fill-current" />
@@ -583,7 +626,7 @@ const ComposerAction: FC = () => {
               type="button"
               variant="default"
               size="icon"
-              className="aui-composer-send size-7 rounded-full"
+               className="aui-composer-send !size-7 !rounded-full"
               aria-label="Send message"
             >
               <ArrowUpIcon className="aui-composer-send-icon size-4.5" />
@@ -596,7 +639,7 @@ const ComposerAction: FC = () => {
               type="button"
               variant="default"
               size="icon"
-              className="aui-composer-cancel size-7 rounded-full"
+               className="aui-composer-cancel !size-7 !rounded-full"
               aria-label="Stop generating"
             >
               <SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" />
@@ -728,7 +771,7 @@ const AssistantActionBar: FC = () => {
       className="aui-assistant-action-bar-root text-muted-foreground animate-in fade-in col-start-3 row-start-2 -ml-1 flex gap-1 duration-200"
     >
       <ActionBarPrimitive.Copy asChild>
-        <TooltipIconButton tooltip="Copy" className="size-7">
+        <TooltipIconButton tooltip="Copy" className="!size-7">
           <AuiIf condition={(s) => s.message.isCopied}>
             <CheckIcon className="animate-in zoom-in-50 fade-in duration-200 ease-out" />
           </AuiIf>
@@ -738,7 +781,7 @@ const AssistantActionBar: FC = () => {
         </TooltipIconButton>
       </ActionBarPrimitive.Copy>
       <ActionBarPrimitive.Reload asChild>
-        <TooltipIconButton tooltip="Refresh" className="size-7">
+        <TooltipIconButton tooltip="Refresh" className="!size-7">
           <RefreshCwIcon />
         </TooltipIconButton>
       </ActionBarPrimitive.Reload>
@@ -746,7 +789,7 @@ const AssistantActionBar: FC = () => {
         <ActionBarMorePrimitive.Trigger asChild>
           <TooltipIconButton
             tooltip="More"
-            className="size-7 data-[state=open]:bg-accent"
+            className="!size-7 data-[state=open]:bg-accent"
           >
             <MoreHorizontalIcon />
           </TooltipIconButton>
@@ -807,7 +850,7 @@ const UserActionBar: FC = () => {
       className="aui-user-action-bar-root flex flex-col items-end"
     >
       <ActionBarPrimitive.Edit asChild>
-        <TooltipIconButton tooltip="Edit" className="size-7">
+        <TooltipIconButton tooltip="Edit" className="!size-7">
           <PencilIcon />
         </TooltipIconButton>
       </ActionBarPrimitive.Edit>
@@ -881,14 +924,19 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
 };
 
 export const Base: FC = () => {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+
   return (
     <div className="bg-muted/30 flex h-full w-full">
       <div className="hidden md:block">
-        <Sidebar />
+        <Sidebar collapsed={sidebarCollapsed} />
       </div>
       <div className="flex flex-1 flex-col overflow-hidden p-2 md:pl-0">
         <div className="bg-background flex flex-1 flex-col overflow-hidden rounded-lg">
-          <Header />
+          <Header
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+          />
           <main className="flex-1 overflow-hidden">
             <Thread />
           </main>

@@ -52,7 +52,7 @@ import {
   type Unstable_SlashCommand,
 } from "@assistant-ui/react";
 import {
-  ArrowDownIcon,
+  ArrowDownToLineIcon,
   ArrowUpIcon,
   ChartColumnIcon,
   CheckIcon,
@@ -203,9 +203,9 @@ const ThreadScrollToBottom: FC = () => {
       <TooltipIconButton
         tooltip="Scroll to bottom"
         variant="outline"
-        className="aui-thread-scroll-to-bottom dark:border-border dark:bg-background dark:hover:bg-accent absolute -top-12 z-10 self-center !size-9 rounded-full disabled:invisible"
+        className="aui-thread-scroll-to-bottom border-border bg-background hover:bg-accent absolute -top-12 z-10 self-center !size-9 rounded-full disabled:invisible"
       >
-        <ArrowDownIcon className="size-4 text-muted-foreground/70" />
+        <ArrowDownToLineIcon className="size-4 text-muted-foreground/70" />
       </TooltipIconButton>
     </ThreadPrimitive.ScrollToBottom>
   );
@@ -822,7 +822,7 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
 
 export const Base: FC = () => {
   return (
-    <div className="bg-muted/30 flex h-full w-full">
+    <div className="bg-muted flex h-full w-full">
       <div>
         <Sidebar />
       </div>

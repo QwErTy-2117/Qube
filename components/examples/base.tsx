@@ -14,7 +14,7 @@ import {
   ToolGroupRoot,
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
-import { ThreadList } from "@/components/assistant-ui/thread-list";
+
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import {
   Reasoning,
@@ -73,7 +73,6 @@ import {
   PencilLineIcon,
   PlusIcon,
   RefreshCwIcon,
-  ShareIcon,
   SlashIcon,
   SquareIcon,
   WrenchIcon,
@@ -88,18 +87,6 @@ import { ModelSelector } from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { docsModelOptions } from "@/components/docs/assistant/docs-model-options";
 import { DEFAULT_MODEL_ID } from "@/constants/model";
-
-const Logo: FC = () => {
-  return (
-    <div className="flex items-center gap-2 px-2 text-sm font-medium">
-      <Image
-        src={logoPng}
-        alt="logo"
-        className="size-5"
-      />
-    </div>
-  );
-};
 
 const Sidebar: FC = () => {
   return (
@@ -122,6 +109,12 @@ const Sidebar: FC = () => {
           <PlusIcon className="size-4" />
         </TooltipIconButton>
       </ThreadListPrimitive.New>
+      <div className="mt-auto mb-3 flex justify-center">
+        <AnimatedThemeToggler
+          variant="circle"
+          className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:size-4"
+        />
+      </div>
     </aside>
   );
 };
@@ -139,31 +132,6 @@ const ModelPicker: FC = () => {
       className="h-7 rounded-full text-sm"
       arrowInverted={hasMessages}
     />
-  );
-};
-
-const ThreadTitle: FC = () => {
-  const title = useAuiState(
-    (s) =>
-      s.threads.threadItems.find((t) => t.id === s.threads.mainThreadId)?.title,
-  );
-
-  return (
-    <span className="min-w-0 truncate text-sm font-medium">
-      {title}
-    </span>
-  );
-};
-
-const Header: FC = () => {
-  return (
-    <header className="flex h-12 shrink-0 items-center gap-2 px-4">
-      <ThreadTitle />
-      <AnimatedThemeToggler
-        variant="circle"
-        className="ml-auto flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:size-4"
-      />
-    </header>
   );
 };
 
@@ -235,7 +203,7 @@ const ThreadScrollToBottom: FC = () => {
       <TooltipIconButton
         tooltip="Scroll to bottom"
         variant="outline"
-        className="aui-thread-scroll-to-bottom dark:border-border dark:bg-background dark:hover:bg-accent absolute -top-12 z-10 self-center rounded-full p-4 disabled:invisible"
+        className="aui-thread-scroll-to-bottom dark:border-border dark:bg-background dark:hover:bg-accent absolute -top-12 z-10 self-center !size-9 rounded-full disabled:invisible"
       >
         <ArrowDownIcon />
       </TooltipIconButton>
@@ -860,7 +828,6 @@ export const Base: FC = () => {
       </div>
       <div className="flex flex-1 flex-col overflow-hidden p-2 md:pl-0">
         <div className="bg-background flex flex-1 flex-col overflow-hidden rounded-lg">
-          <Header />
           <main className="flex-1 overflow-hidden">
             <Thread />
           </main>

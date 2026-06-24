@@ -11,7 +11,7 @@ const MEMORY_MODEL = process.env.MEMORY_MODEL || "mistral-small-latest";
 export async function extractAndStoreMemories(
   transcript: string,
 ): Promise<void> {
-  if (!transcript || transcript.length < 50) return;
+  if (!transcript || transcript.length < 10) return;
 
   const prompt = `Read the following conversation transcript and extract important facts, preferences, and context worth remembering long-term.
 

@@ -1,4 +1,5 @@
 import { createAgent } from "@/lib/agent/agent";
+import { extractAndStoreMemories } from "@/lib/agent/memory-agent";
 import { convertToModelMessages } from "ai";
 
 export const maxDuration = 60;
@@ -7,6 +8,12 @@ export async function POST(req: Request) {
   try {
     const { messages, threadId } = await req.json();
     const modelMessages = await convertToModelMessages(messages);
+
+    const transcript = (messages || [])
+      .map((m: any) => `${m.role}: ${typeof m.content === "string" ? m.content : ""}`)
+      .join("\n");
+
+    await extractAndStoreMemories(transcript);
 
     const result = await createAgent({
       messages: modelMessages,

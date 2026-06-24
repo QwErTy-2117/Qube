@@ -741,7 +741,17 @@ const AssistantMessage: FC = () => {
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
-                return part.toolUI ?? <ToolFallback {...part} />;
+                return (
+                  <ToolGroupRoot variant="ghost" defaultOpen={false}>
+                    <ToolGroupTrigger
+                      count={1}
+                      active={part.status.type === "running"}
+                    />
+                    <ToolGroupContent>
+                      {part.toolUI ?? <ToolFallback {...part} />}
+                    </ToolGroupContent>
+                  </ToolGroupRoot>
+                );
               case "indicator":
                 return <AssistantWorkingIndicator />;
               case "data":

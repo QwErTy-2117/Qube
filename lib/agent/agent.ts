@@ -117,21 +117,25 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       web_search: tool({
-        description: "Searches the web using DuckDuckGo.",
+        description: "Searches the web.",
         inputSchema: z.object({ query: z.string() }),
         execute: ep("web_search", async ({ query }: { query: string }) => {
-          const response = await fetch(
-            `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
-            { headers: { "User-Agent": "Qube/1.0" } },
-          );
-          const data: any = await response.json();
+          const body = new URLSearchParams({ q: query });
+          const response = await fetch("https://html.duckduckgo.com/html/", {
+            method: "POST",
+            body,
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; Qube/1.0)" },
+          });
+          const html = await response.text();
           const results: Array<{ title: string; snippet: string; url: string }> = [];
-          if (data.AbstractText) results.push({ title: data.AbstractSource || "Result", snippet: data.AbstractText, url: data.AbstractURL || "" });
-          if (data.RelatedTopics) {
-            for (const topic of data.RelatedTopics) {
-              if (topic.Topics) { for (const sub of topic.Topics) { if (sub.Text) results.push({ title: sub.Text.split(" - ")[0], snippet: sub.Text, url: sub.FirstURL || "" }); } }
-              else if (topic.Text) results.push({ title: topic.Text.split(" - ")[0], snippet: topic.Text, url: topic.FirstURL || "" });
-            }
+          const resultRegex = /<h2[^>]*class="result__title"[^>]*>.*?<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>.*?<a[^>]*class="result__snippet"[^>]*>(.*?)<\/a>/gs;
+          let match;
+          while ((match = resultRegex.exec(html)) !== null) {
+            results.push({
+              url: match[1].startsWith("//") ? "https:" + match[1] : match[1],
+              title: match[2].replace(/<[^>]*>/g, "").trim(),
+              snippet: match[3].replace(/<[^>]*>/g, "").trim(),
+            });
           }
           return JSON.stringify({ query, results, totalResults: results.length });
         }),

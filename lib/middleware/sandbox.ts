@@ -1,7 +1,7 @@
 import { resolve, relative } from "node:path";
 
 const SANDBOX_PATH = resolve(
-  process.env.SANDBOX_PATH || process.cwd() + "/sandbox",
+  process.env.SANDBOX_PATH || process.cwd(),
 );
 
 export function getSandboxPath(): string {

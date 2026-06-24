@@ -149,55 +149,6 @@ export async function createAgent(config: AgentConfig) {
         }),
       }),
 
-      create_excel: tool({
-        description: "Creates an Excel spreadsheet (.xlsx) from data.",
-        inputSchema: z.object({ filename: z.string(), data: z.array(z.record(z.string(), z.any())), sheetName: z.string().optional() }),
-        execute: ep("create_excel", async ({ filename, data, sheetName }: { filename: string; data: Record<string, any>[]; sheetName?: string }) => {
-          const { utils, write } = await import("xlsx");
-          const wb = utils.book_new();
-          utils.book_append_sheet(wb, utils.json_to_sheet(data), sheetName || "Sheet1");
-          await writeFile(resolve(filename), new Uint8Array(write(wb, { type: "buffer", bookType: "xlsx" })));
-          return JSON.stringify({ path: resolve(filename), rows: data.length });
-        }),
-      }),
-
-      create_docx: tool({
-        description: "Creates a Word document (.docx).",
-        inputSchema: z.object({ filename: z.string(), title: z.string(), sections: z.array(z.object({ heading: z.string(), content: z.string() })) }),
-        execute: ep("create_docx", async ({ filename, title, sections }: { filename: string; title: string; sections: Array<{ heading: string; content: string }> }) => {
-          const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = await import("docx");
-          const children: any[] = [
-            new Paragraph({ text: title, heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER }),
-            new Paragraph({ spacing: { after: 200 } }),
-          ];
-          for (const s of sections) {
-            children.push(new Paragraph({ text: s.heading, heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }));
-            children.push(new Paragraph({ children: [new TextRun({ text: s.content, size: 24 })], spacing: { after: 200 } }));
-          }
-          const buffer = await Packer.toBuffer(new Document({ sections: [{ children }] }));
-          await writeFile(resolve(filename), buffer);
-          return JSON.stringify({ path: resolve(filename), title, sectionCount: sections.length });
-        }),
-      }),
-
-      create_pptx: tool({
-        description: "Creates a PowerPoint presentation (.pptx).",
-        inputSchema: z.object({ filename: z.string(), title: z.string(), slides: z.array(z.object({ title: z.string(), bullets: z.array(z.string()) })) }),
-        execute: ep("create_pptx", async ({ filename, title, slides }: { filename: string; title: string; slides: Array<{ title: string; bullets: string[] }> }) => {
-          const pptxgen = await import("pptxgenjs");
-          const pres = new pptxgen.default();
-          pres.addSlide().addText(title, { x: 1, y: 1, w: 8, h: 1, fontSize: 36, bold: true, color: "333333", align: "center" as any });
-          for (const s of slides) {
-            const slide = pres.addSlide();
-            slide.addText(s.title, { x: 0.5, y: 0.3, w: 9, h: 0.8, fontSize: 28, bold: true, color: "333333" });
-            slide.addText(s.bullets.map((b: string) => `• ${b}`).join("\n"), { x: 0.5, y: 1.3, w: 9, h: 5, fontSize: 18, color: "555555", valign: "top" as any, align: "left" as any });
-          }
-          const buffer = await pres.write({ outputType: "nodebuffer" }) as Buffer;
-          await writeFile(resolve(filename), buffer);
-          return JSON.stringify({ path: resolve(filename), title, slides: slides.length });
-        }),
-      }),
-
       list_sessions: tool({
         description: "Lists past sessions with titles and dates.",
         inputSchema: z.object({}),

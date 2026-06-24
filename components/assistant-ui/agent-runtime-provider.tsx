@@ -15,9 +15,6 @@ import {
   DeleteFileToolUI,
   ListDirectoryToolUI,
   RunCommandToolUI,
-  CreateExcelToolUI,
-  CreateDocxToolUI,
-  CreatePptxToolUI,
   ListSessionsToolUI,
   ReadSessionSummaryToolUI,
   ReadSessionToolUI,
@@ -35,9 +32,6 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "delete_file", render: DeleteFileToolUI });
   useAssistantToolUI({ toolName: "list_directory", render: ListDirectoryToolUI });
   useAssistantToolUI({ toolName: "run_command", render: RunCommandToolUI });
-  useAssistantToolUI({ toolName: "create_excel", render: CreateExcelToolUI });
-  useAssistantToolUI({ toolName: "create_docx", render: CreateDocxToolUI });
-  useAssistantToolUI({ toolName: "create_pptx", render: CreatePptxToolUI });
   useAssistantToolUI({ toolName: "list_sessions", render: ListSessionsToolUI });
   useAssistantToolUI({ toolName: "read_session_summary", render: ReadSessionSummaryToolUI });
   useAssistantToolUI({ toolName: "read_session", render: ReadSessionToolUI });

@@ -616,9 +616,7 @@ const TOOL_GROUP_TITLES: Record<string, string> = {
   run_command: "Running commands",
   web_search: "Searching the web",
   web_fetch: "Fetching web pages",
-  create_excel: "Generating spreadsheet",
-  create_docx: "Generating document",
-  create_pptx: "Generating presentation",
+
   list_sessions: "Checking session history",
   read_session_summary: "Reading session summary",
   read_session: "Reading session transcript",

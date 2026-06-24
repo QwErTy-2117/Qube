@@ -1,40 +1,32 @@
-import { mistral } from "@ai-sdk/mistral";
-import {
-  convertToModelMessages,
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-  streamText,
-} from "ai";
+import { createAgent } from "@/lib/agent/agent";
+import { convertToModelMessages } from "ai";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  try {
+    const { messages, threadId } = await req.json();
+    const modelMessages = await convertToModelMessages(messages);
 
-  if (!process.env.MISTRAL_API_KEY) {
+    const result = await createAgent({
+      messages: modelMessages,
+      threadId: threadId || undefined,
+    });
+
+    return result.toUIMessageStreamResponse();
+  } catch (error) {
+    const { createUIMessageStream, createUIMessageStreamResponse } = await import("ai");
     const stream = createUIMessageStream({
-      originalMessages: messages,
+      originalMessages: [],
       execute: async ({ writer }) => {
-        await writer.write({
-          type: "text-start",
-          id: "fallback-text",
-        });
+        await writer.write({ type: "text-start", id: "error-text" });
         await writer.write({
           type: "text-delta",
-          id: "fallback-text",
-          delta:
-            "This starter is running without MISTRAL_API_KEY. Add one to .env.local to enable live AI responses.",
+          id: "error-text",
+          delta: `An error occurred: ${error instanceof Error ? error.message : "Unknown error"}`,
         });
       },
     });
-
     return createUIMessageStreamResponse({ stream });
   }
-
-  const result = streamText({
-    model: mistral("mistral-large-latest"),
-    messages: await convertToModelMessages(messages),
-  });
-
-  return result.toUIMessageStreamResponse();
 }

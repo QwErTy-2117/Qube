@@ -5,3 +5,8 @@ node_modules/
 *.tsbuildinfo
 .next.d.ts
 .playwright-mcp/
+.memory/
+sandbox/
+*.xlsx
+*.docx
+*.pptx

@@ -17,20 +17,24 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { NumberRoll } from "./tools/number-roll";
+import { NumberRoll } from "./number-roll";
 
 const ANIMATION_DURATION = 200;
 
-const toolGroupVariants = cva("aui-tool-group-root group/tool-group w-full", {
-  variants: {
-    variant: {
-      outline: "rounded-lg border py-3",
-      ghost: "",
-      muted: "border-muted-foreground/30 bg-muted/30 rounded-lg border py-3",
+const toolGroupVariants = cva(
+  "aui-tool-group-root group/tool-group w-full",
+  {
+    variants: {
+      variant: {
+        outline: "rounded-lg border py-3",
+        ghost: "",
+        muted:
+          "border-muted-foreground/30 bg-muted/30 rounded-lg border py-3",
+      },
     },
+    defaultVariants: { variant: "outline" },
   },
-  defaultVariants: { variant: "outline" },
-});
+);
 
 export type ToolGroupRootProps = Omit<
   React.ComponentProps<typeof Collapsible>,
@@ -48,7 +52,7 @@ function ToolGroupRoot({
   variant,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
-  defaultOpen = false,
+  defaultOpen = true,
   groupTitle,
   children,
   ...props
@@ -106,8 +110,6 @@ function ToolGroupTrigger({
   active?: boolean;
   groupTitle?: string;
 }) {
-  const label = `${count} tool ${count === 1 ? "call" : "calls"}`;
-
   return (
     <CollapsibleTrigger
       data-slot="tool-group-trigger"
@@ -136,11 +138,13 @@ function ToolGroupTrigger({
         )}
       >
         {groupTitle && (
-          <span className="block text-xs text-muted-foreground">{groupTitle}</span>
+          <span className="block text-xs text-muted-foreground">
+            {groupTitle}
+          </span>
         )}
         <span className="flex items-center gap-1.5 text-xs">
           <NumberRoll value={count} />
-          <span>{count === 1 ? "tool call" : "tool calls"}</span>
+          <span>tool {count === 1 ? "call" : "calls"}</span>
         </span>
         {active && (
           <span
@@ -148,7 +152,7 @@ function ToolGroupTrigger({
             data-slot="tool-group-trigger-shimmer"
             className="aui-tool-group-trigger-shimmer shimmer pointer-events-none absolute inset-0 text-xs motion-reduce:animate-none"
           >
-            {label}
+            {count} tool {count === 1 ? "call" : "calls"}
           </span>
         )}
       </span>
@@ -218,30 +222,25 @@ const ToolGroupImpl: FC<
   PropsWithChildren<{ startIndex: number; endIndex: number }>
 > = ({ children, startIndex, endIndex }) => {
   const toolCount = endIndex - startIndex + 1;
-
   return (
-    <ToolGroupRoot>
+    <ToolGroupRoot defaultOpen={false}>
       <ToolGroupTrigger count={toolCount} />
       <ToolGroupContent>{children}</ToolGroupContent>
     </ToolGroupRoot>
   );
 };
 
-/**
- * @deprecated This wrapper targets the legacy `components.ToolGroup` prop
- * on `<MessagePrimitive.Parts>`. Use `<MessagePrimitive.GroupedParts>` with
- * a `groupBy` returning `"group-tool"` and compose `ToolGroupRoot` /
- * `ToolGroupTrigger` / `ToolGroupContent` directly. See `thread.tsx`.
- */
-const ToolGroup = memo(ToolGroupImpl) as unknown as ToolGroupComponent;
+const EnhancedToolGroup = memo(
+  ToolGroupImpl,
+) as unknown as ToolGroupComponent;
 
-ToolGroup.displayName = "ToolGroup";
-ToolGroup.Root = ToolGroupRoot;
-ToolGroup.Trigger = ToolGroupTrigger;
-ToolGroup.Content = ToolGroupContent;
+EnhancedToolGroup.displayName = "EnhancedToolGroup";
+EnhancedToolGroup.Root = ToolGroupRoot;
+EnhancedToolGroup.Trigger = ToolGroupTrigger;
+EnhancedToolGroup.Content = ToolGroupContent;
 
 export {
-  ToolGroup,
+  EnhancedToolGroup,
   ToolGroupRoot,
   ToolGroupTrigger,
   ToolGroupContent,

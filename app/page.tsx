@@ -1,12 +1,12 @@
-import { DemoRuntimeProvider } from "@/components/runtime/demo-runtime-provider";
+import { AgentRuntimeProvider } from "@/components/assistant-ui/agent-runtime-provider";
 import { Base } from "@/components/examples/base";
 
 export default function Page() {
   return (
     <main className="h-dvh overflow-hidden">
-      <DemoRuntimeProvider>
+      <AgentRuntimeProvider>
         <Base />
-      </DemoRuntimeProvider>
+      </AgentRuntimeProvider>
     </main>
   );
 }

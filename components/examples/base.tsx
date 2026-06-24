@@ -343,14 +343,16 @@ const ThreadSuggestions: FC = () => {
     <div className="aui-thread-welcome-suggestions relative flex w-full flex-col gap-2 px-4">
       <div className="w-full scrollbar-none overflow-x-auto">
         <div className="mx-auto flex w-max items-center gap-2">
-          {SUGGESTION_GROUPS.map((group) => (
+          {SUGGESTION_GROUPS.map((group, i) => (
             <Button
               key={group.label}
               variant="ghost"
               className={cn(
                 suggestionChipClass,
+                "animate-in fade-in slide-in-from-bottom-3 fill-mode-both duration-400",
                 group.label === expandedLabel && "bg-muted",
               )}
+              style={{ animationDelay: `${i * 80}ms` }}
               onClick={() =>
                 setExpandedLabel(
                   group.label === expandedLabel ? null : group.label,

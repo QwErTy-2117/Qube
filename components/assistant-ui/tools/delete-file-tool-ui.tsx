@@ -4,14 +4,17 @@ import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { Trash2Icon } from "lucide-react";
 
 export const DeleteFileToolUI: ToolCallMessagePartComponent = ({
-  argsText,
+  args,
   result,
 }) => {
+  const filePath = (args as any)?.path || "";
   let data: { path?: string; status?: string } = {};
   try {
     if (typeof result === "string") data = JSON.parse(result);
     else if (result) data = result as typeof data;
   } catch {}
+
+  const displayPath = data.path || filePath;
 
   return (
     <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 text-sm dark:border-red-900/50 dark:bg-red-950/20">
@@ -19,9 +22,9 @@ export const DeleteFileToolUI: ToolCallMessagePartComponent = ({
         <Trash2Icon className="size-4" />
         <span>Delete File</span>
       </div>
-      {data.path && (
+      {displayPath && (
         <div className="mb-2 font-mono text-xs text-red-600/80 dark:text-red-400/80">
-          {data.path}
+          {displayPath}
         </div>
       )}
       {data.status === "deleted" && (

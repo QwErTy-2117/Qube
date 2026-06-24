@@ -41,16 +41,17 @@ function inferLanguage(path: string): string | undefined {
 }
 
 export const ReadFileToolUI: ToolCallMessagePartComponent = ({
-  argsText,
+  args,
   result,
 }) => {
-  let args: { path?: string } = {};
+  const filePath = (args as any)?.path || "";
   let data: { path?: string; content?: string; lineCount?: number } = {};
   try {
-    args = JSON.parse(argsText || "{}");
     if (typeof result === "string") data = JSON.parse(result);
     else if (result) data = result as typeof data;
   } catch {}
+
+  const displayPath = data.path || filePath;
 
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
@@ -58,10 +59,10 @@ export const ReadFileToolUI: ToolCallMessagePartComponent = ({
         <FileTextIcon className="size-4" />
         <span>Read File</span>
       </div>
-      {(data.path || args.path) && (
+      {displayPath && (
         <div className="mb-2 flex items-center gap-2">
           <span className="font-mono text-xs text-muted-foreground">
-            {data.path || args.path}
+            {displayPath}
           </span>
           {data.lineCount !== undefined && (
             <span className="text-xs text-muted-foreground/60">
@@ -74,7 +75,7 @@ export const ReadFileToolUI: ToolCallMessagePartComponent = ({
         <div className="max-h-96 overflow-auto rounded-md border border-border bg-background">
           <SyntaxHighlighter
             code={data.content}
-            language={inferLanguage(data.path || args.path || "") || "text"}
+            language={inferLanguage(displayPath) || "text"}
           />
         </div>
       )}

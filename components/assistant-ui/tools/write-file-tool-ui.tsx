@@ -2,18 +2,19 @@
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { FileEditIcon } from "lucide-react";
-import { DiffView } from "./diff-view";
 
 export const WriteFileToolUI: ToolCallMessagePartComponent = ({
-  argsText,
+  args,
   result,
 }) => {
+  const filename = (args as any)?.path || "";
   let data: { path?: string; status?: string } = {};
-  let prevContent = "";
   try {
     if (typeof result === "string") data = JSON.parse(result);
     else if (result) data = result as typeof data;
   } catch {}
+
+  const displayPath = data.path || filename;
 
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
@@ -21,9 +22,9 @@ export const WriteFileToolUI: ToolCallMessagePartComponent = ({
         <FileEditIcon className="size-4" />
         <span>{data.status === "written" ? "File Written" : "Write File"}</span>
       </div>
-      {data.path && (
+      {displayPath && (
         <div className="mb-2 font-mono text-xs text-muted-foreground">
-          {data.path}
+          {displayPath}
         </div>
       )}
       {data.status === "written" && (

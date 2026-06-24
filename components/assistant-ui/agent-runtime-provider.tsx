@@ -15,6 +15,14 @@ import {
   DeleteFileToolUI,
   ListDirectoryToolUI,
   RunCommandToolUI,
+  CreateExcelToolUI,
+  CreateDocxToolUI,
+  CreatePptxToolUI,
+  ListSessionsToolUI,
+  ReadSessionSummaryToolUI,
+  ReadSessionToolUI,
+  ReadMemoryToolUI,
+  AskUserToolUI,
 } from "@/components/assistant-ui/tools";
 import type { ReactNode } from "react";
 
@@ -25,22 +33,16 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "write_file", render: WriteFileToolUI });
   useAssistantToolUI({ toolName: "edit_file", render: EditFileToolUI });
   useAssistantToolUI({ toolName: "delete_file", render: DeleteFileToolUI });
-  useAssistantToolUI({
-    toolName: "list_directory",
-    render: ListDirectoryToolUI,
-  });
+  useAssistantToolUI({ toolName: "list_directory", render: ListDirectoryToolUI });
   useAssistantToolUI({ toolName: "run_command", render: RunCommandToolUI });
-  useAssistantToolUI({ toolName: "create_excel", render: WriteFileToolUI });
-  useAssistantToolUI({ toolName: "create_docx", render: WriteFileToolUI });
-  useAssistantToolUI({ toolName: "create_pptx", render: WriteFileToolUI });
-  useAssistantToolUI({ toolName: "list_sessions", render: WebSearchToolUI });
-  useAssistantToolUI({
-    toolName: "read_session_summary",
-    render: WebSearchToolUI,
-  });
-  useAssistantToolUI({ toolName: "read_session", render: WebSearchToolUI });
-  useAssistantToolUI({ toolName: "read_memory", render: WebSearchToolUI });
-  useAssistantToolUI({ toolName: "ask_user", render: WebSearchToolUI });
+  useAssistantToolUI({ toolName: "create_excel", render: CreateExcelToolUI });
+  useAssistantToolUI({ toolName: "create_docx", render: CreateDocxToolUI });
+  useAssistantToolUI({ toolName: "create_pptx", render: CreatePptxToolUI });
+  useAssistantToolUI({ toolName: "list_sessions", render: ListSessionsToolUI });
+  useAssistantToolUI({ toolName: "read_session_summary", render: ReadSessionSummaryToolUI });
+  useAssistantToolUI({ toolName: "read_session", render: ReadSessionToolUI });
+  useAssistantToolUI({ toolName: "read_memory", render: ReadMemoryToolUI });
+  useAssistantToolUI({ toolName: "ask_user", render: AskUserToolUI });
 
   return null;
 }

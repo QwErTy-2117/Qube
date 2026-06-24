@@ -4,10 +4,11 @@ import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { TerminalIcon } from "lucide-react";
 
 export const RunCommandToolUI: ToolCallMessagePartComponent = ({
-  argsText,
+  args,
   result,
 }) => {
-  let args: { command?: string; cwd?: string } = {};
+  const command = (args as any)?.command || "";
+  const cwd = (args as any)?.cwd || "";
   let data: {
     command?: string;
     exitCode?: number;
@@ -15,12 +16,11 @@ export const RunCommandToolUI: ToolCallMessagePartComponent = ({
     stderr?: string;
   } = {};
   try {
-    args = JSON.parse(argsText || "{}");
     if (typeof result === "string") data = JSON.parse(result);
     else if (result) data = result as typeof data;
   } catch {}
 
-  const cmd = data.command || args.command || "";
+  const cmd = data.command || command;
   const exitCode = data.exitCode ?? 0;
   const stdout = data.stdout || "";
   const stderr = data.stderr || "";
@@ -34,9 +34,9 @@ export const RunCommandToolUI: ToolCallMessagePartComponent = ({
       </div>
       <div className="mb-2 overflow-auto rounded-md bg-gray-950 p-3 dark:bg-black">
         <pre className="font-mono text-xs text-green-400">$ {cmd}</pre>
-        {args.cwd && (
+        {cwd && (
           <pre className="mt-1 font-mono text-xs text-muted-foreground/60">
-            cwd: {args.cwd}
+            cwd: {cwd}
           </pre>
         )}
       </div>

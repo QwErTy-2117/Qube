@@ -4,13 +4,14 @@ import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { GlobeIcon } from "lucide-react";
 
 export const WebSearchToolUI: ToolCallMessagePartComponent = ({
-  argsText,
+  args,
   result,
 }) => {
-  let args: { query?: string } = {};
-  let data: { results?: Array<{ title: string; snippet: string; url: string }> } = {};
+  const query = (args as any)?.query || "";
+  let data: {
+    results?: Array<{ title: string; snippet: string; url: string }>;
+  } = {};
   try {
-    args = JSON.parse(argsText || "{}");
     if (typeof result === "string") data = JSON.parse(result);
     else if (result) data = result as typeof data;
   } catch {}
@@ -21,9 +22,9 @@ export const WebSearchToolUI: ToolCallMessagePartComponent = ({
         <GlobeIcon className="size-4" />
         <span>Web Search</span>
       </div>
-      {args.query && (
+      {query && (
         <div className="mb-3 rounded-md bg-muted/50 px-3 py-2 font-mono text-xs">
-          {args.query}
+          {query}
         </div>
       )}
       {data.results && data.results.length > 0 ? (

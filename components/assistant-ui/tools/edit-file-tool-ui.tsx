@@ -5,16 +5,19 @@ import { FileEditIcon } from "lucide-react";
 import { DiffView } from "./diff-view";
 
 export const EditFileToolUI: ToolCallMessagePartComponent = ({
-  argsText,
+  args,
   result,
 }) => {
-  let args: { path?: string; oldString?: string; newString?: string } = {};
+  const path = (args as any)?.path || "";
+  const oldString = (args as any)?.oldString || "";
+  const newString = (args as any)?.newString || "";
   let data: { path?: string; status?: string } = {};
   try {
-    args = JSON.parse(argsText || "{}");
     if (typeof result === "string") data = JSON.parse(result);
     else if (result) data = result as typeof data;
   } catch {}
+
+  const displayPath = data.path || path;
 
   return (
     <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
@@ -22,9 +25,9 @@ export const EditFileToolUI: ToolCallMessagePartComponent = ({
         <FileEditIcon className="size-4" />
         <span>Edit File</span>
       </div>
-      {(data.path || args.path) && (
+      {displayPath && (
         <div className="mb-2 font-mono text-xs text-muted-foreground">
-          {data.path || args.path}
+          {displayPath}
         </div>
       )}
       {data.status === "edited" ? (
@@ -38,9 +41,9 @@ export const EditFileToolUI: ToolCallMessagePartComponent = ({
           Edit failed
         </div>
       ) : null}
-      {args.oldString && args.newString && (
+      {oldString && newString && (
         <div className="mt-2">
-          <DiffView oldContent={args.oldString} newContent={args.newString} />
+          <DiffView oldContent={oldString} newContent={newString} />
         </div>
       )}
     </div>

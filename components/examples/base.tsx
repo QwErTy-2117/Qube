@@ -746,6 +746,7 @@ const AssistantMessage: FC = () => {
                     <ToolGroupTrigger
                       count={1}
                       active={part.status.type === "running"}
+                      label={TOOL_GROUP_TITLES[part.toolName] || part.toolName}
                     />
                     <ToolGroupContent>
                       {part.toolUI ?? <ToolFallback {...part} />}

@@ -100,13 +100,15 @@ function ToolGroupTrigger({
   active = false,
   className,
   groupTitle,
+  label: customLabel,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   count: number;
   active?: boolean;
   groupTitle?: string;
+  label?: string;
 }) {
-  const label = `${count} tool ${count === 1 ? "call" : "calls"}`;
+  const label = customLabel || `${count} tool ${count === 1 ? "call" : "calls"}`;
 
   return (
     <CollapsibleTrigger
@@ -135,13 +137,15 @@ function ToolGroupTrigger({
           "group-data-[variant=muted]/tool-group-root:grow",
         )}
       >
-        {groupTitle && (
-          <span className="block text-xs text-muted-foreground">{groupTitle}</span>
+        {groupTitle && <span className="block text-xs text-muted-foreground">{groupTitle}</span>}
+        {customLabel ? (
+          <span className="text-xs">{customLabel}</span>
+        ) : (
+          <span className="flex items-center gap-1.5 text-xs">
+            <NumberRoll value={count} />
+            <span>{count === 1 ? "tool call" : "tool calls"}</span>
+          </span>
         )}
-        <span className="flex items-center gap-1.5 text-xs">
-          <NumberRoll value={count} />
-          <span>{count === 1 ? "tool call" : "tool calls"}</span>
-        </span>
         {active && (
           <span
             aria-hidden

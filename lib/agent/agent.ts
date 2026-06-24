@@ -137,7 +137,7 @@ export async function createAgent(config: AgentConfig) {
               snippet: match[3].replace(/<[^>]*>/g, "").trim(),
             });
           }
-          return JSON.stringify({ query, results, totalResults: results.length });
+          return JSON.stringify({ query, results: results.slice(0, 4), totalResults: results.length });
         }),
       }),
 

@@ -642,7 +642,7 @@ function ToolGroupWithTitle({
     .map((p) => p.toolName);
   const title = inferGroupTitle(toolNames);
   return (
-    <ToolGroupRoot variant="ghost" groupTitle={title}>
+    <ToolGroupRoot variant="outline" groupTitle={title}>
       <ToolGroupTrigger
         count={indices.length}
         active={active}

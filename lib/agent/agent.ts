@@ -1,4 +1,4 @@
-import { streamText, tool } from "ai";
+import { streamText, tool, stepCountIs } from "ai";
 import { z } from "zod";
 import { mistral } from "@ai-sdk/mistral";
 import { buildSystemPrompt } from "./system-prompt";
@@ -37,6 +37,7 @@ export async function createAgent(config: AgentConfig) {
     model: mistral(MODEL),
     system: systemPrompt,
     messages: config.messages as any,
+    stopWhen: stepCountIs(15),
 
     tools: ({
       read_file: tool({

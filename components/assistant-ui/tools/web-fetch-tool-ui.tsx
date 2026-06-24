@@ -17,7 +17,7 @@ export const WebFetchToolUI: ToolCallMessagePartComponent = ({
   const displayUrl = data.url || url;
 
   return (
-    <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+    <div className="bg-muted/30 px-3 py-2 text-sm">
       <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
         <GlobeIcon className="size-4" />
         <span>Fetch URL</span>

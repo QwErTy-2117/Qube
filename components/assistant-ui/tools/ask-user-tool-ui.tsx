@@ -16,7 +16,7 @@ export const AskUserToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-sm dark:border-blue-900/50 dark:bg-blue-950/20">
+    <div className="bg-blue-50/50 px-3 py-2 text-sm dark:bg-blue-950/20">
       <div className="mb-2 flex items-center gap-2 font-medium text-blue-600 dark:text-blue-400">
         <HelpCircleIcon className="size-4" />
         <span>Question for you</span>

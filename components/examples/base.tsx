@@ -714,6 +714,9 @@ const AssistantMessage: FC = () => {
               case "group-chainOfThought":
                 return <div data-slot="aui_chain-of-thought">{children}</div>;
               case "group-tool":
+                if (part.indices.length === 1) {
+                  return children;
+                }
                 return (
                   <ToolGroupWithTitle
                     indices={part.indices}

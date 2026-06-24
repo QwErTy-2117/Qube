@@ -17,7 +17,7 @@ export const DeleteFileToolUI: ToolCallMessagePartComponent = ({
   const displayPath = data.path || filePath;
 
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 text-sm dark:border-red-900/50 dark:bg-red-950/20">
+    <div className="bg-red-50/50 px-3 py-2 text-sm dark:bg-red-950/20">
       <div className="mb-2 flex items-center gap-2 font-medium text-red-600 dark:text-red-400">
         <Trash2Icon className="size-4" />
         <span>Delete File</span>

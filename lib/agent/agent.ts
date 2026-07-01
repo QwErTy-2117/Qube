@@ -106,10 +106,10 @@ export async function createAgent(config: AgentConfig) {
 
       run_command: tool({
         description: "Executes a shell command and returns its output.",
-        inputSchema: z.object({ command: z.string(), cwd: z.string().optional() }),
-        execute: ep("run_command", async ({ command, cwd }: { command: string; cwd?: string }) => {
+        inputSchema: z.object({ command: z.string() }),
+        execute: ep("run_command", async ({ command }: { command: string }) => {
           try {
-            const { stdout, stderr } = await execAsync(command, { cwd: cwd || getWorkspacePath(), timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
+            const { stdout, stderr } = await execAsync(command, { cwd: getWorkspacePath(), timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
             return JSON.stringify({ exitCode: 0, stdout, stderr, command });
           } catch (error: any) {
             return JSON.stringify({ exitCode: error.code ?? 1, stdout: error.stdout ?? "", stderr: error.stderr ?? error.message ?? "Unknown", command });

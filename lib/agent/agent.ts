@@ -3,11 +3,11 @@ import { z } from "zod";
 import { mistral } from "@ai-sdk/mistral";
 import { buildSystemPrompt } from "./system-prompt";
 import { readFile, writeFile, unlink, readdir, stat } from "node:fs/promises";
-import { resolve, extname } from "node:path";
+import { extname } from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { withPermissionCheck } from "@/lib/middleware/permission-middleware";
-import { getWorkspacePath } from "@/lib/middleware/workspace";
+import { getWorkspacePath, resolvePathInWorkspace } from "@/lib/middleware/workspace";
 import { createPendingQuestion } from "./tools/ask-user-tool";
 import { generateMemoryContext } from "./memory-agent";
 import { listSessions, readSessionSummary, readSession } from "@/lib/memory/session-store";
@@ -45,7 +45,7 @@ export async function createAgent(config: AgentConfig) {
         description: "Reads and returns the contents of a file at the specified path.",
         inputSchema: z.object({ path: z.string() }),
         execute: ep("read_file", async ({ path }: { path: string }) => {
-          const resolved = resolve(path);
+          const resolved = resolvePathInWorkspace(path);
           const content = await readFile(resolved, "utf-8");
           const lines = content.split("\n");
           const s = await stat(resolved);
@@ -57,7 +57,7 @@ export async function createAgent(config: AgentConfig) {
         description: "Creates or overwrites a file with the specified content.",
         inputSchema: z.object({ path: z.string(), content: z.string() }),
         execute: ep("write_file", async ({ path, content }: { path: string; content: string }) => {
-          const resolved = resolve(path);
+          const resolved = resolvePathInWorkspace(path);
           await writeFile(resolved, content, "utf-8");
           return JSON.stringify({ path: resolved, size: Buffer.byteLength(content, "utf-8"), status: "written" });
         }),
@@ -67,7 +67,7 @@ export async function createAgent(config: AgentConfig) {
         description: "Finds text in a file and replaces it with new content.",
         inputSchema: z.object({ path: z.string(), oldString: z.string(), newString: z.string() }),
         execute: ep("edit_file", async ({ path, oldString, newString }: { path: string; oldString: string; newString: string }) => {
-          const resolved = resolve(path);
+          const resolved = resolvePathInWorkspace(path);
           const content = await readFile(resolved, "utf-8");
           if (!content.includes(oldString)) return JSON.stringify({ error: "Text not found.", status: "failed" });
           const fi = content.indexOf(oldString);
@@ -82,7 +82,7 @@ export async function createAgent(config: AgentConfig) {
         description: "Permanently deletes a file.",
         inputSchema: z.object({ path: z.string() }),
         execute: ep("delete_file", async ({ path }: { path: string }) => {
-          const resolved = resolve(path);
+          const resolved = resolvePathInWorkspace(path);
           await unlink(resolved);
           return JSON.stringify({ path: resolved, status: "deleted" });
         }),
@@ -92,7 +92,7 @@ export async function createAgent(config: AgentConfig) {
         description: "Lists files and directories at a path.",
         inputSchema: z.object({ path: z.string() }),
         execute: ep("list_directory", async ({ path }: { path: string }) => {
-          const resolved = resolve(path);
+          const resolved = resolvePathInWorkspace(path);
           const entries = await readdir(resolved, { withFileTypes: true });
           const items = await Promise.all(entries.map(async (entry) => {
             const fullPath = `${resolved}/${entry.name}`;

@@ -2,6 +2,7 @@ import { resolve, relative } from "node:path";
 
 const SANDBOX_PATH = resolve(
   process.env.SANDBOX_PATH || process.cwd(),
+  "playground"
 );
 
 export function getSandboxPath(): string {

@@ -641,11 +641,11 @@ function ToolGroupWithTitle({
     .map((p) => p.toolName);
   const title = inferGroupTitle(toolNames);
   return (
-    <ToolGroupRoot variant="muted" groupTitle={title}>
+    <ToolGroupRoot variant="ghost">
       <ToolGroupTrigger
         count={indices.length}
         active={active}
-        groupTitle={title}
+        label={title}
       />
       <ToolGroupContent>{children}</ToolGroupContent>
     </ToolGroupRoot>
@@ -743,7 +743,7 @@ const AssistantMessage: FC = () => {
                 return <Reasoning {...part} />;
               case "tool-call":
                 return (
-                  <ToolGroupRoot variant="muted" defaultOpen={false}>
+                  <ToolGroupRoot variant="ghost" defaultOpen={false}>
                     <ToolGroupTrigger
                       count={1}
                       active={part.status.type === "running"}

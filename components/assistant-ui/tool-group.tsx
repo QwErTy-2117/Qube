@@ -24,12 +24,11 @@ const ANIMATION_DURATION = 200;
 const toolGroupVariants = cva("aui-tool-group-root group/tool-group w-full", {
   variants: {
     variant: {
-      outline: "rounded-lg border py-3",
-      ghost: "",
-      muted: "border-muted-foreground/30 bg-muted/30 rounded-lg border py-3",
+      outline: "rounded-lg border py-3 mb-6",
+      ghost: "mb-6",
     },
   },
-  defaultVariants: { variant: "outline" },
+  defaultVariants: { variant: "ghost" },
 });
 
 export type ToolGroupRootProps = Omit<
@@ -40,7 +39,6 @@ export type ToolGroupRootProps = Omit<
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     defaultOpen?: boolean;
-    groupTitle?: string;
   };
 
 function ToolGroupRoot({
@@ -49,7 +47,6 @@ function ToolGroupRoot({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   defaultOpen = false,
-  groupTitle,
   children,
   ...props
 }: ToolGroupRootProps) {
@@ -75,7 +72,7 @@ function ToolGroupRoot({
     <Collapsible
       ref={collapsibleRef}
       data-slot="tool-group-root"
-      data-variant={variant ?? "outline"}
+      data-variant={variant ?? "ghost"}
       open={isOpen}
       onOpenChange={handleOpenChange}
       className={cn(
@@ -99,52 +96,37 @@ function ToolGroupTrigger({
   count,
   active = false,
   className,
-  groupTitle,
   label: customLabel,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   count: number;
   active?: boolean;
-  groupTitle?: string;
   label?: string;
 }) {
-  const label = customLabel || `${count} tool ${count === 1 ? "call" : "calls"}`;
+  const displayLabel =
+    customLabel || `${count} tool ${count === 1 ? "call" : "calls"}`;
 
   return (
     <CollapsibleTrigger
       data-slot="tool-group-trigger"
       className={cn(
-        "aui-tool-group-trigger group/trigger flex origin-left items-center gap-2 text-sm transition-[color,scale] active:scale-[0.98]",
-        "group-data-[variant=ghost]/tool-group-root:text-muted-foreground group-data-[variant=ghost]/tool-group-root:hover:text-foreground group-data-[variant=ghost]/tool-group-root:py-1.5",
-        "group-data-[variant=outline]/tool-group-root:w-full group-data-[variant=outline]/tool-group-root:px-4",
-        "group-data-[variant=muted]/tool-group-root:w-full group-data-[variant=muted]/tool-group-root:px-4",
+        "aui-tool-group-trigger group/trigger flex origin-left items-center gap-1.5 text-sm transition-[color,scale] active:scale-[0.98]",
+        "text-muted-foreground hover:text-foreground py-1.5",
         className,
       )}
       {...props}
     >
       <span
         data-slot="tool-group-trigger-label"
-        className={cn(
-          "aui-tool-group-trigger-label-wrapper inline-flex flex-wrap items-baseline gap-x-1.5 text-start leading-none font-medium",
-          "group-data-[variant=ghost]/tool-group-root:font-normal",
-          "group-data-[variant=outline]/tool-group-root:grow",
-          "group-data-[variant=muted]/tool-group-root:grow",
-        )}
+        className="inline-flex items-baseline gap-1.5 text-xs font-normal"
       >
-        {groupTitle && <span className="block text-xs text-muted-foreground">{groupTitle}</span>}
-        {customLabel ? (
-          <span className={cn("text-xs", active && "shimmer")}>{customLabel}</span>
-        ) : (
-          <span className={cn("inline-flex items-center gap-1 text-xs", active && "shimmer")}>
-            <NumberRoll value={count} />
-            <span>{count === 1 ? "tool call" : "tool calls"}</span>
-          </span>
-        )}
+        <NumberRoll value={count} />
+        <span className={cn(active && "shimmer")}>{displayLabel}</span>
       </span>
       <ChevronDownIcon
         data-slot="tool-group-trigger-chevron"
         className={cn(
-          "aui-tool-group-trigger-chevron size-3 shrink-0",
+          "size-3 shrink-0",
           "transition-transform duration-(--animation-duration) ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
           "group-data-[state=closed]/trigger:-rotate-90",
           "group-data-[state=open]/trigger:rotate-0",
@@ -177,10 +159,7 @@ function ToolGroupContent({
     >
       <div
         className={cn(
-          "mt-2 flex flex-col gap-2 pb-5",
-          "group-data-[variant=ghost]/tool-group-root:mt-1 group-data-[variant=ghost]/tool-group-root:gap-1",
-          "group-data-[variant=outline]/tool-group-root:mt-3 group-data-[variant=outline]/tool-group-root:border-t group-data-[variant=outline]/tool-group-root:px-4 group-data-[variant=outline]/tool-group-root:pt-3",
-          "group-data-[variant=muted]/tool-group-root:mt-3 group-data-[variant=muted]/tool-group-root:border-t group-data-[variant=muted]/tool-group-root:px-4 group-data-[variant=muted]/tool-group-root:pt-3",
+          "flex flex-col gap-1 pb-6",
           "[&>*]:animate-in [&>*]:fade-in-0 [&>*]:blur-in-[2px] [&>*]:slide-in-from-top-1 [&>*]:duration-(--animation-duration) [&>*]:ease-[cubic-bezier(0.32,0.72,0,1)]",
           "[&>*]:motion-reduce:animate-none",
           "[&>*:nth-child(2)]:[animation-delay:40ms]",

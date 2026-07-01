@@ -15,16 +15,14 @@ export const AskUserToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   return (
-    <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 rounded-md bg-background p-3 text-sm">
-        {data.question || question}
-      </div>
+    <div className="space-y-2 px-3 py-1.5 text-sm text-foreground/80">
+      <p>{data.question || question}</p>
       {options.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {options.map((opt: string) => (
             <span
               key={opt}
-              className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+              className="rounded-md border border-border/50 bg-muted/20 px-2 py-0.5 text-xs text-muted-foreground"
             >
               {opt}
             </span>
@@ -32,15 +30,14 @@ export const AskUserToolUI: ToolCallMessagePartComponent = ({
         </div>
       )}
       {data.answer ? (
-        <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
-          <span className="size-1.5 rounded-full bg-green-500" />
-          Your response: {data.answer}
-        </div>
+        <p className="text-xs text-muted-foreground">
+          Response: {data.answer}
+        </p>
       ) : (
-        <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-          <span className="size-1.5 rounded-full bg-amber-500" />
-          Waiting for your response...
-        </div>
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
+          <span className="size-1 rounded-full bg-muted-foreground/40" />
+          Awaiting your input
+        </p>
       )}
     </div>
   );

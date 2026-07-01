@@ -609,20 +609,20 @@ const MessageError: FC = () => {
 };
 
 const TOOL_GROUP_TITLES: Record<string, string> = {
-  read_file: "Reading files",
-  write_file: "Writing files",
-  edit_file: "Editing files",
-  delete_file: "Deleting files",
-  list_directory: "Exploring directories",
-  run_command: "Running commands",
-  web_search: "Searching the web",
-  web_fetch: "Fetching web pages",
+  read_file: "Looking through your files",
+  write_file: "Creating a file",
+  edit_file: "Making some changes",
+  delete_file: "Cleaning up",
+  list_directory: "Seeing what's inside",
+  run_command: "Running something",
+  web_search: "Looking things up",
+  web_fetch: "Checking a webpage",
 
-  list_sessions: "Checking session history",
-  read_session_summary: "Reading session summary",
-  read_session: "Reading session transcript",
-  read_memory: "Reading stored memories",
-  ask_user: "Asking for input",
+  list_sessions: "Checking your history",
+  read_session_summary: "Looking at past conversations",
+  read_session: "Reading a past conversation",
+  read_memory: "Checking what I remember",
+  ask_user: "Asking you something",
 };
 
 function ToolGroupWithTitle({

@@ -24,8 +24,8 @@ const ANIMATION_DURATION = 200;
 const toolGroupVariants = cva("aui-tool-group-root group/tool-group w-full", {
   variants: {
     variant: {
-      outline: "rounded-lg border py-3 mb-6",
-      ghost: "mb-6",
+      outline: "rounded-lg border py-3 mb-3",
+      ghost: "mb-3",
     },
   },
   defaultVariants: { variant: "ghost" },
@@ -118,7 +118,7 @@ function ToolGroupTrigger({
     >
       <span
         data-slot="tool-group-trigger-label"
-        className="inline-flex items-baseline gap-1.5 text-xs font-normal"
+        className="inline-flex items-baseline gap-1.5 font-normal"
       >
         <NumberRoll value={count} />
         <span className={cn(active && "shimmer")}>{displayLabel}</span>
@@ -159,7 +159,7 @@ function ToolGroupContent({
     >
       <div
         className={cn(
-          "flex flex-col gap-1 pb-6",
+          "flex flex-col gap-1 pb-3",
           "[&>*]:animate-in [&>*]:fade-in-0 [&>*]:blur-in-[2px] [&>*]:slide-in-from-top-1 [&>*]:duration-(--animation-duration) [&>*]:ease-[cubic-bezier(0.32,0.72,0,1)]",
           "[&>*]:motion-reduce:animate-none",
           "[&>*:nth-child(2)]:[animation-delay:40ms]",

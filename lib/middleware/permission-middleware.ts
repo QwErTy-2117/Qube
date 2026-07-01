@@ -1,5 +1,5 @@
 import { resolve, relative } from "node:path";
-import { getSandboxPath, isDestructiveCommand } from "./sandbox";
+import { getWorkspacePath, isDestructiveCommand } from "./workspace";
 
 export type PermissionRequest = {
   requestId: string;
@@ -87,7 +87,7 @@ type ToolCheckResult = {
 export function evaluateToolCall(
   toolName: string,
   args: Record<string, unknown>,
-  sandboxPath: string,
+  workspacePath: string,
 ): ToolCheckResult {
   const pathArg = (args.path as string) || (args.filepath as string) || "";
   const commandArg = args.command as string | undefined;
@@ -109,7 +109,7 @@ export function evaluateToolCall(
     typeof args.cwd === "string"
   ) {
     const resolvedCwd = resolve(args.cwd);
-    const rel = relative(sandboxPath, resolvedCwd);
+    const rel = relative(workspacePath, resolvedCwd);
     if (rel.startsWith("..")) {
       return {
         needsPermission: true,
@@ -120,7 +120,7 @@ export function evaluateToolCall(
 
   if (pathArg && toolName !== "list_directory") {
     const resolvedPath = resolve(pathArg);
-    const rel = relative(sandboxPath, resolvedPath);
+    const rel = relative(workspacePath, resolvedPath);
     if (rel.startsWith("..")) {
       return {
         needsPermission: true,
@@ -135,7 +135,7 @@ export function evaluateToolCall(
     toolName === "delete_file"
   ) {
     const resolvedPath = resolve(pathArg);
-    const rel = relative(sandboxPath, resolvedPath);
+    const rel = relative(workspacePath, resolvedPath);
     if (rel.startsWith("..")) {
       return {
         needsPermission: true,
@@ -153,8 +153,8 @@ export async function withPermissionCheck<T extends Record<string, unknown>>(
   threadId: string,
   execute: (args: T) => Promise<string>,
 ): Promise<string> {
-  const sandboxPath = getSandboxPath();
-  const evaluation = evaluateToolCall(toolName, args, sandboxPath);
+  const workspacePath = getWorkspacePath();
+  const evaluation = evaluateToolCall(toolName, args, workspacePath);
 
   if (!evaluation.needsPermission) {
     return execute(args);

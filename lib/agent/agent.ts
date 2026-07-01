@@ -7,7 +7,7 @@ import { resolve, extname } from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { withPermissionCheck } from "@/lib/middleware/permission-middleware";
-import { getSandboxPath } from "@/lib/middleware/sandbox";
+import { getWorkspacePath } from "@/lib/middleware/workspace";
 import { createPendingQuestion } from "./tools/ask-user-tool";
 import { generateMemoryContext } from "./memory-agent";
 import { listSessions, readSessionSummary, readSession } from "@/lib/memory/session-store";
@@ -109,7 +109,7 @@ export async function createAgent(config: AgentConfig) {
         inputSchema: z.object({ command: z.string(), cwd: z.string().optional() }),
         execute: ep("run_command", async ({ command, cwd }: { command: string; cwd?: string }) => {
           try {
-            const { stdout, stderr } = await execAsync(command, { cwd: cwd || getSandboxPath(), timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
+            const { stdout, stderr } = await execAsync(command, { cwd: cwd || getWorkspacePath(), timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
             return JSON.stringify({ exitCode: 0, stdout, stderr, command });
           } catch (error: any) {
             return JSON.stringify({ exitCode: error.code ?? 1, stdout: error.stdout ?? "", stderr: error.stderr ?? error.message ?? "Unknown", command });

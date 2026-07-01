@@ -6,7 +6,6 @@ node_modules/
 .next.d.ts
 .playwright-mcp/
 .memory/
-sandbox/
 playground/
 *.xlsx
 *.docx

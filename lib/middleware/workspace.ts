@@ -1,25 +1,25 @@
 import { resolve, relative } from "node:path";
 
-const SANDBOX_PATH = resolve(
-  process.env.SANDBOX_PATH || process.cwd(),
+const WORKSPACE_PATH = resolve(
+  process.env.WORKSPACE_PATH || process.cwd(),
   "playground"
 );
 
-export function getSandboxPath(): string {
-  return SANDBOX_PATH;
+export function getWorkspacePath(): string {
+  return WORKSPACE_PATH;
 }
 
-export function isPathInSandbox(targetPath: string): boolean {
+export function isPathInWorkspace(targetPath: string): boolean {
   const resolved = resolve(targetPath);
-  const rel = relative(SANDBOX_PATH, resolved);
+  const rel = relative(WORKSPACE_PATH, resolved);
   return !rel.startsWith("..");
 }
 
-export function resolvePathInSandbox(targetPath: string): string {
-  const resolved = resolve(SANDBOX_PATH, targetPath);
-  const rel = relative(SANDBOX_PATH, resolved);
+export function resolvePathInWorkspace(targetPath: string): string {
+  const resolved = resolve(WORKSPACE_PATH, targetPath);
+  const rel = relative(WORKSPACE_PATH, resolved);
   if (rel.startsWith("..")) {
-    throw new Error(`Path ${targetPath} is outside the sandbox`);
+    throw new Error(`Path ${targetPath} is outside the workspace`);
   }
   return resolved;
 }

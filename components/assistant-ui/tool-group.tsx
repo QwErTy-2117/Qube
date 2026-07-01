@@ -8,7 +8,7 @@ import {
   type FC,
   type PropsWithChildren,
 } from "react";
-import { ChevronDownIcon, LoaderIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { useScrollLock } from "@assistant-ui/react";
 import {
@@ -122,16 +122,10 @@ function ToolGroupTrigger({
       )}
       {...props}
     >
-      {active && (
-        <LoaderIcon
-          data-slot="tool-group-trigger-loader"
-          className="aui-tool-group-trigger-loader size-3 shrink-0 animate-spin [animation-duration:0.6s]"
-        />
-      )}
       <span
         data-slot="tool-group-trigger-label"
         className={cn(
-          "aui-tool-group-trigger-label-wrapper relative inline-block text-start leading-none font-medium",
+          "aui-tool-group-trigger-label-wrapper inline-flex flex-wrap items-baseline gap-x-1.5 text-start leading-none font-medium",
           "group-data-[variant=ghost]/tool-group-root:font-normal",
           "group-data-[variant=outline]/tool-group-root:grow",
           "group-data-[variant=muted]/tool-group-root:grow",
@@ -139,20 +133,11 @@ function ToolGroupTrigger({
       >
         {groupTitle && <span className="block text-xs text-muted-foreground">{groupTitle}</span>}
         {customLabel ? (
-          <span className="text-xs">{customLabel}</span>
+          <span className={cn("text-xs", active && "shimmer")}>{customLabel}</span>
         ) : (
-          <span className="flex items-center gap-1.5 text-xs">
+          <span className={cn("inline-flex items-center gap-1 text-xs", active && "shimmer")}>
             <NumberRoll value={count} />
             <span>{count === 1 ? "tool call" : "tool calls"}</span>
-          </span>
-        )}
-        {active && (
-          <span
-            aria-hidden
-            data-slot="tool-group-trigger-shimmer"
-            className="aui-tool-group-trigger-shimmer shimmer pointer-events-none absolute inset-0 text-xs motion-reduce:animate-none"
-          >
-            {label}
           </span>
         )}
       </span>
@@ -192,7 +177,7 @@ function ToolGroupContent({
     >
       <div
         className={cn(
-          "mt-2 flex flex-col gap-2 pb-3",
+          "mt-2 flex flex-col gap-2 pb-5",
           "group-data-[variant=ghost]/tool-group-root:mt-1 group-data-[variant=ghost]/tool-group-root:gap-1",
           "group-data-[variant=outline]/tool-group-root:mt-3 group-data-[variant=outline]/tool-group-root:border-t group-data-[variant=outline]/tool-group-root:px-4 group-data-[variant=outline]/tool-group-root:pt-3",
           "group-data-[variant=muted]/tool-group-root:mt-3 group-data-[variant=muted]/tool-group-root:border-t group-data-[variant=muted]/tool-group-root:px-4 group-data-[variant=muted]/tool-group-root:pt-3",

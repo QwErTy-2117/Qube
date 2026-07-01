@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { GlobeIcon } from "lucide-react";
 
 export const WebSearchToolUI: ToolCallMessagePartComponent = ({
   args,
@@ -18,10 +17,6 @@ export const WebSearchToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
-        <GlobeIcon className="size-4" />
-        <span>Web Search</span>
-      </div>
       {query && (
         <div className="mb-3 rounded-md bg-muted/50 px-3 py-2 font-mono text-xs">
           {query}

@@ -66,11 +66,11 @@ export function AskUserBar({
   const [customAnswer, setCustomAnswer] = useState("");
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/80 p-4 dark:border-blue-800/50 dark:bg-blue-950/20">
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-muted/30 p-4">
       <div className="flex items-start gap-3">
-        <HelpCircleIcon className="mt-0.5 size-5 shrink-0 text-blue-600 dark:text-blue-400" />
+        <HelpCircleIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
+          <p className="text-sm text-foreground">
             {question.question}
           </p>
         </div>
@@ -83,7 +83,7 @@ export function AskUserBar({
               variant="outline"
               size="sm"
               onClick={() => onRespond(option)}
-              className="h-8 gap-1.5 rounded-full border-blue-200 text-blue-700 hover:bg-blue-100 hover:text-blue-800 dark:border-blue-800/50 dark:text-blue-300 dark:hover:bg-blue-900/30"
+              className="h-8 gap-1.5 rounded-full"
             >
               {option}
             </Button>
@@ -101,7 +101,7 @@ export function AskUserBar({
               }
             }}
             placeholder="Type your answer..."
-            className="flex-1 rounded-full border border-blue-200 bg-white px-4 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 dark:border-blue-800/50 dark:bg-blue-950/30 dark:text-blue-100 dark:placeholder-blue-300/50 dark:focus:border-blue-500"
+            className="bg-muted text-foreground placeholder:text-muted-foreground/60 flex-1 rounded-full border border-border px-4 py-1.5 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
             autoFocus
           />
           <Button
@@ -111,7 +111,7 @@ export function AskUserBar({
               if (customAnswer.trim()) onRespond(customAnswer.trim());
             }}
             disabled={!customAnswer.trim()}
-            className="h-8 gap-1.5 rounded-full bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:text-blue-950 dark:hover:bg-blue-400"
+            className="h-8 gap-1.5 rounded-full"
           >
             <SendHorizonalIcon className="size-3.5" />
             Send

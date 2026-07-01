@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { FileEditIcon } from "lucide-react";
 
 export const WriteFileToolUI: ToolCallMessagePartComponent = ({
   args,
@@ -18,10 +17,6 @@ export const WriteFileToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
-        <FileEditIcon className="size-4" />
-        <span>{data.status === "written" ? "File Written" : "Write File"}</span>
-      </div>
       {displayPath && (
         <div className="mb-2 font-mono text-xs text-muted-foreground">
           {displayPath}

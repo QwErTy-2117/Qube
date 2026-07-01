@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { HelpCircleIcon } from "lucide-react";
 
 export const AskUserToolUI: ToolCallMessagePartComponent = ({
   args,
@@ -16,11 +15,7 @@ export const AskUserToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   return (
-    <div className="bg-blue-50/50 px-3 py-2 text-sm dark:bg-blue-950/20">
-      <div className="mb-2 flex items-center gap-2 font-medium text-blue-600 dark:text-blue-400">
-        <HelpCircleIcon className="size-4" />
-        <span>Question for you</span>
-      </div>
+    <div className="bg-muted/30 px-3 py-2 text-sm">
       <div className="mb-2 rounded-md bg-background p-3 text-sm">
         {data.question || question}
       </div>

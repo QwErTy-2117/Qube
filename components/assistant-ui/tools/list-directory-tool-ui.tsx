@@ -1,7 +1,7 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { FolderIcon, FileIcon, FolderOpenIcon } from "lucide-react";
+import { FolderIcon, FileIcon } from "lucide-react";
 
 export const ListDirectoryToolUI: ToolCallMessagePartComponent = ({
   argsText,
@@ -23,10 +23,6 @@ export const ListDirectoryToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
-        <FolderOpenIcon className="size-4" />
-        <span>Directory Listing</span>
-      </div>
       {data.path && (
         <div className="mb-2 font-mono text-xs text-muted-foreground">
           {data.path}

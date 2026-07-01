@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { BrainIcon } from "lucide-react";
 
 export const ReadMemoryToolUI: ToolCallMessagePartComponent = ({
   result,
@@ -22,10 +21,6 @@ export const ReadMemoryToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
-        <BrainIcon className="size-4" />
-        <span>Stored Memories</span>
-      </div>
       {data.entries && data.entries.length > 0 ? (
         <div className="flex flex-col gap-2">
           {data.entries.map((e) => (

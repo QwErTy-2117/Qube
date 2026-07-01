@@ -17,6 +17,14 @@ export function buildSystemPrompt(memoryContext?: string): string {
 
 You can read, write, edit, and delete files, and list directory contents. Use these tools to explore codebases, implement changes, and manage files.
 
+## Creating documents (Excel, Word, PowerPoint)
+
+When the user asks for a spreadsheet, document, or presentation, tell the user which library you will use (exceljs for Excel, docx for Word, pptxgenjs for PowerPoint) before creating the file. Then:
+1. Use the run_command tool to install the required library (npm install exceljs for Excel, npm install docx for Word, npm install pptxgenjs for PowerPoint) in the project root
+2. Write a Node.js script using that library with the write_file tool
+3. Use the run_command tool to execute the script with node
+4. Clean up the script file when done
+
 ## Web access
 
 You can search the web and fetch web pages. Use these tools when you need current information, documentation from the web, or to verify facts.

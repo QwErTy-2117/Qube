@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { BookOpenTextIcon } from "lucide-react";
 
 export const ReadSessionToolUI: ToolCallMessagePartComponent = ({
   result,
@@ -24,10 +23,6 @@ export const ReadSessionToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
-        <BookOpenTextIcon className="size-4" />
-        <span>{session?.id?.startsWith("session_") ? "Session Summary" : "Session"}</span>
-      </div>
       {session ? (
         <div className="flex flex-col gap-2">
           {session.title && (

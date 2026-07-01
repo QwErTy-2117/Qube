@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { Trash2Icon } from "lucide-react";
 
 export const DeleteFileToolUI: ToolCallMessagePartComponent = ({
   args,
@@ -18,10 +17,6 @@ export const DeleteFileToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-red-50/50 px-3 py-2 text-sm dark:bg-red-950/20">
-      <div className="mb-2 flex items-center gap-2 font-medium text-red-600 dark:text-red-400">
-        <Trash2Icon className="size-4" />
-        <span>Delete File</span>
-      </div>
       {displayPath && (
         <div className="mb-2 font-mono text-xs text-red-600/80 dark:text-red-400/80">
           {displayPath}

@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { TerminalIcon } from "lucide-react";
 
 export const RunCommandToolUI: ToolCallMessagePartComponent = ({
   args,
@@ -28,10 +27,6 @@ export const RunCommandToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
-        <TerminalIcon className="size-4" />
-        <span>Run Command</span>
-      </div>
       <div className="mb-2 overflow-auto rounded-md bg-gray-950 p-3 dark:bg-black">
         <pre className="font-mono text-xs text-green-400">$ {cmd}</pre>
         {cwd && (

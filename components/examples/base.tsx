@@ -9,6 +9,7 @@ import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import { Sources } from "@/components/assistant-ui/sources";
 import {
   ToolGroupContent,
   ToolGroupRoot,
@@ -505,7 +506,7 @@ const Composer: FC = () => {
               <LexicalComposerInput
                 directiveChip={DirectiveChip}
                 placeholder="Send a message... (@ to mention, / for commands)"
-                className="aui-composer-input [&_.aui-lexical-placeholder]:text-muted-foreground/80 relative max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-blue-100 [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:text-blue-700 dark:[&_.aui-directive-chip]:bg-blue-900/50 dark:[&_.aui-directive-chip]:text-blue-300 [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none [&_.aui-lexical-placeholder]:pointer-events-none [&_.aui-lexical-placeholder]:absolute [&_.aui-lexical-placeholder]:top-0 [&_.aui-lexical-placeholder]:right-0 [&_.aui-lexical-placeholder]:left-0 [&_.aui-lexical-placeholder]:truncate [&_.aui-lexical-placeholder]:px-2.5 [&_.aui-lexical-placeholder]:py-1"
+                className="aui-composer-input [&_.aui-lexical-placeholder]:text-muted-foreground/50 relative max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-muted [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:text-foreground [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none [&_.aui-lexical-placeholder]:pointer-events-none [&_.aui-lexical-placeholder]:absolute [&_.aui-lexical-placeholder]:top-0 [&_.aui-lexical-placeholder]:right-0 [&_.aui-lexical-placeholder]:left-0 [&_.aui-lexical-placeholder]:truncate [&_.aui-lexical-placeholder]:px-2.5 [&_.aui-lexical-placeholder]:py-1"
               />
               <ComposerAction />
             </div>
@@ -640,7 +641,7 @@ function ToolGroupWithTitle({
     .map((p) => p.toolName);
   const title = inferGroupTitle(toolNames);
   return (
-    <ToolGroupRoot variant="outline" groupTitle={title}>
+    <ToolGroupRoot variant="muted" groupTitle={title}>
       <ToolGroupTrigger
         count={indices.length}
         active={active}
@@ -742,17 +743,19 @@ const AssistantMessage: FC = () => {
                 return <Reasoning {...part} />;
               case "tool-call":
                 return (
-                  <ToolGroupRoot variant="ghost" defaultOpen={false}>
+                  <ToolGroupRoot variant="muted" defaultOpen={false}>
                     <ToolGroupTrigger
                       count={1}
                       active={part.status.type === "running"}
                       label={TOOL_GROUP_TITLES[part.toolName] || part.toolName}
                     />
-                    <ToolGroupContent>
+                    <ToolGroupContent title={TOOL_GROUP_TITLES[part.toolName] || part.toolName}>
                       {part.toolUI ?? <ToolFallback {...part} />}
                     </ToolGroupContent>
                   </ToolGroupRoot>
                 );
+              case "source":
+                return <Sources {...(part as any)} />;
               case "indicator":
                 return <AssistantWorkingIndicator />;
               case "data":
@@ -882,7 +885,7 @@ const EditComposer: FC = () => {
           <LexicalComposerInput
             directiveChip={DirectiveChip}
             autoFocus
-            className="aui-edit-composer-input text-foreground min-h-14 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-base outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-blue-100 [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:text-blue-700 dark:[&_.aui-directive-chip]:bg-blue-900/50 dark:[&_.aui-directive-chip]:text-blue-300 [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none"
+            className="aui-edit-composer-input text-foreground min-h-14 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-base outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-muted [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:text-foreground [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none"
           />
           <div className="aui-edit-composer-footer mx-2.5 mb-2.5 flex items-center gap-1.5 self-end">
             <ComposerPrimitive.Cancel asChild>

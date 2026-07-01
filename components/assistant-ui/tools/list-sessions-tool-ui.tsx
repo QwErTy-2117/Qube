@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { HistoryIcon } from "lucide-react";
 
 export const ListSessionsToolUI: ToolCallMessagePartComponent = ({
   result,
@@ -21,10 +20,6 @@ export const ListSessionsToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
-        <HistoryIcon className="size-4" />
-        <span>Session History</span>
-      </div>
       {data.sessions && data.sessions.length > 0 ? (
         <div className="flex flex-col gap-1.5">
           {data.sessions.map((s, i) => (

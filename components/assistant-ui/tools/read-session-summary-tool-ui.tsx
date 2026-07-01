@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { ScrollTextIcon } from "lucide-react";
 
 export const ReadSessionSummaryToolUI: ToolCallMessagePartComponent = ({
   result,
@@ -16,10 +15,6 @@ export const ReadSessionSummaryToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
-        <ScrollTextIcon className="size-4" />
-        <span>Session Summary</span>
-      </div>
       {session && !("error" in (session as any)) ? (
         <div className="flex flex-col gap-2">
           {session.title && (

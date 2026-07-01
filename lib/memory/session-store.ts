@@ -28,6 +28,33 @@ function sessionPath(id: string): string {
   return join(SESSIONS_DIR, `${id}.json`);
 }
 
+export async function appendSessionTranscript(
+  id: string,
+  title: string,
+  transcript: string,
+): Promise<void> {
+  ensureDir();
+  const existing = await readSession(id).catch(() => null);
+  const prevTranscript = existing?.transcript || "";
+  const fullTranscript = prevTranscript
+    ? prevTranscript + "\n" + transcript
+    : transcript;
+  const record: SessionRecord & { transcript?: string } = {
+    id,
+    title: existing?.title || title,
+    summary: existing?.summary || "",
+    createdAt: existing?.createdAt || Date.now(),
+    updatedAt: Date.now(),
+    hasTranscript: true,
+  };
+  if (fullTranscript.length > MAX_TRANSCRIPT_SIZE) {
+    record.transcript = fullTranscript.slice(0, MAX_TRANSCRIPT_SIZE) + "\n... [truncated]";
+  } else {
+    record.transcript = fullTranscript;
+  }
+  await writeFile(sessionPath(id), JSON.stringify(record, null, 2), "utf-8");
+}
+
 export async function saveSession(
   id: string,
   title: string,
@@ -36,11 +63,12 @@ export async function saveSession(
   storeTranscript = false,
 ): Promise<void> {
   ensureDir();
+  const existing = await readSession(id).catch(() => null);
   const record: SessionRecord & { transcript?: string } = {
     id,
     title,
     summary,
-    createdAt: Date.now(),
+    createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now(),
     hasTranscript: !!transcript && storeTranscript,
   };

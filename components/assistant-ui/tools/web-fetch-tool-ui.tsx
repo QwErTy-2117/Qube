@@ -1,7 +1,6 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { GlobeIcon } from "lucide-react";
 
 export const WebFetchToolUI: ToolCallMessagePartComponent = ({
   args,
@@ -18,10 +17,6 @@ export const WebFetchToolUI: ToolCallMessagePartComponent = ({
 
   return (
     <div className="bg-muted/30 px-3 py-2 text-sm">
-      <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
-        <GlobeIcon className="size-4" />
-        <span>Fetch URL</span>
-      </div>
       {displayUrl && (
         <div className="mb-2 flex items-center gap-2">
           <span className="text-xs text-muted-foreground">URL:</span>

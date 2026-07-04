@@ -1,31 +1,58 @@
 import { streamText, tool, stepCountIs } from "ai";
 import { z } from "zod";
-import { mistral } from "@ai-sdk/mistral";
+import { cerebras, resolveCerebrasModel, toCerebrasModelId } from "./cerebras";
 import { buildSystemPrompt } from "./system-prompt";
 import { readFile, writeFile, unlink, readdir, stat } from "node:fs/promises";
-import { extname } from "node:path";
+import { extname, join } from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { withPermissionCheck } from "@/lib/middleware/permission-middleware";
-import { getWorkspacePath, resolvePathInWorkspace } from "@/lib/middleware/workspace";
+import { getWorkspacePath, resolvePathInWorkspace, relativePathInWorkspace } from "@/lib/middleware/workspace";
 import { createPendingQuestion } from "./tools/ask-user-tool";
 import { generateMemoryContext } from "./memory-agent";
 import { listSessions, readSessionSummary, readSession } from "@/lib/memory/session-store";
 import { getMemoryEntries } from "@/lib/memory/memory-store";
 
 const execAsync = promisify(exec);
-const MODEL = process.env.LLM_MODEL || "mistral-large-latest";
+
+const DOWNLOADABLE_EXTS = new Set(['.pptx', '.docx', '.xlsx', '.pdf', '.csv', '.zip', '.png', '.jpg', '.jpeg', '.gif', '.svg']);
+
+async function scanGeneratedFiles() {
+  const ws = getWorkspacePath();
+  const files = await readdir(ws);
+  const generated: Array<{ name: string; relativePath: string; size: number }> = [];
+  const now = Date.now();
+  for (const file of files) {
+    const ext = extname(file).toLowerCase();
+    if (!DOWNLOADABLE_EXTS.has(ext)) continue;
+    try {
+      const full = join(ws, file);
+      const s = await stat(full);
+      const birth = s.birthtime?.getTime() || s.ctime.getTime();
+      if (now - birth < 120_000) {
+        generated.push({ name: file, relativePath: relativePathInWorkspace(full), size: s.size });
+      }
+    } catch {}
+  }
+  return generated;
+}
 
 export type AgentConfig = {
   systemPrompt?: string;
   messages: Array<Record<string, unknown>>;
   threadId?: string;
+  modelName?: string;
+  customSystemPrompt?: string;
+  temperature?: number;
 };
 
 export async function createAgent(config: AgentConfig) {
   const threadId = config.threadId || `thread_${Date.now()}`;
   const memoryContext = await generateMemoryContext();
-  const systemPrompt = config.systemPrompt || buildSystemPrompt(memoryContext);
+  const basePrompt = buildSystemPrompt(memoryContext);
+  const systemPrompt = config.systemPrompt || (config.customSystemPrompt 
+    ? `${basePrompt}\n\n## Custom System Instructions\n\n${config.customSystemPrompt}`
+    : basePrompt);
 
   const ep = (name: string, fn: (...args: any[]) => Promise<string>) => {
     return async (...args: any[]) => {
@@ -34,38 +61,47 @@ export async function createAgent(config: AgentConfig) {
     };
   };
 
+  const resolvedModel = resolveCerebrasModel(config.modelName);
+
   const result = streamText({
-    model: mistral(MODEL),
+    model: cerebras.chat(toCerebrasModelId(resolvedModel)),
     system: systemPrompt,
     messages: config.messages as any,
     stopWhen: stepCountIs(15),
+    timeout: 30_000,
+    temperature: config.temperature !== undefined ? config.temperature : 0.7,
 
     tools: ({
       read_file: tool({
         description: "Reads and returns the contents of a file at the specified path.",
-        inputSchema: z.object({ path: z.string() }),
+        inputSchema: z.object({ label: z.string().optional(), path: z.string() }),
         execute: ep("read_file", async ({ path }: { path: string }) => {
           const resolved = resolvePathInWorkspace(path);
           const content = await readFile(resolved, "utf-8");
           const lines = content.split("\n");
           const s = await stat(resolved);
-          return JSON.stringify({ path: resolved, size: s.size, lineCount: lines.length, extension: extname(resolved), content });
+          return JSON.stringify({ path: resolved, relativePath: relativePathInWorkspace(resolved), size: s.size, lineCount: lines.length, extension: extname(resolved), content });
         }),
       }),
 
       write_file: tool({
-        description: "Creates or overwrites a file with the specified content.",
-        inputSchema: z.object({ path: z.string(), content: z.string() }),
+        description: "USE THIS TOOL TO WRITE FILES. Creates or overwrites a file with the specified content. This is the ONLY way to write files — do NOT use run_command to write files.",
+        inputSchema: z.object({ label: z.string().optional(), path: z.string(), content: z.string() }),
         execute: ep("write_file", async ({ path, content }: { path: string; content: string }) => {
           const resolved = resolvePathInWorkspace(path);
           await writeFile(resolved, content, "utf-8");
-          return JSON.stringify({ path: resolved, size: Buffer.byteLength(content, "utf-8"), status: "written" });
+          return JSON.stringify({
+            path: resolved,
+            relativePath: relativePathInWorkspace(resolved),
+            size: Buffer.byteLength(content, "utf-8"),
+            status: "written",
+          });
         }),
       }),
 
       edit_file: tool({
         description: "Finds text in a file and replaces it with new content.",
-        inputSchema: z.object({ path: z.string(), oldString: z.string(), newString: z.string() }),
+        inputSchema: z.object({ label: z.string().optional(), path: z.string(), oldString: z.string(), newString: z.string() }),
         execute: ep("edit_file", async ({ path, oldString, newString }: { path: string; oldString: string; newString: string }) => {
           const resolved = resolvePathInWorkspace(path);
           const content = await readFile(resolved, "utf-8");
@@ -74,13 +110,13 @@ export async function createAgent(config: AgentConfig) {
           const li = content.lastIndexOf(oldString);
           if (fi !== li) return JSON.stringify({ error: "Multiple matches found.", status: "failed" });
           await writeFile(resolved, content.replace(oldString, newString), "utf-8");
-          return JSON.stringify({ path: resolved, status: "edited" });
+          return JSON.stringify({ path: resolved, relativePath: relativePathInWorkspace(resolved), status: "edited" });
         }),
       }),
 
       delete_file: tool({
         description: "Permanently deletes a file.",
-        inputSchema: z.object({ path: z.string() }),
+        inputSchema: z.object({ label: z.string().optional(), path: z.string() }),
         execute: ep("delete_file", async ({ path }: { path: string }) => {
           const resolved = resolvePathInWorkspace(path);
           await unlink(resolved);
@@ -90,7 +126,7 @@ export async function createAgent(config: AgentConfig) {
 
       list_directory: tool({
         description: "Lists files and directories at a path.",
-        inputSchema: z.object({ path: z.string() }),
+        inputSchema: z.object({ label: z.string().optional(), path: z.string() }),
         execute: ep("list_directory", async ({ path }: { path: string }) => {
           const resolved = resolvePathInWorkspace(path);
           const entries = await readdir(resolved, { withFileTypes: true });
@@ -105,21 +141,23 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       run_command: tool({
-        description: "Executes a shell command and returns its output.",
-        inputSchema: z.object({ command: z.string() }),
+        description: "Executes a shell command and returns its output. ONLY use this to run scripts/commands — do NOT use this to write files (use write_file for that).",
+        inputSchema: z.object({ label: z.string().optional(), command: z.string() }),
         execute: ep("run_command", async ({ command }: { command: string }) => {
           try {
             const { stdout, stderr } = await execAsync(command, { cwd: getWorkspacePath(), timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
-            return JSON.stringify({ exitCode: 0, stdout, stderr, command });
+            const generatedFiles = await scanGeneratedFiles();
+            return JSON.stringify({ exitCode: 0, stdout, stderr, command, generatedFiles });
           } catch (error: any) {
-            return JSON.stringify({ exitCode: error.code ?? 1, stdout: error.stdout ?? "", stderr: error.stderr ?? error.message ?? "Unknown", command });
+            const generatedFiles = await scanGeneratedFiles();
+            return JSON.stringify({ exitCode: error.code ?? 1, stdout: error.stdout ?? "", stderr: error.stderr ?? error.message ?? "Unknown", command, generatedFiles });
           }
         }),
       }),
 
       web_search: tool({
         description: "Searches the web.",
-        inputSchema: z.object({ query: z.string() }),
+        inputSchema: z.object({ label: z.string().optional(), query: z.string() }),
         execute: ep("web_search", async ({ query }: { query: string }) => {
           const body = new URLSearchParams({ q: query });
           const response = await fetch("https://html.duckduckgo.com/html/", {
@@ -144,7 +182,7 @@ export async function createAgent(config: AgentConfig) {
 
       web_fetch: tool({
         description: "Fetches a URL and returns its text content.",
-        inputSchema: z.object({ url: z.string().url() }),
+        inputSchema: z.object({ label: z.string().optional(), url: z.string().url() }),
         execute: ep("web_fetch", async ({ url }: { url: string }) => {
           const response = await fetch(url, { headers: { "User-Agent": "Qube/1.0" }, signal: AbortSignal.timeout(30_000) });
           const text = await response.text();
@@ -156,13 +194,13 @@ export async function createAgent(config: AgentConfig) {
 
       list_sessions: tool({
         description: "Lists past sessions with titles and dates.",
-        inputSchema: z.object({}),
+        inputSchema: z.object({ label: z.string().optional() }),
         execute: async () => JSON.stringify({ sessions: await listSessions() }),
       }),
 
       read_session_summary: tool({
         description: "Reads the summary of a past session.",
-        inputSchema: z.object({ sessionId: z.string() }),
+        inputSchema: z.object({ label: z.string().optional(), sessionId: z.string() }),
         execute: async ({ sessionId }: { sessionId: string }) => {
           const s = await readSessionSummary(sessionId);
           return JSON.stringify({ session: s || { error: "Not found." } });
@@ -171,7 +209,7 @@ export async function createAgent(config: AgentConfig) {
 
       read_session: tool({
         description: "Reads the full transcript of a past session.",
-        inputSchema: z.object({ sessionId: z.string() }),
+        inputSchema: z.object({ label: z.string().optional(), sessionId: z.string() }),
         execute: async ({ sessionId }: { sessionId: string }) => {
           const s = await readSession(sessionId);
           return JSON.stringify({ session: s || { error: "Not found." } });
@@ -180,16 +218,17 @@ export async function createAgent(config: AgentConfig) {
 
       read_memory: tool({
         description: "Reads persistent memory across sessions.",
-        inputSchema: z.object({}),
+        inputSchema: z.object({ label: z.string().optional() }),
         execute: async () => JSON.stringify({ entries: await getMemoryEntries() }),
       }),
 
       ask_user: tool({
-        description: "Asks the user a clarifying question. Use when you need more information.",
-        inputSchema: z.object({ question: z.string(), options: z.array(z.string()).optional() }),
-        execute: async ({ question, options }: { question: string; options?: string[] }) => {
+        description: "IMPORTANT: Asks the user a clarifying question. You MUST use this before creating presentations, documents, or any creative content. Also use it when you need more information about anything. When you provide options, the user can pick from them. Set multiple: true to let the user select multiple options.",
+        inputSchema: z.object({ label: z.string().optional(), question: z.string(), options: z.array(z.string()).optional(), multiple: z.boolean().optional() }),
+        execute: async ({ question, options, multiple }: { question: string; options?: string[]; multiple?: boolean }) => {
           const rid = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          return JSON.stringify({ question, answer: await createPendingQuestion(rid, question, options, threadId) });
+          const answer = await createPendingQuestion(rid, question, options, threadId, multiple);
+          return JSON.stringify({ question, options, multiple, answer });
         },
       }),
     }) as any,

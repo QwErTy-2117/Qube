@@ -8,6 +8,7 @@ node_modules/
 .memory/
 sandbox/
 playground/
+workspace/
 temp/
 generate_ppt.*
 *.xlsx

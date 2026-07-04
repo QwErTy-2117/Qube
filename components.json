@@ -18,6 +18,7 @@
     "hooks": "@/hooks"
   },
   "registries": {
-    "@magicui": "https://magicui.design/r/{name}"
+    "@magicui": "https://magicui.design/r/{name}",
+    "@fancy": "https://fancycomponents.dev/r/{name}.json"
   }
 }

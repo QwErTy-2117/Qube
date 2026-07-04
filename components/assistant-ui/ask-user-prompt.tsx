@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { HelpCircleIcon, SendHorizonalIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { HelpCircleIcon, ArrowUpIcon, CheckIcon } from "lucide-react";
 
 type PendingQuestion = {
   requestId: string;
   question: string;
   options?: string[];
+  multiple?: boolean;
   threadId: string;
 };
 
@@ -64,60 +64,89 @@ export function AskUserBar({
   onRespond: (answer: string) => void;
 }) {
   const [customAnswer, setCustomAnswer] = useState("");
+  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
+
+  const toggleOption = useCallback((opt: string) => {
+    if (question.multiple) {
+      setSelectedOptions((prev) => {
+        const next = new Set(prev);
+        if (next.has(opt)) next.delete(opt);
+        else next.add(opt);
+        return next;
+      });
+    } else {
+      setSelectedOptions(new Set([opt]));
+    }
+  }, [question.multiple]);
+
+  const sendAnswer = useCallback(() => {
+    const answer = question.options && question.options.length > 0
+      ? [...selectedOptions].join(", ")
+      : customAnswer.trim();
+    if (!answer) return;
+    onRespond(answer);
+  }, [question.options, selectedOptions, customAnswer, onRespond]);
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-muted/30 p-4">
+    <div className="px-4 py-3 text-sm">
       <div className="flex items-start gap-3">
-        <HelpCircleIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+        <HelpCircleIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm text-foreground">
-            {question.question}
-          </p>
+          <p className="text-foreground">{question.question}</p>
         </div>
       </div>
-      {question.options && question.options.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {question.options.map((option) => (
-            <Button
-              key={option}
-              variant="outline"
-              size="sm"
-              onClick={() => onRespond(option)}
-              className="h-8 gap-1.5 rounded-full"
-            >
-              {option}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
+
+      <div className="mt-3 flex flex-col gap-2">
+        {question.options && question.options.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {question.options.map((opt) => {
+              const isSelected = selectedOptions.has(opt);
+              return (
+                <button
+                  key={opt}
+                  onClick={() => toggleOption(opt)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                    isSelected
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-muted/30 text-foreground hover:bg-muted/50"
+                  }`}
+                >
+                  {question.multiple && (
+                    <span className={`flex size-4 items-center justify-center rounded-sm border ${
+                      isSelected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/30"
+                    }`}>
+                      {isSelected && <CheckIcon className="size-3" />}
+                    </span>
+                  )}
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {(!question.options || question.options.length === 0) && (
           <input
             type="text"
             value={customAnswer}
             onChange={(e) => setCustomAnswer(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && customAnswer.trim()) {
-                onRespond(customAnswer.trim());
-              }
+              if (e.key === "Enter" && customAnswer.trim()) sendAnswer();
             }}
             placeholder="Type your answer..."
-            className="bg-muted text-foreground placeholder:text-muted-foreground/60 flex-1 rounded-full border border-border px-4 py-1.5 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+            className="min-h-10 flex-1 rounded-xl border border-border/60 bg-muted/20 px-2.5 py-1 text-base text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-ring focus:ring-1 focus:ring-ring"
             autoFocus
           />
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => {
-              if (customAnswer.trim()) onRespond(customAnswer.trim());
-            }}
-            disabled={!customAnswer.trim()}
-            className="h-8 gap-1.5 rounded-full"
+        )}
+        <div className="flex justify-end">
+          <button
+            onClick={sendAnswer}
+            disabled={question.options && question.options.length > 0 ? selectedOptions.size === 0 : !customAnswer.trim()}
+            className="flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] hover:bg-primary/90 disabled:opacity-40"
           >
-            <SendHorizonalIcon className="size-3.5" />
-            Send
-          </Button>
+            <ArrowUpIcon className="size-4.5" />
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

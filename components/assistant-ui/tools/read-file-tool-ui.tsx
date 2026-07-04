@@ -2,6 +2,7 @@
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { SyntaxHighlighter } from "@/components/assistant-ui/shiki-highlighter";
+import { FileCard } from "./file-card";
 
 const EXTENSION_MAP: Record<string, string> = {
   ts: "typescript",
@@ -44,19 +45,30 @@ export const ReadFileToolUI: ToolCallMessagePartComponent = ({
   result,
 }) => {
   const filePath = (args as any)?.path || "";
-  let data: { path?: string; content?: string; lineCount?: number } = {};
+  let data: { path?: string; relativePath?: string; content?: string; lineCount?: number } = {};
   try {
     if (typeof result === "string") data = JSON.parse(result);
     else if (result) data = result as typeof data;
   } catch {}
 
   const displayPath = data.path || filePath;
+  const downloadUrl = data.relativePath ? `/api/files/${data.relativePath}` : null;
+
+  const ext = displayPath.split(".").pop()?.toLowerCase();
+  const isDownloadable = ["pptx", "docx", "xlsx", "pdf", "csv", "zip", "png", "jpg", "jpeg", "gif", "svg"].includes(ext || "");
+
+  const displayName = displayPath.split("/").pop() || displayPath;
 
   return (
-    <div className="bg-muted/30 px-3 py-2 text-sm">
-      {displayPath && (
+    <div className="px-3 py-1 text-sm">
+      {downloadUrl && isDownloadable && (
+        <div className="mb-2">
+          <FileCard filename={displayName} downloadUrl={downloadUrl} />
+        </div>
+      )}
+      {displayPath && !(downloadUrl && isDownloadable) && (
         <div className="mb-2 flex items-center gap-2">
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="font-mono text-sm text-muted-foreground">
             {displayPath}
           </span>
           {data.lineCount !== undefined && (

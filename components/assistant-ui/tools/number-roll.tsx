@@ -3,18 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 
 export function NumberRoll({ value }: { value: number }) {
-  const [displayed, setDisplayed] = useState(value);
+  const [displayed, setDisplayed] = useState(0);
   const frameRef = useRef<number | null>(null);
   const startRef = useRef<number>(0);
-  const fromRef = useRef(value);
+  const fromRef = useRef(0);
 
   useEffect(() => {
+    if (fromRef.current === value) return;
+
     fromRef.current = displayed;
     startRef.current = performance.now();
 
     const animate = (now: number) => {
       const elapsed = now - startRef.current;
-      const duration = 300;
+      const duration = 500;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
       const current = Math.round(

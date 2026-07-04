@@ -25,7 +25,7 @@ const toolGroupVariants = cva("aui-tool-group-root group/tool-group w-full", {
   variants: {
     variant: {
       outline: "rounded-lg border py-3 mb-3",
-      ghost: "mb-3",
+      ghost: "mb-0.5",
     },
   },
   defaultVariants: { variant: "ghost" },
@@ -104,14 +104,14 @@ function ToolGroupTrigger({
   label?: string;
 }) {
   const displayLabel =
-    customLabel || `${count} tool ${count === 1 ? "call" : "calls"}`;
+    customLabel || `tool ${count === 1 ? "call" : "calls"}`;
 
   return (
     <CollapsibleTrigger
       data-slot="tool-group-trigger"
       className={cn(
-        "aui-tool-group-trigger group/trigger flex origin-left items-center gap-1.5 text-sm transition-[color,scale] active:scale-[0.98]",
-        "text-muted-foreground hover:text-foreground py-1.5",
+        "aui-tool-group-trigger group/trigger flex origin-left items-center gap-1 text-base transition-[color,scale] active:scale-[0.98]",
+        "text-muted-foreground hover:text-foreground py-0.5",
         className,
       )}
       {...props}
@@ -120,7 +120,7 @@ function ToolGroupTrigger({
         data-slot="tool-group-trigger-label"
         className="inline-flex items-baseline gap-1.5 font-normal"
       >
-        <NumberRoll value={count} />
+        {count > 1 && <NumberRoll value={count} />}
         <span className={cn(active && "shimmer")}>{displayLabel}</span>
       </span>
       <ChevronDownIcon
@@ -159,7 +159,7 @@ function ToolGroupContent({
     >
       <div
         className={cn(
-          "flex flex-col gap-1 pb-3",
+          "flex flex-col gap-0.5 pb-1",
           "[&>*]:animate-in [&>*]:fade-in-0 [&>*]:blur-in-[2px] [&>*]:slide-in-from-top-1 [&>*]:duration-(--animation-duration) [&>*]:ease-[cubic-bezier(0.32,0.72,0,1)]",
           "[&>*]:motion-reduce:animate-none",
           "[&>*:nth-child(2)]:[animation-delay:40ms]",

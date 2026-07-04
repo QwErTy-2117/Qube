@@ -108,7 +108,7 @@ export function evaluateToolCall(
     args.cwd &&
     typeof args.cwd === "string"
   ) {
-    const resolvedCwd = resolve(args.cwd);
+    const resolvedCwd = resolve(workspacePath, args.cwd);
     const rel = relative(workspacePath, resolvedCwd);
     if (rel.startsWith("..")) {
       return {
@@ -119,7 +119,7 @@ export function evaluateToolCall(
   }
 
   if (pathArg && toolName !== "list_directory") {
-    const resolvedPath = resolve(pathArg);
+    const resolvedPath = resolve(workspacePath, pathArg);
     const rel = relative(workspacePath, resolvedPath);
     if (rel.startsWith("..")) {
       return {
@@ -134,7 +134,7 @@ export function evaluateToolCall(
     toolName === "edit_file" ||
     toolName === "delete_file"
   ) {
-    const resolvedPath = resolve(pathArg);
+    const resolvedPath = resolve(workspacePath, pathArg);
     const rel = relative(workspacePath, resolvedPath);
     if (rel.startsWith("..")) {
       return {

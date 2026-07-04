@@ -85,6 +85,15 @@ export async function getMemoryEntries(
   return store.entries;
 }
 
+export async function deleteMemoryEntry(id: string): Promise<boolean> {
+  const store = await readStore();
+  const initialLength = store.entries.length;
+  store.entries = store.entries.filter((e) => e.id !== id);
+  if (store.entries.length === initialLength) return false;
+  await writeStore(store);
+  return true;
+}
+
 export async function getRelevantContext(): Promise<string> {
   const store = await readStore();
   if (store.entries.length === 0) return "";
@@ -99,3 +108,4 @@ export async function getRelevantContext(): Promise<string> {
 export async function clearMemory(): Promise<void> {
   await writeStore(defaultStore());
 }
+

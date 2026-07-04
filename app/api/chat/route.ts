@@ -40,7 +40,10 @@ function extractText(m: Record<string, unknown>): string {
 
 export async function POST(req: Request) {
   try {
-    const { messages, threadId } = await req.json();
+    // assistant-ui sends { messages, threadId, config: { modelName, ... }, customSystemPrompt, temperature }
+    const body = await req.json();
+    const { messages, threadId, config, customSystemPrompt, temperature } = body;
+    const modelName = config?.modelName;
     const currentThreadId = threadId || `thread_${Date.now()}`;
 
     const lastThreadId = await getLastThreadId();
@@ -63,20 +66,16 @@ export async function POST(req: Request) {
         ? firstParts.map((p: any) => p.text || "").filter(Boolean).join(" ").slice(0, 80) || "Conversation"
         : "Conversation";
 
-    saveSession(
-      currentThreadId,
-      title,
-      "",
-      transcript,
-      true,
-    ).catch(() => {});
-
+    saveSession(currentThreadId, title, "", transcript, true).catch(() => {});
     await setLastThreadId(currentThreadId);
 
     const modelMessages = await convertToModelMessages(messages);
     const result = await createAgent({
       messages: modelMessages,
       threadId: currentThreadId,
+      modelName,
+      customSystemPrompt: customSystemPrompt || undefined,
+      temperature: temperature !== undefined ? Number(temperature) : undefined,
     });
 
     return result.toUIMessageStreamResponse({ sendSources: true });

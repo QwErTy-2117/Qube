@@ -1,9 +1,28 @@
-import { resolve, relative } from "node:path";
+import { resolve, relative, sep } from "node:path";
+import { existsSync } from "node:fs";
 
-const WORKSPACE_PATH = resolve(
-  process.env.WORKSPACE_PATH || process.cwd(),
-  "playground"
-);
+function resolveWorkspacePath(): string {
+  if (process.env.WORKSPACE_PATH) {
+    return resolve(process.env.WORKSPACE_PATH);
+  }
+
+  const cwd = process.cwd();
+  const dirName = process.env.WORKSPACE_DIR_NAME || "workspace";
+  const preferred = resolve(cwd, dirName);
+
+  if (existsSync(preferred)) {
+    return preferred;
+  }
+
+  const legacy = resolve(cwd, "playground");
+  if (existsSync(legacy)) {
+    return legacy;
+  }
+
+  return preferred;
+}
+
+const WORKSPACE_PATH = resolveWorkspacePath();
 
 export function getWorkspacePath(): string {
   return WORKSPACE_PATH;
@@ -22,6 +41,14 @@ export function resolvePathInWorkspace(targetPath: string): string {
     throw new Error(`Path ${targetPath} is outside the workspace`);
   }
   return resolved;
+}
+
+export function relativePathInWorkspace(absolutePath: string): string {
+  const rel = relative(WORKSPACE_PATH, resolve(absolutePath));
+  if (rel.startsWith("..")) {
+    throw new Error(`Path ${absolutePath} is outside the workspace`);
+  }
+  return rel.split(sep).join("/");
 }
 
 export const DESTRUCTIVE_PATTERNS = [

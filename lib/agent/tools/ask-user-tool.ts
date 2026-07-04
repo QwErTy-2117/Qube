@@ -3,6 +3,7 @@ const pendingQuestions = new Map<
   {
     question: string;
     options?: string[];
+    multiple?: boolean;
     resolve: (value: string) => void;
     threadId: string;
   }
@@ -12,6 +13,7 @@ export type PendingQuestion = {
   requestId: string;
   question: string;
   options?: string[];
+  multiple?: boolean;
   threadId: string;
 };
 
@@ -20,11 +22,13 @@ export function createPendingQuestion(
   question: string,
   options: string[] | undefined,
   threadId: string,
+  multiple?: boolean,
 ): Promise<string> {
   return new Promise<string>((resolve) => {
     pendingQuestions.set(requestId, {
       question,
       options,
+      multiple,
       resolve,
       threadId,
     });
@@ -47,6 +51,7 @@ export function getPendingQuestions(threadId?: string): PendingQuestion[] {
       requestId,
       question: entry.question,
       options: entry.options,
+      multiple: entry.multiple,
       threadId: entry.threadId,
     });
   }

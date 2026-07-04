@@ -41,9 +41,24 @@ function ToolUIRegistrar() {
   return null;
 }
 
+
 export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
   const runtime = useChatRuntime({
-    transport: new AssistantChatTransport({ api: "/api/chat" }),
+    transport: new AssistantChatTransport({
+      api: "/api/chat",
+      // body as a function: re-evaluated on every request so settings changes
+      // made in the Settings dialog are picked up immediately.
+      body: () => {
+        if (typeof window === "undefined") return {};
+        const customSystemPrompt = localStorage.getItem("qube-custom-system-prompt") || undefined;
+        const temperatureRaw = localStorage.getItem("qube-temperature");
+        const temperature = temperatureRaw ? parseFloat(temperatureRaw) : undefined;
+        return {
+          ...(customSystemPrompt ? { customSystemPrompt } : {}),
+          ...(temperature !== undefined && !isNaN(temperature) ? { temperature } : {}),
+        };
+      },
+    }),
   });
 
   return (

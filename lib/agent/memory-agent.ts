@@ -1,12 +1,12 @@
 import { generateText } from "ai";
-import { mistral } from "@ai-sdk/mistral";
+import { cerebras, resolveCerebrasModel } from "./cerebras";
 import {
   addMemoryEntry,
   getMemoryEntries,
   getRelevantContext,
 } from "@/lib/memory/memory-store";
 
-const MEMORY_MODEL = process.env.MEMORY_MODEL || "mistral-small-latest";
+const MEMORY_MODEL = process.env.MEMORY_MODEL || "zai-glm-4.7";
 
 export async function extractAndStoreMemories(
   transcript: string,
@@ -33,7 +33,7 @@ ${transcript.slice(0, 10000)}`;
 
   try {
     const result = await generateText({
-      model: mistral(MEMORY_MODEL),
+      model: cerebras.chat(resolveCerebrasModel(MEMORY_MODEL)),
       prompt,
       temperature: 0.3,
     });
@@ -66,7 +66,7 @@ Write a single paragraph, no more than 3-4 sentences. Do not mention file paths,
 
   try {
     const result = await generateText({
-      model: mistral(MEMORY_MODEL),
+      model: cerebras.chat(resolveCerebrasModel(MEMORY_MODEL)),
       prompt,
       temperature: 0.4,
     });

@@ -77,6 +77,7 @@ import {
   PencilLineIcon,
   PlusIcon,
   RefreshCwIcon,
+  Settings as SettingsIcon,
   SlashIcon,
   SquareIcon,
   WrenchIcon,
@@ -85,12 +86,15 @@ import {
   LexicalComposerInput,
   type DirectiveChipProps,
 } from "@assistant-ui/react-lexical";
+import { motion, AnimatePresence } from "motion/react";
+import TextRotate from "@/components/fancy/text/text-rotate";
 import Image from "next/image";
-import { useState, type FC, type ReactNode } from "react";
+import { useState, useEffect, type FC, type ReactNode } from "react";
 import { ModelSelector } from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { docsModelOptions } from "@/components/docs/assistant/docs-model-options";
 import { DEFAULT_MODEL_ID } from "@/constants/model";
+import { SettingsDialog } from "@/components/shared/settings-dialog";
 
 const Sidebar: FC = () => {
   return (
@@ -113,11 +117,24 @@ const Sidebar: FC = () => {
           <PlusIcon className="size-4" />
         </TooltipIconButton>
       </ThreadListPrimitive.New>
-      <div className="mt-auto mb-3 flex justify-center">
+      <div className="mt-auto mb-2 flex flex-col items-center gap-1">
         <AnimatedThemeToggler
           variant="circle"
-          className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:size-4"
+          className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:size-4"
         />
+        <SettingsDialog>
+          <div>
+            <TooltipIconButton
+              tooltip="Settings"
+              side="right"
+              variant="ghost"
+              size="icon"
+              className="size-8 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              <SettingsIcon className="size-4" />
+            </TooltipIconButton>
+          </div>
+        </SettingsDialog>
       </div>
     </aside>
   );
@@ -127,11 +144,23 @@ const models = docsModelOptions();
 
 const ModelPicker: FC = () => {
   const hasMessages = useAuiState((s) => s.thread.messages.length > 0);
+  const [model, setModel] = useState(DEFAULT_MODEL_ID);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("qube-default-model") || DEFAULT_MODEL_ID;
+    setModel(saved);
+  }, []);
+
+  const handleValueChange = (val: string) => {
+    setModel(val);
+    localStorage.setItem("qube-default-model", val);
+  };
 
   return (
     <ModelSelector
       models={models}
-      defaultValue={DEFAULT_MODEL_ID}
+      value={model}
+      onValueChange={handleValueChange}
       variant="ghost"
       className="h-7 rounded-full text-sm"
       arrowInverted={hasMessages}
@@ -462,17 +491,51 @@ const PermissionBlocker: FC<{
   }
 
   if (askUserPending) {
-    return (
-      <div data-slot="aui-ask-user-blocker" className="mb-2 w-full">
-        <AskUserBar question={askUserPending} onRespond={onRespondAskUser} />
-      </div>
-    );
+    return null;
   }
 
   return null;
 };
 
+const PLACEHOLDERS = [
+  "Ask me anything...",
+  "What would you like to do?",
+  "Type a message...",
+  "How can I help?",
+  "Got a question?",
+  "What's on your mind?",
+];
+
 const Composer: FC = () => {
+  const [showAnimated, setShowAnimated] = useState(true);
+
+  useEffect(() => {
+    const shell = document.querySelector(
+      "[data-slot='aui_composer-shell']"
+    ) as HTMLElement;
+    if (!shell) return;
+
+    const check = () => {
+      const lp = shell.querySelector<HTMLElement>(".aui-lexical-placeholder");
+      setShowAnimated(
+        !!lp &&
+          lp.style.display !== "none" &&
+          window.getComputedStyle(lp).display !== "none"
+      );
+    };
+
+    const observer = new MutationObserver(check);
+    observer.observe(shell, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style", "class"],
+    });
+    check();
+
+    return () => observer.disconnect();
+  }, []);
+
   const mention = unstable_useMentionAdapter({ fallbackIcon: WrenchIcon });
   const slash = unstable_useSlashCommandAdapter({
     commands: slashCommands,
@@ -484,7 +547,6 @@ const Composer: FC = () => {
     usePermissionPoller();
   const { pending: askUserPending, respond: respondAskUser } =
     useAskUserPoller();
-  const blocked = permissionPending || askUserPending;
 
   return (
     <ComposerPrimitive.Unstable_TriggerPopoverRoot>
@@ -495,23 +557,70 @@ const Composer: FC = () => {
           onRespondPermission={respondPermission}
           onRespondAskUser={respondAskUser}
         />
-        {!blocked && (
-          <ComposerPrimitive.AttachmentDropzone asChild>
-            <div
-              data-slot="aui_composer-shell"
-              className="border-border/60 data-[dragging=true]:border-ring focus-within:border-border dark:border-muted-foreground/15 dark:focus-within:border-muted-foreground/30 flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))] dark:shadow-none"
-            >
-              <ComposerQuotePreview />
-              <ComposerAttachments />
-              <LexicalComposerInput
-                directiveChip={DirectiveChip}
-                placeholder="Send a message... (@ to mention, / for commands)"
-                className="aui-composer-input [&_.aui-lexical-placeholder]:text-muted-foreground/50 relative max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-muted [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:text-foreground [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none [&_.aui-lexical-placeholder]:pointer-events-none [&_.aui-lexical-placeholder]:absolute [&_.aui-lexical-placeholder]:top-0 [&_.aui-lexical-placeholder]:right-0 [&_.aui-lexical-placeholder]:left-0 [&_.aui-lexical-placeholder]:truncate [&_.aui-lexical-placeholder]:px-2.5 [&_.aui-lexical-placeholder]:py-1"
-              />
-              <ComposerAction />
-            </div>
-          </ComposerPrimitive.AttachmentDropzone>
-        )}
+        <ComposerPrimitive.AttachmentDropzone asChild>
+          <div
+            data-slot="aui_composer-shell"
+            className="border-border/60 data-[dragging=true]:border-ring focus-within:border-border dark:border-muted-foreground/15 dark:focus-within:border-muted-foreground/30 flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))] dark:shadow-none"
+          >
+            <motion.div layout transition={{ duration: 0.15 }}>
+              <AnimatePresence mode="wait">
+                {askUserPending ? (
+                  <motion.div
+                    key="ask-user"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <AskUserBar question={askUserPending} onRespond={respondAskUser} />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="composer-input"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <ComposerQuotePreview />
+                    <ComposerAttachments />
+                    <div className="relative">
+                      <LexicalComposerInput
+                        directiveChip={DirectiveChip}
+                        placeholder={PLACEHOLDERS[0]}
+                        className="aui-composer-input [&_.aui-lexical-placeholder]:text-muted-foreground/50 [&_.aui-lexical-placeholder]:opacity-0 relative max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-muted [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:text-foreground [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none [&_.aui-lexical-placeholder]:pointer-events-none [&_.aui-lexical-placeholder]:absolute [&_.aui-lexical-placeholder]:top-0 [&_.aui-lexical-placeholder]:right-0 [&_.aui-lexical-placeholder]:left-0 [&_.aui-lexical-placeholder]:truncate [&_.aui-lexical-placeholder]:px-2.5 [&_.aui-lexical-placeholder]:py-1"
+                      />
+                      {showAnimated && (
+                        <div className="absolute inset-x-2.5 top-1 overflow-hidden pointer-events-none">
+                          <TextRotate
+                            texts={PLACEHOLDERS}
+                            mainClassName="flex text-base text-muted-foreground/50"
+                            rotationInterval={4000}
+                            staggerFrom="last"
+                            initial={{ y: "100%" }}
+                            animate={{ y: 0 }}
+                            exit={{ y: "-120%" }}
+                            staggerDuration={0.025}
+                            transition={{
+                              type: "spring",
+                              damping: 30,
+                              stiffness: 400,
+                            }}
+                            splitBy="characters"
+                            splitLevelClassName="overflow-hidden"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+            <motion.div layout transition={{ duration: 0.15 }}>
+              {!askUserPending && !permissionPending && <ComposerAction />}
+            </motion.div>
+          </div>
+        </ComposerPrimitive.AttachmentDropzone>
 
         <ComposerTriggerPopover char="@" {...mention} />
 
@@ -609,21 +718,25 @@ const MessageError: FC = () => {
 };
 
 const TOOL_GROUP_TITLES: Record<string, string> = {
-  read_file: "Looking through your files",
-  write_file: "Creating a file",
-  edit_file: "Making some changes",
-  delete_file: "Cleaning up",
-  list_directory: "Seeing what's inside",
-  run_command: "Running something",
-  web_search: "Looking things up",
-  web_fetch: "Checking a webpage",
+  read_file: "Sneaking a peek",
+  write_file: "Doodling something up",
+  edit_file: "Tweaking things",
+  delete_file: "Sending to the void",
+  list_directory: "Nosing around",
+  run_command: "Making magic happen",
+  web_search: "Going down a rabbit hole",
+  web_fetch: "Grabbing a page",
 
-  list_sessions: "Checking your history",
-  read_session_summary: "Looking at past conversations",
-  read_session: "Reading a past conversation",
-  read_memory: "Checking what I remember",
-  ask_user: "Asking you something",
+  list_sessions: "Checking the logbook",
+  read_session_summary: "Skimming the past",
+  read_session: "Reading the tea leaves",
+  read_memory: "Scratching the brain",
+  ask_user: "Poking the human",
 };
+
+function getToolLabel(part: ToolCallMessagePart): string {
+  return (part.args as any)?.label || TOOL_GROUP_TITLES[part.toolName] || part.toolName;
+}
 
 function ToolGroupWithTitle({
   indices,
@@ -635,11 +748,11 @@ function ToolGroupWithTitle({
   children: ReactNode;
 }) {
   const message = useAuiState((s) => s.message);
-  const toolNames = indices
+  const parts = indices
     .map((i) => message.content[i])
-    .filter((p): p is ToolCallMessagePart => p?.type === "tool-call")
-    .map((p) => p.toolName);
-  const title = inferGroupTitle(toolNames);
+    .filter((p): p is ToolCallMessagePart => p?.type === "tool-call");
+  const labels = parts.map(getToolLabel);
+  const title = inferGroupTitle(labels);
   return (
     <ToolGroupRoot variant="ghost">
       <ToolGroupTrigger
@@ -652,13 +765,12 @@ function ToolGroupWithTitle({
   );
 }
 
-function inferGroupTitle(toolNames: string[]): string {
-  const unique = [...new Set(toolNames)];
+function inferGroupTitle(labels: string[]): string {
+  const unique = [...new Set(labels)];
   if (unique.length === 1) {
-    return TOOL_GROUP_TITLES[unique[0]] || `Using ${unique[0]}`;
+    return unique[0];
   }
-  const categories = unique.map((n) => TOOL_GROUP_TITLES[n]).filter(Boolean);
-  if (categories.length <= 2) return categories.join(" & ");
+  if (unique.length <= 2) return unique.join(" & ");
   return "Performing operations";
 }
 
@@ -743,13 +855,13 @@ const AssistantMessage: FC = () => {
                 return <Reasoning {...part} />;
               case "tool-call":
                 return (
-                  <ToolGroupRoot variant="ghost" defaultOpen={false}>
+                  <ToolGroupRoot variant="ghost" defaultOpen={true}>
                     <ToolGroupTrigger
                       count={1}
                       active={part.status.type === "running"}
-                      label={TOOL_GROUP_TITLES[part.toolName] || part.toolName}
+                      label={getToolLabel(part)}
                     />
-                    <ToolGroupContent title={TOOL_GROUP_TITLES[part.toolName] || part.toolName}>
+                    <ToolGroupContent>
                       {part.toolUI ?? <ToolFallback {...part} />}
                     </ToolGroupContent>
                   </ToolGroupRoot>

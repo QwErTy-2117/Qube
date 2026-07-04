@@ -854,7 +854,7 @@ const AssistantMessage: FC = () => {
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
-                if (part.toolName === "write_file") {
+                if (part.toolName === "write_file" || part.toolName === "run_command") {
                   return part.toolUI ?? <ToolFallback {...part} />;
                 }
                 return (

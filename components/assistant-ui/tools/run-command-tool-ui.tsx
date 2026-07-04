@@ -37,6 +37,7 @@ export const RunCommandToolUI: ToolCallMessagePartComponent = ({
             <FileCard
               key={f.name}
               filename={f.name}
+              filePath={f.relativePath}
               downloadUrl={`/api/files/${f.relativePath}`}
             />
           ))}

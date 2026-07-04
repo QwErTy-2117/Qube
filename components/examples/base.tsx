@@ -759,7 +759,7 @@ function ToolGroupWithTitle({
     .map((i) => message.content[i])
     .filter((p): p is ToolCallMessagePart => p?.type === "tool-call");
   const labels = parts.map(getToolLabel);
-  const title = inferGroupTitle(labels);
+  const title = labels[labels.length - 1] || "Performing operations";
   return (
     <ToolGroupRoot variant="ghost">
       <ToolGroupTrigger
@@ -770,15 +770,6 @@ function ToolGroupWithTitle({
       <ToolGroupContent>{children}</ToolGroupContent>
     </ToolGroupRoot>
   );
-}
-
-function inferGroupTitle(labels: string[]): string {
-  const unique = [...new Set(labels)];
-  if (unique.length === 1) {
-    return unique[0];
-  }
-  if (unique.length <= 2) return unique.join(" & ");
-  return "Performing operations";
 }
 
 const AssistantWorkingIndicator: FC = () => {

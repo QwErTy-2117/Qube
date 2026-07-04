@@ -88,15 +88,15 @@ export function AskUserBar({
   }, [question.options, selectedOptions, customAnswer, onRespond]);
 
   return (
-    <div className="px-4 py-3 text-sm">
-      <div className="flex items-start gap-3">
+    <div className="text-sm">
+      <div className="flex items-start gap-3 px-2 pt-2">
         <HelpCircleIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
           <p className="text-foreground">{question.question}</p>
         </div>
       </div>
 
-      <div className="mt-3 flex flex-col gap-2">
+      <div className="mt-2 flex flex-col gap-2 px-2 pb-2">
         {question.options && question.options.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {question.options.map((opt) => {
@@ -125,38 +125,28 @@ export function AskUserBar({
           </div>
         )}
         {(!question.options || question.options.length === 0) && (
-          <div className="flex items-center gap-1.5">
-            <input
-              type="text"
-              value={customAnswer}
-              onChange={(e) => setCustomAnswer(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && customAnswer.trim()) sendAnswer();
-              }}
-              placeholder="Type your answer..."
-              className="min-h-10 flex-1 rounded-xl border border-border/60 bg-muted/20 px-2.5 py-1 text-base text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-ring focus:ring-1 focus:ring-ring"
-              autoFocus
-            />
-            <button
-              onClick={sendAnswer}
-              disabled={!customAnswer.trim()}
-              className="flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] hover:bg-primary/90 disabled:opacity-40"
-            >
-              <ArrowUpIcon className="size-4.5" />
-            </button>
-          </div>
+          <input
+            type="text"
+            value={customAnswer}
+            onChange={(e) => setCustomAnswer(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && customAnswer.trim()) sendAnswer();
+            }}
+            placeholder="Type your answer..."
+            className="min-h-10 w-full rounded-xl border border-border/60 bg-muted/20 px-2.5 py-1 text-base text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-ring focus:ring-1 focus:ring-ring"
+            autoFocus
+          />
         )}
-        {question.options && question.options.length > 0 && (
-          <div className="flex justify-end">
-            <button
-              onClick={sendAnswer}
-              disabled={selectedOptions.size === 0}
-              className="flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] hover:bg-primary/90 disabled:opacity-40"
-            >
-              <ArrowUpIcon className="size-4.5" />
-            </button>
-          </div>
-        )}
+      </div>
+
+      <div className="flex items-center justify-end gap-1.5 px-2 pb-2">
+        <button
+          onClick={sendAnswer}
+          disabled={question.options && question.options.length > 0 ? selectedOptions.size === 0 : !customAnswer.trim()}
+          className="flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] hover:bg-primary/90 disabled:opacity-40"
+        >
+          <ArrowUpIcon className="size-4.5" />
+        </button>
       </div>
     </div>
   );

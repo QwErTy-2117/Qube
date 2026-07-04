@@ -871,7 +871,7 @@ const AssistantMessage: FC = () => {
                       const filePath = path.trim();
                       const filename = filePath.split("/").pop() || filePath;
                       const downloadUrl = filePath.startsWith("/")
-                        ? `/api/files${filePath}`
+                        ? `/api/external-files${filePath}`
                         : `/api/files/${filePath}`;
                       return (
                         <div key={i} className="my-2">

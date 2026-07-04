@@ -1,5 +1,6 @@
 import { resolve, relative, sep } from "node:path";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 
 function resolveWorkspacePath(): string {
   if (process.env.WORKSPACE_PATH) {
@@ -49,6 +50,21 @@ export function relativePathInWorkspace(absolutePath: string): string {
     throw new Error(`Path ${absolutePath} is outside the workspace`);
   }
   return rel.split(sep).join("/");
+}
+
+const HOME_DIR = homedir();
+
+export function isPathAllowedExternal(targetPath: string): boolean {
+  const resolved = resolve(targetPath);
+  return resolved.startsWith(HOME_DIR) || resolved.startsWith("/tmp");
+}
+
+export function resolveExternalPath(targetPath: string): string {
+  const resolved = resolve(targetPath);
+  if (!isPathAllowedExternal(resolved)) {
+    throw new Error(`Path ${targetPath} is not in an allowed external directory`);
+  }
+  return resolved;
 }
 
 export const DESTRUCTIVE_PATTERNS = [

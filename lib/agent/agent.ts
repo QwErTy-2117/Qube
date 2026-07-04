@@ -7,7 +7,7 @@ import { extname, join } from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { withPermissionCheck } from "@/lib/middleware/permission-middleware";
-import { getWorkspacePath, resolvePathInWorkspace, relativePathInWorkspace } from "@/lib/middleware/workspace";
+import { getWorkspacePath, resolvePathInWorkspace, relativePathInWorkspace, resolveExternalPath } from "@/lib/middleware/workspace";
 import { createPendingQuestion } from "./tools/ask-user-tool";
 import { generateMemoryContext } from "./memory-agent";
 import { listSessions, readSessionSummary, readSession } from "@/lib/memory/session-store";
@@ -137,6 +137,34 @@ export async function createAgent(config: AgentConfig) {
             return { name: entry.name, type: entry.isDirectory() ? "directory" : "file", size: sz, path: fullPath };
           }));
           return JSON.stringify({ path: resolved, items, totalItems: items.length });
+        }),
+      }),
+
+      list_external_directory: tool({
+        description: "Lists files and directories at an absolute path outside the workspace (e.g., /home/user/Downloads, ~/Desktop). Use this when the user asks about files in their Downloads, Desktop, or other external folders. Restricted to the user's home directory and /tmp for safety.",
+        inputSchema: z.object({ label: z.string().optional(), path: z.string() }),
+        execute: ep("list_external_directory", async ({ path }: { path: string }) => {
+          const resolved = resolveExternalPath(path);
+          const entries = await readdir(resolved, { withFileTypes: true });
+          const items = await Promise.all(entries.map(async (entry) => {
+            const fullPath = `${resolved}/${entry.name}`;
+            let sz = 0;
+            if (entry.isFile()) try { sz = (await stat(fullPath)).size; } catch {}
+            return { name: entry.name, type: entry.isDirectory() ? "directory" : "file", size: sz, path: fullPath };
+          }));
+          return JSON.stringify({ path: resolved, items, totalItems: items.length });
+        }),
+      }),
+
+      read_external_file: tool({
+        description: "Reads the contents of a file at an absolute path outside the workspace. Use this when the user wants you to look at a specific file in their Downloads, Desktop, or other external folders.",
+        inputSchema: z.object({ label: z.string().optional(), path: z.string() }),
+        execute: ep("read_external_file", async ({ path }: { path: string }) => {
+          const resolved = resolveExternalPath(path);
+          const content = await readFile(resolved, "utf-8");
+          const lines = content.split("\n");
+          const s = await stat(resolved);
+          return JSON.stringify({ path: resolved, size: s.size, lineCount: lines.length, extension: extname(resolved), content });
         }),
       }),
 

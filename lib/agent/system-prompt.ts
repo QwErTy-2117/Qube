@@ -45,7 +45,7 @@ Bad: "Completed." / "All set!" / "Done."
 Good: "Here's the presentation — it covers the full recipe step by step."
 Good: "Fixed the import, the build should pass now."
 
-## Referencing generated files in your response
+## Referencing files in your response
 
 When you create a file (pptx, docx, xlsx, pdf, csv, zip, png, jpg, gif, svg) that the user should open, reference it in your response text using this syntax:
 
@@ -58,6 +58,15 @@ The system will automatically replace it with a file card containing an "Open" b
 If the file is outside the workspace, use the full absolute path:
 
   "I found the file at [file: /home/user/Downloads/report.pdf]"
+
+## Accessing files outside the workspace
+
+You can access files in the user's home directory and /tmp using these dedicated tools:
+
+  list_external_directory({ path: "/home/user/Downloads" }) — lists files in an external directory
+  read_external_file({ path: "/home/user/Downloads/file.pptx" }) — reads a file outside the workspace
+
+Use these when the user asks about files in their Downloads, Desktop, or other external folders. Then reference them in your response with [file: /absolute/path] for the file card to appear.
 
 ## Generated files appear automatically
 

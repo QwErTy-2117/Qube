@@ -1,4 +1,4 @@
-import { streamText, tool, stepCountIs, generateText } from "ai";
+import { streamText, tool, generateText } from "ai";
 import { z } from "zod";
 import { cerebras, resolveCerebrasModel, toCerebrasModelId } from "./cerebras";
 import { buildSystemPrompt } from "./system-prompt";
@@ -67,7 +67,19 @@ export async function createAgent(config: AgentConfig) {
     model: cerebras.chat(toCerebrasModelId(resolvedModel)),
     system: systemPrompt,
     messages: config.messages as any,
-    stopWhen: stepCountIs(15),
+    stopWhen: async ({ steps }: { steps: any[] }) => {
+      if (steps.length >= 15) return true;
+      if (steps.length === 0) return false;
+      const last = steps[steps.length - 1];
+      const verifyResult = last.toolResults?.find((tr: any) => tr.toolName === "verify_completion");
+      if (verifyResult) {
+        try {
+          const parsed = typeof verifyResult.result === "string" ? JSON.parse(verifyResult.result) : verifyResult.result;
+          if (parsed.done === true) return true;
+        } catch {}
+      }
+      return false;
+    },
     timeout: 60_000,
     temperature: config.temperature !== undefined ? config.temperature : 0.7,
 

@@ -870,8 +870,9 @@ const AssistantMessage: FC = () => {
                     {fileRefs.map(([_, path], i) => {
                       const filePath = path.trim();
                       const filename = filePath.split("/").pop() || filePath;
-                      const downloadUrl = filePath.startsWith("/")
-                        ? `/api/external-files${filePath}`
+                      const isExternal = filePath.startsWith("/") || filePath.startsWith("~");
+                  const downloadUrl = isExternal
+                        ? `/api/external-files/${filePath.replace(/^\//, "")}`
                         : `/api/files/${filePath}`;
                       return (
                         <div key={i} className="my-2">

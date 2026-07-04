@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { NextResponse } from "next/server";
-import { isPathAllowedExternal } from "@/lib/middleware/workspace";
+import { isPathAllowedExternal, expandHome } from "@/lib/middleware/workspace";
 
 const MIME_TYPES: Record<string, string> = {
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -31,7 +31,7 @@ export async function GET(
   try {
     const { path: pathSegments } = await params;
     const filePath = "/" + pathSegments.join("/");
-    const resolved = resolve(filePath);
+    const resolved = resolve(expandHome(filePath));
 
     if (!isPathAllowedExternal(resolved)) {
       return new NextResponse("Forbidden", { status: 403 });

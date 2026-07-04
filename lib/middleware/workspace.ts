@@ -54,15 +54,21 @@ export function relativePathInWorkspace(absolutePath: string): string {
 
 const HOME_DIR = homedir();
 
+export function expandHome(p: string): string {
+  if (p.startsWith("~/") || p === "~") return HOME_DIR + p.slice(1);
+  if (p.startsWith("/~/")) return HOME_DIR + p.slice(2);
+  return p;
+}
+
 export function isPathAllowedExternal(targetPath: string): boolean {
-  const resolved = resolve(targetPath);
+  const resolved = resolve(expandHome(targetPath));
   return resolved.startsWith(HOME_DIR) || resolved.startsWith("/tmp");
 }
 
 export function resolveExternalPath(targetPath: string): string {
-  const resolved = resolve(targetPath);
+  const resolved = resolve(expandHome(targetPath));
   if (!isPathAllowedExternal(resolved)) {
-    throw new Error(`Path ${targetPath} is not in an allowed external directory`);
+    throw new Error(`Path "${targetPath}" is not in an allowed external directory (must be under ${HOME_DIR} or /tmp)`);
   }
   return resolved;
 }

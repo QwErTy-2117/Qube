@@ -55,18 +55,18 @@ The system will automatically replace it with a file card containing an "Open" b
 
   "Here's the presentation [file: output/ApplePieRecipe.pptx]"
 
-If the file is outside the workspace, use the full absolute path:
+If the file is outside the workspace, use the full absolute path (you can use ~ for the home directory):
 
-  "I found the file at [file: /home/user/Downloads/report.pdf]"
+  "I found the file at [file: ~/Downloads/report.pdf]"
 
 ## Accessing files outside the workspace
 
 You can access files in the user's home directory and /tmp using these dedicated tools:
 
-  list_external_directory({ path: "/home/user/Downloads" }) — lists files in an external directory
-  read_external_file({ path: "/home/user/Downloads/file.pptx" }) — reads a file outside the workspace
+  list_external_directory({ path: "~/Downloads" }) — lists files in an external directory
+  read_external_file({ path: "~/Downloads/file.pptx" }) — reads a file outside the workspace
 
-Use these when the user asks about files in their Downloads, Desktop, or other external folders. Then reference them in your response with [file: /absolute/path] for the file card to appear.
+Use these when the user asks about files in their Downloads, Desktop, or other external folders. Then reference them in your response with [file: ~/path] for the file card to appear.
 
 ## Generated files appear automatically
 

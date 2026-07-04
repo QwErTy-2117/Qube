@@ -115,3 +115,5 @@ export function MarkdownText() {
     />
   );
 }
+
+export { MarkdownTextPrimitive, defaultComponents, remarkGfm };

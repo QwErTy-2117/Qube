@@ -5,7 +5,12 @@ import {
   ComposerAttachments,
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
-import { MarkdownText } from "@/components/assistant-ui/markdown-text";
+import {
+  MarkdownText,
+  MarkdownTextPrimitive,
+  defaultComponents,
+  remarkGfm,
+} from "@/components/assistant-ui/markdown-text";
 import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
@@ -29,6 +34,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
+import { FileCard } from "@/components/assistant-ui/tools/file-card";
 import {
   ComposerQuotePreview,
   QuoteBlock,
@@ -849,14 +855,40 @@ const AssistantMessage: FC = () => {
                   </ReasoningRoot>
                 );
               }
-              case "text":
-                return <MarkdownText />;
+              case "text": {
+                const rawText = (part as { text?: string }).text || "";
+                const fileRefs = [...rawText.matchAll(/\[file:\s*(.+?)\]/g)];
+                if (!fileRefs.length) return <MarkdownText />;
+
+                return (
+                  <>
+                    <MarkdownTextPrimitive
+                      remarkPlugins={[remarkGfm]}
+                      components={defaultComponents}
+                      preprocess={(t: string) => t.replace(/\[file:\s*.+?\]/g, "").trim()}
+                    />
+                    {fileRefs.map(([_, path], i) => {
+                      const filePath = path.trim();
+                      const filename = filePath.split("/").pop() || filePath;
+                      const downloadUrl = filePath.startsWith("/")
+                        ? `/api/files${filePath}`
+                        : `/api/files/${filePath}`;
+                      return (
+                        <div key={i} className="my-2">
+                          <FileCard
+                            filename={filename}
+                            filePath={filePath}
+                            downloadUrl={downloadUrl}
+                          />
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              }
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
-                if (part.toolName === "write_file" || part.toolName === "run_command") {
-                  return part.toolUI ?? <ToolFallback {...part} />;
-                }
                 return (
                   <ToolGroupRoot variant="ghost" defaultOpen={true}>
                     <ToolGroupTrigger

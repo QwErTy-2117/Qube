@@ -68,7 +68,7 @@ export async function createAgent(config: AgentConfig) {
     system: systemPrompt,
     messages: config.messages as any,
     stopWhen: stepCountIs(15),
-    timeout: 30_000,
+    timeout: 60_000,
     temperature: config.temperature !== undefined ? config.temperature : 0.7,
 
     tools: ({
@@ -224,10 +224,13 @@ export async function createAgent(config: AgentConfig) {
         inputSchema: z.object({ label: z.string().optional(), url: z.string().url() }),
         execute: ep("web_fetch", async ({ url }: { url: string }) => {
           const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }, signal: AbortSignal.timeout(30_000) });
-          const text = await response.text();
+          const raw = await response.text();
           const ct = response.headers.get("content-type") || "";
           const isText = ct.includes("text") || ct.includes("json") || ct.includes("xml") || ct.includes("html");
-          return JSON.stringify({ url, status: response.status, contentType: ct, content: isText ? text.slice(0, 100_000) : `[Binary: ${ct}]`, size: text.length });
+          const content = isText
+            ? raw.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 30_000)
+            : `[Binary: ${ct}]`;
+          return JSON.stringify({ url, status: response.status, contentType: ct, content, size: raw.length });
         }),
       }),
 

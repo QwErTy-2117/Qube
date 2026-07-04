@@ -16,24 +16,30 @@ export const WriteFileToolUI: ToolCallMessagePartComponent = ({
 
   const relativePath = data.relativePath;
   const downloadUrl = relativePath ? `/api/files/${relativePath}` : null;
+  const filePath = data.path || filename;
 
   const ext = filename.split(".").pop()?.toLowerCase();
   const isDownloadable = ["pptx", "docx", "xlsx", "pdf", "csv", "zip", "png", "jpg", "jpeg", "gif", "svg"].includes(ext || "");
 
-  const displayName = filename.split("/").pop() || filename;
+  const displayName = filePath.split("/").pop() || filePath;
 
   if (data.status === "written" && downloadUrl && isDownloadable) {
     return (
-      <div className="px-3 py-1">
-        <FileCard filename={displayName} downloadUrl={downloadUrl} />
+      <div className="px-1 py-0.5">
+        <FileCard filename={displayName} filePath={filePath} downloadUrl={downloadUrl} />
       </div>
     );
   }
 
-  return (
-    <div className="flex items-center gap-1.5 px-3 py-1 text-sm text-green-600 dark:text-green-400">
-      <span className="size-1.5 rounded-full bg-green-500" />
-      <span>All set!</span>
-    </div>
-  );
+  if (data.status === "written") {
+    return (
+      <div className="flex items-center gap-1.5 px-1 py-0.5 text-sm text-green-600 dark:text-green-400">
+        <span className="size-1.5 rounded-full bg-green-500" />
+        <span className="font-medium">{displayName}</span>
+        <span className="text-muted-foreground">written</span>
+      </div>
+    );
+  }
+
+  return null;
 };

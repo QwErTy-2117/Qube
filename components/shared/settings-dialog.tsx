@@ -12,7 +12,6 @@ import {
   HistoryIcon,
   SlidersIcon,
   Trash2Icon,
-  PlusIcon,
   CheckIcon,
   Loader2Icon,
   AlertCircleIcon,
@@ -98,9 +97,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   // Memory state
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
   const [loadingMemories, setLoadingMemories] = useState(false);
-  const [newMemoryCategory, setNewMemoryCategory] = useState("preference");
-  const [newMemoryContent, setNewMemoryContent] = useState("");
-  const [addingMemory, setAddingMemory] = useState(false);
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
 
   // Sessions state
@@ -133,22 +129,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     } catch { /* ignore */ }
     finally { setLoadingSessions(false); }
   }, []);
-
-  const handleAddMemory = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMemoryContent.trim()) return;
-    setAddingMemory(true);
-    try {
-      const res = await fetch("/api/settings/memory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category: newMemoryCategory, content: newMemoryContent }),
-      });
-      const data = await res.json();
-      if (data.entries) { setMemories(data.entries); setNewMemoryContent(""); }
-    } catch { /* ignore */ }
-    finally { setAddingMemory(false); }
-  };
 
   const handleDeleteMemory = async (id: string) => {
     setDeletingMemoryId(id);
@@ -333,39 +313,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   )}
                 </div>
 
-                {/* Add memory form */}
-                <form onSubmit={handleAddMemory} className="flex gap-2 shrink-0">
-                  <select
-                    value={newMemoryCategory}
-                    onChange={(e) => setNewMemoryCategory(e.target.value)}
-                    className="h-9 px-2.5 rounded-lg border border-border bg-background text-sm font-medium outline-none focus:ring-1 focus:ring-ring shrink-0 w-36"
-                  >
-                    <option value="preference">Preference</option>
-                    <option value="project">Project</option>
-                    <option value="personal">Personal</option>
-                    <option value="decision">Decision</option>
-                    <option value="technology">Technology</option>
-                    <option value="pattern">Pattern</option>
-                  </select>
-                  <input
-                    type="text"
-                    placeholder="Add a custom memory for Qube to remember…"
-                    value={newMemoryContent}
-                    onChange={(e) => setNewMemoryContent(e.target.value)}
-                    className="flex-1 h-9 px-3 rounded-lg border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
-                  />
-                  <Button
-                    type="submit"
-                    size="sm"
-                    className="h-9 px-4 font-medium shrink-0"
-                    disabled={addingMemory || !newMemoryContent.trim()}
-                  >
-                    {addingMemory
-                      ? <Loader2Icon className="size-3.5 animate-spin" />
-                      : <><PlusIcon className="size-3.5 mr-1" />Add</>
-                    }
-                  </Button>
-                </form>
+
               </div>
             )}
 

@@ -37,7 +37,8 @@ export function FileCard({
       <span className="truncate font-medium text-foreground">{filename}</span>
       <a
         href={downloadUrl}
-        download
+        target="_blank"
+        rel="noopener noreferrer"
         className="ml-auto inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
       >
         <svg className="size-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">

@@ -854,6 +854,9 @@ const AssistantMessage: FC = () => {
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
+                if (part.toolName === "write_file" || part.toolName === "edit_file") {
+                  return part.toolUI ?? <ToolFallback {...part} />;
+                }
                 return (
                   <ToolGroupRoot variant="ghost" defaultOpen={true}>
                     <ToolGroupTrigger

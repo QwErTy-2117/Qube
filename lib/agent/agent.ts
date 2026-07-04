@@ -192,27 +192,30 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       web_search: tool({
-        description: "Searches the web.",
+        description: "Searches the web using Bing.",
         inputSchema: z.object({ label: z.string().optional(), query: z.string() }),
         execute: ep("web_search", async ({ query }: { query: string }) => {
-          const body = new URLSearchParams({ q: query });
-          const response = await fetch("https://html.duckduckgo.com/html/", {
-            method: "POST",
-            body,
-            headers: { "User-Agent": "Mozilla/5.0 (compatible; Qube/1.0)" },
+          const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&form=QBLH&mkt=en-US`;
+          const response = await fetch(url, {
+            headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9" },
           });
           const html = await response.text();
           const results: Array<{ title: string; snippet: string; url: string }> = [];
-          const resultRegex = /<h2[^>]*class="result__title"[^>]*>.*?<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>.*?<a[^>]*class="result__snippet"[^>]*>(.*?)<\/a>/gs;
-          let match;
-          while ((match = resultRegex.exec(html)) !== null) {
-            results.push({
-              url: match[1].startsWith("//") ? "https:" + match[1] : match[1],
-              title: match[2].replace(/<[^>]*>/g, "").trim(),
-              snippet: match[3].replace(/<[^>]*>/g, "").trim(),
-            });
+          const blockRegex = /<li class="b_algo"[^>]*>([\s\S]*?)<\/li>/g;
+          let m;
+          while ((m = blockRegex.exec(html)) !== null) {
+            const block = m[1];
+            const titleMatch = block.match(/<h2[^>]*>.*?<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/);
+            const snippetMatch = block.match(/<div class="b_caption"[^>]*>.*?<p[^>]*>(.*?)<\/p>/);
+            if (titleMatch) {
+              results.push({
+                url: titleMatch[1],
+                title: titleMatch[2].replace(/<[^>]*>/g, "").trim(),
+                snippet: snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, "").trim() : "",
+              });
+            }
           }
-          return JSON.stringify({ query, results: results.slice(0, 4), totalResults: results.length });
+          return JSON.stringify({ query, results: results.slice(0, 6), totalResults: results.length });
         }),
       }),
 
@@ -220,7 +223,7 @@ export async function createAgent(config: AgentConfig) {
         description: "Fetches a URL and returns its text content.",
         inputSchema: z.object({ label: z.string().optional(), url: z.string().url() }),
         execute: ep("web_fetch", async ({ url }: { url: string }) => {
-          const response = await fetch(url, { headers: { "User-Agent": "Qube/1.0" }, signal: AbortSignal.timeout(30_000) });
+          const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }, signal: AbortSignal.timeout(30_000) });
           const text = await response.text();
           const ct = response.headers.get("content-type") || "";
           const isText = ct.includes("text") || ct.includes("json") || ct.includes("xml") || ct.includes("html");

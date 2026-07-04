@@ -125,27 +125,38 @@ export function AskUserBar({
           </div>
         )}
         {(!question.options || question.options.length === 0) && (
-          <input
-            type="text"
-            value={customAnswer}
-            onChange={(e) => setCustomAnswer(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && customAnswer.trim()) sendAnswer();
-            }}
-            placeholder="Type your answer..."
-            className="min-h-10 flex-1 rounded-xl border border-border/60 bg-muted/20 px-2.5 py-1 text-base text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-ring focus:ring-1 focus:ring-ring"
-            autoFocus
-          />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={customAnswer}
+              onChange={(e) => setCustomAnswer(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && customAnswer.trim()) sendAnswer();
+              }}
+              placeholder="Type your answer..."
+              className="min-h-10 flex-1 rounded-xl border border-border/60 bg-muted/20 px-2.5 py-1 text-base text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-ring focus:ring-1 focus:ring-ring"
+              autoFocus
+            />
+            <button
+              onClick={sendAnswer}
+              disabled={!customAnswer.trim()}
+              className="flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] hover:bg-primary/90 disabled:opacity-40"
+            >
+              <ArrowUpIcon className="size-4.5" />
+            </button>
+          </div>
         )}
-        <div className="flex justify-end">
-          <button
-            onClick={sendAnswer}
-            disabled={question.options && question.options.length > 0 ? selectedOptions.size === 0 : !customAnswer.trim()}
-            className="flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] hover:bg-primary/90 disabled:opacity-40"
-          >
-            <ArrowUpIcon className="size-4.5" />
-          </button>
-        </div>
+        {question.options && question.options.length > 0 && (
+          <div className="flex justify-end">
+            <button
+              onClick={sendAnswer}
+              disabled={selectedOptions.size === 0}
+              className="flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] hover:bg-primary/90 disabled:opacity-40"
+            >
+              <ArrowUpIcon className="size-4.5" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

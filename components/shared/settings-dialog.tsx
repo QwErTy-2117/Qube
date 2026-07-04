@@ -226,7 +226,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
       <DialogContent
         showCloseButton={true}
-        className="max-w-4xl w-full p-0 flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden"
+        className="sm:max-w-4xl max-w-4xl w-full p-0 flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden"
         style={{ height: "min(660px, 90vh)" }}
       >
         <div className="flex flex-1 overflow-hidden">

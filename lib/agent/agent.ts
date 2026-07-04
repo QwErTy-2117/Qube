@@ -1,4 +1,4 @@
-import { streamText, tool, stepCountIs } from "ai";
+import { streamText, tool, stepCountIs, generateText } from "ai";
 import { z } from "zod";
 import { cerebras, resolveCerebrasModel, toCerebrasModelId } from "./cerebras";
 import { buildSystemPrompt } from "./system-prompt";
@@ -256,6 +256,41 @@ export async function createAgent(config: AgentConfig) {
         description: "Reads persistent memory across sessions.",
         inputSchema: z.object({ label: z.string().optional() }),
         execute: async () => JSON.stringify({ entries: await getMemoryEntries() }),
+      }),
+
+      verify_completion: tool({
+        description: "CRITICAL: Call this before writing your final response. An external AI verifier checks if you've fully completed the user's request. If not done, it tells you what remains.",
+        inputSchema: z.object({
+          label: z.string().optional(),
+          request: z.string().describe("The user's original request"),
+          completedActions: z.array(z.string()).describe("What you've done so far"),
+        }),
+        execute: async ({ request, completedActions }: { request: string; completedActions: string[] }) => {
+          try {
+            const result = await generateText({
+              model: cerebras.chat(toCerebrasModelId(resolvedModel)),
+              system: `You are a task completion verifier. Determine if the assistant has fully satisfied this request: "${request}".
+
+The assistant has completed these actions:
+${completedActions.map(a => `- ${a}`).join("\n")}
+
+Reply with EXACTLY one of:
+- "COMPLETE" — the task is fully done, write the final response
+- "CONTINUE: <brief reason>" — more work is needed. Tell the assistant what remains.`,
+              messages: [],
+              temperature: 0,
+              maxOutputTokens: 80,
+            });
+
+            const response = result.text.trim();
+            if (response === "COMPLETE") {
+              return JSON.stringify({ done: true, message: "All requirements have been met. Write your final response." });
+            }
+            return JSON.stringify({ done: false, message: response });
+          } catch (e) {
+            return JSON.stringify({ done: true, message: "Verification unavailable. Proceed with your final response." });
+          }
+        },
       }),
 
       ask_user: tool({

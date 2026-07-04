@@ -737,6 +737,7 @@ const TOOL_GROUP_TITLES: Record<string, string> = {
   read_session_summary: "Skimming the past",
   read_session: "Reading the tea leaves",
   read_memory: "Scratching the brain",
+  verify_completion: "Double-checking my work",
   ask_user: "Poking the human",
 };
 

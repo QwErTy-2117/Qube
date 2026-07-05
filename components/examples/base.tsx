@@ -848,7 +848,11 @@ const AssistantMessage: FC = () => {
               }
               case "text": {
                 const rawText = (part as { text?: string }).text || "";
-                const fileRefs = [...rawText.matchAll(/\[file:\s*(.+?)\]/g)];
+                const extPattern = "(pptx?|docx?|xlsx?|pdf|csv|zip|png|jpe?g|gif|svg)";
+                const fileRefs = [
+                  ...rawText.matchAll(new RegExp(`\\[file:\\s*(.+?)\\]`, "gi")),
+                  ...rawText.matchAll(new RegExp(`\\[([^\\]]+\\.${extPattern})\\]`, "gi")),
+                ];
                 if (!fileRefs.length) return <MarkdownText />;
 
                 return (
@@ -856,10 +860,10 @@ const AssistantMessage: FC = () => {
                     <MarkdownTextPrimitive
                       remarkPlugins={[remarkGfm]}
                       components={defaultComponents}
-                      preprocess={(t: string) => t.replace(/\[file:\s*.+?\]/g, "").trim()}
+                      preprocess={(t: string) => t.replace(new RegExp(`\\[file:\\s*.+?\\]|\\[[^\\]]+\\.${extPattern}\\]`, "gi"), "").trim()}
                     />
-                    {fileRefs.map(([_, path], i) => {
-                      const filePath = path.trim();
+                    {fileRefs.map(([, path, fallbackExt], i) => {
+                      const filePath = (path || fallbackExt).trim();
                       const filename = filePath.split("/").pop() || filePath;
                       const isExternal = filePath.startsWith("/") || filePath.startsWith("~");
                   const downloadUrl = isExternal

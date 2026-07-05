@@ -176,9 +176,10 @@ export async function POST(req: Request) {
     const rawStream = createUIMessageStream({
       originalMessages: uiMessages,
       onError: (error) => {
+        const errMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
         const stack = error instanceof Error ? error.stack : new Error().stack;
-        console.error("[stream-error:S1] onError called with:", error instanceof Error ? `${error.name}: ${error.message}` : String(error), "\n  captured stack:", stack?.split("\n").slice(1, 4).join("\n  "));
-        return "An error occurred.";
+        console.error("[stream-error:S1] onError called with:", errMsg, "\n  captured stack:", stack?.split("\n").slice(1, 4).join("\n  "));
+        return `Error [${errMsg}]`;
       },
       execute: async ({ writer }) => {
         let currentUIMessages = uiMessages;
@@ -274,6 +275,7 @@ export async function POST(req: Request) {
               }
             } catch (e) {
               console.error("[bgcheck] Verify error (non-fatal):", e);
+              if (attempt < 9) continue;
             }
             break;
           } catch (e) {

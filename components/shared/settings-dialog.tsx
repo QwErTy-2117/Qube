@@ -26,7 +26,7 @@ interface MemoryEntry {
   category: string;
   content: string;
   createdAt: number;
-  confidence: number;
+  relevance: number;
 }
 
 interface SessionRecord {
@@ -56,8 +56,8 @@ function CategoryBadge({ category }: { category: string }) {
   );
 }
 
-function ConfidenceBar({ confidence }: { confidence: number }) {
-  const pct = Math.round(confidence * 100);
+function RelevanceBar({ relevance }: { relevance: number }) {
+  const pct = Math.round(relevance * 100);
   const color = pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-500" : "bg-red-500";
   return (
     <div className="flex items-center gap-2">
@@ -293,7 +293,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                               <CategoryBadge category={entry.category} />
                             </div>
                             <p className="text-sm text-foreground leading-relaxed">{entry.content}</p>
-                            <ConfidenceBar confidence={entry.confidence} />
+                            <RelevanceBar relevance={entry.relevance} />
                           </div>
                           <Button
                             variant="ghost"

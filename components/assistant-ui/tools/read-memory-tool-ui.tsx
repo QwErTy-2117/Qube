@@ -11,7 +11,7 @@ export const ReadMemoryToolUI: ToolCallMessagePartComponent = ({
       category: string;
       content: string;
       createdAt: number;
-      confidence: number;
+      relevance: number;
     }>;
   } = {};
   try {
@@ -32,9 +32,9 @@ export const ReadMemoryToolUI: ToolCallMessagePartComponent = ({
                 <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
                   {e.category}
                 </span>
-                {e.confidence < 0.7 && (
+                {e.relevance < 0.7 && (
                   <span className="text-[10px] text-muted-foreground/50">
-                    confidence: {Math.round(e.confidence * 100)}%
+                    relevance: {Math.round(e.relevance * 100)}%
                   </span>
                 )}
               </div>

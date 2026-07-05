@@ -1,4 +1,4 @@
-import { streamText, tool, generateText } from "ai";
+import { streamText, tool } from "ai";
 import { z } from "zod";
 import { cerebras, resolveCerebrasModel, toCerebrasModelId } from "./cerebras";
 import { buildSystemPrompt } from "./system-prompt";
@@ -57,7 +57,13 @@ export async function createAgent(config: AgentConfig) {
   const ep = (name: string, fn: (...args: any[]) => Promise<string>) => {
     return async (...args: any[]) => {
       const input = typeof args[0] === "object" && args[0] !== null ? args[0] : {};
-      return withPermissionCheck(name, input, threadId, () => fn(input));
+      try {
+        return await withPermissionCheck(name, input, threadId, () => fn(input));
+      } catch (err) {
+        console.error(`[ep:${name}] Tool error:`, err);
+        const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        return JSON.stringify({ error: true, tool: name, message: msg });
+      }
     };
   };
 
@@ -69,15 +75,6 @@ export async function createAgent(config: AgentConfig) {
     messages: config.messages as any,
     stopWhen: async ({ steps }: { steps: any[] }) => {
       if (steps.length >= 15) return true;
-      if (steps.length === 0) return false;
-      const last = steps[steps.length - 1];
-      const verifyResult = last.toolResults?.find((tr: any) => tr.toolName === "verify_completion");
-      if (verifyResult) {
-        try {
-          const parsed = typeof verifyResult.result === "string" ? JSON.parse(verifyResult.result) : verifyResult.result;
-          if (parsed.done === true) return true;
-        } catch {}
-      }
       return false;
     },
     timeout: 60_000,
@@ -85,7 +82,7 @@ export async function createAgent(config: AgentConfig) {
 
     tools: ({
       read_file: tool({
-        description: "Reads and returns the contents of a file at the specified path.",
+        description: "Reads a file at the specified path.",
         inputSchema: z.object({ label: z.string().optional(), path: z.string() }),
         execute: ep("read_file", async ({ path }: { path: string }) => {
           const resolved = resolvePathInWorkspace(path);
@@ -97,7 +94,7 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       write_file: tool({
-        description: "USE THIS TOOL TO WRITE FILES. Creates or overwrites a file with the specified content. This is the ONLY way to write files — do NOT use run_command to write files.",
+        description: "Creates or overwrites a file.",
         inputSchema: z.object({ label: z.string().optional(), path: z.string(), content: z.string() }),
         execute: ep("write_file", async ({ path, content }: { path: string; content: string }) => {
           const resolved = resolvePathInWorkspace(path);
@@ -153,7 +150,7 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       list_external_directory: tool({
-        description: "Lists files and directories at an absolute path outside the workspace (e.g., ~/Downloads, ~/Desktop). Use this when the user asks about files in their Downloads, Desktop, or other external folders. Restricted to the user's home directory and /tmp for safety.",
+        description: "Lists files at an absolute path outside the workspace.",
         inputSchema: z.object({ label: z.string().optional(), path: z.string() }),
         execute: ep("list_external_directory", async ({ path }: { path: string }) => {
           try {
@@ -173,7 +170,7 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       read_external_file: tool({
-        description: "Reads the contents of a file at an absolute path outside the workspace. Use this when the user wants you to look at a specific file in their Downloads, Desktop, or other external folders.",
+        description: "Reads a file at an absolute path outside the workspace.",
         inputSchema: z.object({ label: z.string().optional(), path: z.string() }),
         execute: ep("read_external_file", async ({ path }: { path: string }) => {
           try {
@@ -189,7 +186,7 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       run_command: tool({
-        description: "Executes a shell command and returns its output. ONLY use this to run scripts/commands — do NOT use this to write files (use write_file for that).",
+        description: "Executes a shell command.",
         inputSchema: z.object({ label: z.string().optional(), command: z.string() }),
         execute: ep("run_command", async ({ command }: { command: string }) => {
           try {
@@ -239,10 +236,32 @@ export async function createAgent(config: AgentConfig) {
           const raw = await response.text();
           const ct = response.headers.get("content-type") || "";
           const isText = ct.includes("text") || ct.includes("json") || ct.includes("xml") || ct.includes("html");
-          const content = isText
-            ? raw.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 30_000)
-            : `[Binary: ${ct}]`;
-          return JSON.stringify({ url, status: response.status, contentType: ct, content, size: raw.length });
+          let cleaned = "";
+          let content = `[Binary: ${ct}]`;
+          let truncated = false;
+          if (isText) {
+            const articleMatch = raw.match(/<article[\s\S]*?<\/article>/i) || raw.match(/<main[\s\S]*?<\/main>/i) || raw.match(/id="mw-content-text"[\s\S]*?(?=<div class="printfooter"|$)/i) || raw.match(/id="bodyContent"[\s\S]*?(?=<div class="visualClear"|$)/i);
+            const target = articleMatch ? articleMatch[0] : raw;
+            cleaned = target
+              .replace(/<script[\s\S]*?<\/script>/gi, "")
+              .replace(/<style[\s\S]*?<\/style>/gi, "")
+              .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+              .replace(/<header[\s\S]*?<\/header>/gi, "")
+              .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+              .replace(/<[^>]+>/g, "")
+              .replace(/\s+/g, " ")
+              .trim();
+            const maxLen = 6_000;
+            if (cleaned.length <= maxLen) {
+              content = cleaned;
+            } else {
+              const leadLen = Math.min(4_000, Math.floor(maxLen * 0.33));
+              const tailLen = maxLen - leadLen;
+              content = cleaned.slice(0, leadLen) + "\n\n[...]\n\n" + cleaned.slice(-tailLen);
+              truncated = true;
+            }
+          }
+          return JSON.stringify({ url, status: response.status, contentType: ct, content, truncated, size: raw.length });
         }),
       }),
 
@@ -276,43 +295,8 @@ export async function createAgent(config: AgentConfig) {
         execute: async () => JSON.stringify({ entries: await getMemoryEntries() }),
       }),
 
-      verify_completion: tool({
-        description: "CRITICAL: Call this before writing your final response. An external AI verifier checks if you've fully completed the user's request. If not done, it tells you what remains.",
-        inputSchema: z.object({
-          label: z.string().optional(),
-          request: z.string().describe("The user's original request"),
-          completedActions: z.array(z.string()).describe("What you've done so far"),
-        }),
-        execute: async ({ request, completedActions }: { request: string; completedActions: string[] }) => {
-          try {
-            const result = await generateText({
-              model: cerebras.chat(toCerebrasModelId(resolvedModel)),
-              system: `You are a task completion verifier. Determine if the assistant has fully satisfied this request: "${request}".
-
-The assistant has completed these actions:
-${completedActions.map(a => `- ${a}`).join("\n")}
-
-Reply with EXACTLY one of:
-- "COMPLETE" — the task is fully done, write the final response
-- "CONTINUE: <brief reason>" — more work is needed. Tell the assistant what remains.`,
-              messages: [],
-              temperature: 0,
-              maxOutputTokens: 80,
-            });
-
-            const response = result.text.trim();
-            if (response === "COMPLETE") {
-              return JSON.stringify({ done: true, message: "All requirements have been met. Write your final response." });
-            }
-            return JSON.stringify({ done: false, message: response });
-          } catch (e) {
-            return JSON.stringify({ done: true, message: "Verification unavailable. Proceed with your final response." });
-          }
-        },
-      }),
-
       ask_user: tool({
-        description: "IMPORTANT: Asks the user a clarifying question. You MUST use this before creating presentations, documents, or any creative content. Also use it when you need more information about anything. When you provide options, the user can pick from them. Set multiple: true to let the user select multiple options.",
+        description: "Asks the user a question. Must use before creating presentations or content.",
         inputSchema: z.object({ label: z.string().optional(), question: z.string(), options: z.array(z.string()).optional(), multiple: z.boolean().optional() }),
         execute: async ({ question, options, multiple }: { question: string; options?: string[]; multiple?: boolean }) => {
           const rid = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

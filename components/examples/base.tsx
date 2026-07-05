@@ -118,7 +118,7 @@ const Sidebar: FC = () => {
           side="right"
           variant="ghost"
           size="icon"
-          className="mt-1 ml-2 size-8"
+          className="mt-1 ml-2 size-8 transition-all duration-200 hover:[transform:translateY(-3px)_rotate(-5deg)]"
         >
           <PlusIcon className="size-4" />
         </TooltipIconButton>
@@ -135,7 +135,7 @@ const Sidebar: FC = () => {
               side="right"
               variant="ghost"
               size="icon"
-              className="size-8 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              className="size-8 rounded-full text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             >
               <SettingsIcon className="size-4" />
             </TooltipIconButton>
@@ -737,7 +737,6 @@ const TOOL_GROUP_TITLES: Record<string, string> = {
   read_session_summary: "Skimming the past",
   read_session: "Reading the tea leaves",
   read_memory: "Scratching the brain",
-  verify_completion: "Double-checking my work",
   ask_user: "Poking the human",
 };
 
@@ -883,7 +882,7 @@ const AssistantMessage: FC = () => {
                 return <Reasoning {...part} />;
               case "tool-call":
                 return (
-                  <ToolGroupRoot variant="ghost" defaultOpen={true}>
+                  <ToolGroupRoot variant="ghost" defaultOpen={false}>
                     <ToolGroupTrigger
                       count={1}
                       active={part.status.type === "running"}

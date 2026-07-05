@@ -4,13 +4,13 @@ import { join } from "node:path";
 
 const MEMORY_FILE = join(process.cwd(), ".memory", "semantic-memory.json");
 
-type MemoryEntry = {
+export type MemoryEntry = {
   id: string;
   category: string;
   content: string;
   createdAt: number;
   updatedAt: number;
-  confidence: number;
+  relevance: number;
 };
 
 type MemoryStore = {
@@ -19,7 +19,7 @@ type MemoryStore = {
 };
 
 function defaultStore(): MemoryStore {
-  return { entries: [], version: 1 };
+  return { entries: [], version: 2 };
 }
 
 function ensureDir() {
@@ -29,10 +29,23 @@ function ensureDir() {
   }
 }
 
+function migrateEntry(e: Record<string, unknown>): MemoryEntry {
+  return {
+    id: String(e.id ?? `mem_${Date.now()}`),
+    category: String(e.category ?? "general"),
+    content: String(e.content ?? ""),
+    createdAt: Number(e.createdAt ?? Date.now()),
+    updatedAt: Number(e.updatedAt ?? Date.now()),
+    relevance: e.relevance !== undefined ? Number(e.relevance) : e.confidence !== undefined ? Number(e.confidence) : 0.5,
+  };
+}
+
 async function readStore(): Promise<MemoryStore> {
   try {
     const data = await readFile(MEMORY_FILE, "utf-8");
-    return JSON.parse(data);
+    const raw = JSON.parse(data);
+    const entries = (raw.entries ?? []).map(migrateEntry);
+    return { entries, version: 2 };
   } catch {
     return defaultStore();
   }
@@ -46,33 +59,39 @@ async function writeStore(store: MemoryStore): Promise<void> {
 export async function addMemoryEntry(
   category: string,
   content: string,
-  confidence = 1.0,
-): Promise<void> {
+  relevance = 0.5,
+): Promise<MemoryEntry> {
   const store = await readStore();
-  store.entries.push({
+  const entry: MemoryEntry = {
     id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     category,
     content,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    confidence,
-  });
+    relevance,
+  };
+  store.entries.push(entry);
   await writeStore(store);
+  return entry;
 }
 
 export async function updateMemoryEntry(
   id: string,
-  updates: Partial<Pick<MemoryEntry, "content" | "category" | "confidence">>,
+  updates: Partial<Pick<MemoryEntry, "content" | "category" | "relevance">>,
 ): Promise<boolean> {
   const store = await readStore();
   const entry = store.entries.find((e) => e.id === id);
   if (!entry) return false;
   if (updates.content !== undefined) entry.content = updates.content;
   if (updates.category !== undefined) entry.category = updates.category;
-  if (updates.confidence !== undefined) entry.confidence = updates.confidence;
+  if (updates.relevance !== undefined) entry.relevance = updates.relevance;
   entry.updatedAt = Date.now();
   await writeStore(store);
   return true;
+}
+
+export async function replaceAllEntries(entries: MemoryEntry[]): Promise<void> {
+  await writeStore({ entries, version: 2 });
 }
 
 export async function getMemoryEntries(
@@ -97,15 +116,14 @@ export async function deleteMemoryEntry(id: string): Promise<boolean> {
 export async function getRelevantContext(): Promise<string> {
   const store = await readStore();
   if (store.entries.length === 0) return "";
-  const highConfidence = store.entries
-    .filter((e) => e.confidence >= 0.5)
-    .sort((a, b) => b.confidence - a.confidence);
-  if (highConfidence.length === 0) return "";
-  const lines = highConfidence.map((e) => `- ${e.category}: ${e.content}`);
+  const relevant = store.entries
+    .filter((e) => e.relevance >= 0.4)
+    .sort((a, b) => b.relevance - a.relevance);
+  if (relevant.length === 0) return "";
+  const lines = relevant.map((e) => `- ${e.category}: ${e.content}`);
   return lines.join("\n");
 }
 
 export async function clearMemory(): Promise<void> {
   await writeStore(defaultStore());
 }
-

@@ -81,12 +81,31 @@ async function verifyCompletion(
     const parts = (m.parts || []) as any[];
     return parts.some((p: any) => p.type === "tool-result");
   });
-
   const hasDeliveryText = agentText.length > 50 && !agentText.startsWith("[Tool calls made,");
+
+  // Hardcoded guard: agent made tool calls but never addressed the user
+  if (hasToolResults && !hasDeliveryText) {
+    const hasFileOutput = prevMessages.some((m: any) => {
+      const parts = (m.parts || []) as any[];
+      return parts.some((p: any) => p.type === "tool-result" && (
+        typeof p.result === "string" && (p.result.includes("written") || p.result.includes("exitCode"))
+      ));
+    });
+    const reason = hasFileOutput
+      ? "The file was created but you did not tell the user. Write your final response now. Do NOT make any more tool calls."
+      : "You have data but did not deliver the answer. Write your final response now.";
+    return { done: false, message: reason };
+  }
+
+  const hasSearchAfterWork = prevMessages.some((m: any) => {
+    const parts = (m.parts || []) as any[];
+    const toolNames = parts.filter(p => p.type === "tool-call").map(p => p.toolName);
+    return toolNames.includes("web_search") || toolNames.includes("web_fetch");
+  });
 
   const system = `You are a task completion verifier. Reply EXACTLY "COMPLETE" or "CONTINUE: <reason>".
 
-COMPLETE = the agent wrote a final answer for the user AND the work is done. The agent must have addressed the user directly with a summary of what was accomplished.
+COMPLETE = the agent wrote a final answer for the user AND the work is done.
 CONTINUE = the work may be technically done but the agent hasn't delivered the answer to the user yet, or more work is needed.`;
 
   const prompt = `Request: "${request}"
@@ -108,9 +127,7 @@ Task: Decide if the agent fully completed the request AND told the user the resu
 
     const text = result.text.trim();
     if (text.includes("COMPLETE")) return { done: true, message: "" };
-    if (text.startsWith("CONTINUE:")) {
-      return { done: false, message: text.slice(9).trim() };
-    }
+    if (text.startsWith("CONTINUE:")) return { done: false, message: text.slice(9).trim() };
     if (text.includes("CONTINUE")) {
       const idx = text.indexOf("CONTINUE");
       return { done: false, message: text.slice(idx + 8).trim() };
@@ -249,7 +266,7 @@ export async function POST(req: Request) {
                     : [];
                   currentUIMessages = [...currentUIMessages, ...assistantMsg, {
                     role: "user",
-                    parts: [{ type: "text", text: `[System: CONTINUE: ${verify.message}]` }],
+                    parts: [{ type: "text", text: `[INSTRUCTION] ${verify.message}` }],
                   }];
                   continue;
                 }

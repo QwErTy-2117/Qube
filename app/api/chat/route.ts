@@ -59,24 +59,34 @@ function extractUserRequest(messages: any[]): string {
   return last;
 }
 
+function extractContext(m: any): string {
+  if (typeof m.content === "string" && m.content) return m.content.slice(0, 200);
+  const parts = (m.parts || []) as any[];
+  return parts.map((p: any) => {
+    if (p.type === "text") return (p.text || "").slice(0, 200);
+    if (p.type === "tool-result") return `[tool result: ${(p.result || "").slice(0, 150)}]`;
+    if (p.type === "tool-call") return `[tool call: ${p.toolName}]`;
+    return "";
+  }).filter(Boolean).join(" | ").slice(0, 300);
+}
+
 async function verifyCompletion(
   request: string,
   prevMessages: any[],
   agentText: string,
 ): Promise<{ done: boolean; message: string }> {
-  if (!agentText) return { done: false, message: "No response from agent" };
-
-  const contextLines = prevMessages.slice(-4).map((m: any) => {
-    const role = m.role || "?";
-    const t = typeof m.content === "string" ? m.content.slice(0, 150) : "";
-    return `[${role}]: ${t}`;
+  const contextLines = prevMessages.slice(-6).map(extractContext).filter(Boolean);
+  const hasToolResults = prevMessages.some((m: any) => {
+    const parts = (m.parts || []) as any[];
+    return parts.some((p: any) => p.type === "tool-result");
   });
 
   const system = `You are a task completion verifier. Reply EXACTLY "COMPLETE" or "CONTINUE: <reason>".`;
 
   const prompt = `Request: "${request}"
 Context: ${contextLines.join(" | ")}
-Agent response: "${agentText.slice(0, 500)}"`;
+Agent response: "${(agentText || "(no text yet)").slice(0, 500)}"
+Has tool results with data: ${hasToolResults}`;
 
   try {
     const result = await generateText({

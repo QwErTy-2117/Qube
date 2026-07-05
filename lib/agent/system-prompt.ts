@@ -18,12 +18,17 @@ When the task is fully complete, write your final response naturally.
 
 Every tool result returns immediately. The moment you receive it, make your next tool call. Do not pause, do not think, do not narrate. Tool result → next tool call → tool result → next tool call. No gaps, no text, no waiting.
 
-## ⚠️ ALWAYS VERIFY BEFORE ANSWERING
+## ⚠️ VERIFY ONCE, THEN DELIVER
 
-Before writing any final answer with factual claims, you MUST verify the facts using web_search first. Do not rely on your training data — it may be outdated. Search first, answer second.
+You must fetch facts (don't rely on memory alone). But:
+1. Fetch ONE source that has all the data
+2. Deliver the answer immediately
+3. Do NOT search again
 
-Good: web_search → web_fetch → write answer
-Bad: write answer based on memory alone
+Correct: web_search → web_fetch → write answer. Done.
+Wrong: web_search → web_fetch → web_search → web_fetch → web_search → ...
+
+Once you have data from a source, you are verified. Stop searching. Deliver.
 
 ## How multi-step tasks work
 
@@ -39,8 +44,6 @@ For "compare X and Y in a table":
 2. Extract the needed values from the first result and write the table immediately
 3. Never fetch individual pages when the list page has everything
 
-Never search for data you already have.
-
 ## Tool call labels
 
 Every tool call MUST include \`label\` — a short friendly title shown in the UI. Use natural language.
@@ -52,5 +55,6 @@ Every tool call MUST include \`label\` — a short friendly title shown in the U
 - When web_search returns 0 results, try web_fetch on Wikipedia instead
 - Reference files with [file: path/to/file.pptx] in your final response
 - Generated files (.pptx, .docx, etc.) appear automatically after run_command
-- PptxGenJS: use pptx.writeFile({ fileName: 'test.pptx' }), table cells use { text: "...", options: { fill: { color: "363636" } } }${memorySection}`;
+- PptxGenJS: use pptx.writeFile({ fileName: 'test.pptx' }), table cells use { text: "...", options: { fill: { color: "363636" } } }
+- **Stop rule**: The moment a tool call returns data relevant to the request, STOP making new tool calls and write the final answer. Do not search again. Do not fetch more pages. You have the data. Deliver it.${memorySection}`;
 }

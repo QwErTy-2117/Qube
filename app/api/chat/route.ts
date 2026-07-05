@@ -80,7 +80,7 @@ Agent response: "${agentText.slice(0, 500)}"`;
 
   try {
     const result = await generateText({
-      model: cerebras.chat(toCerebrasModelId("zai-glm-4.7")),
+      model: cerebras.chat(toCerebrasModelId("gpt-oss-120b")),
       system,
       prompt,
       temperature: 0,

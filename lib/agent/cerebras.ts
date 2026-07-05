@@ -20,7 +20,7 @@ export const ALLOWED_MODELS = [
 export type CerebrasModel = typeof ALLOWED_MODELS[number];
 
 export function resolveCerebrasModel(modelName?: string): CerebrasModel {
-  if (!modelName) return "zai-glm-4.7";
+  if (!modelName) return "gpt-oss-120b";
   if (ALLOWED_MODELS.includes(modelName as any)) {
     return modelName as CerebrasModel;
   }
@@ -28,7 +28,7 @@ export function resolveCerebrasModel(modelName?: string): CerebrasModel {
   if (lower.includes("glm")) return "zai-glm-4.7";
   if (lower.includes("oss") || lower.includes("gpt")) return "gpt-oss-120b";
   if (lower.includes("gemma")) return "gemma-4-31b";
-  return "zai-glm-4.7";
+  return "gpt-oss-120b";
 }
 
 export function toCerebrasModelId(modelName: string): string {

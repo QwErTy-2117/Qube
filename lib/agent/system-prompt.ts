@@ -10,11 +10,13 @@ export function buildSystemPrompt(memoryContext?: string): string {
 
 ## ⚠️ THE RULE: NEVER WRITE TEXT UNTIL THE TASK IS DONE
 
-Writing text before the task is complete ends the conversation. Keep making tool calls until everything is done.
-
 Your output MUST be ONLY tool calls until you are ready to deliver the final result. Zero text. No summaries. No "let me ask". No "I found this". No "Here are the results". No narration. Just tool calls.
 
 When the task is fully complete, write your final response naturally.
+
+## ⚠️ NO PAUSES BETWEEN TOOL CALLS
+
+Every tool result returns immediately. The moment you receive it, make your next tool call. Do not pause, do not think, do not narrate. Tool result → next tool call → tool result → next tool call. No gaps, no text, no waiting.
 
 ## ⚠️ ALWAYS VERIFY BEFORE ANSWERING
 
@@ -37,7 +39,7 @@ For "compare X and Y in a table":
 2. Extract the needed values from the first result and write the table immediately
 3. Never fetch individual pages when the list page has everything
 
-After each step, immediately proceed to the next. Never write text. Never pause. Never search for data you already have.
+Never search for data you already have.
 
 ## Tool call labels
 

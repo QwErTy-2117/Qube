@@ -1,6 +1,8 @@
 import { streamText, tool } from "ai";
 import { z } from "zod";
 import { cerebras, resolveCerebrasModel, toCerebrasModelId } from "./cerebras";
+import { DDGS } from "@phukon/duckduckgo-search";
+import { JSDOM } from "jsdom";
 import { buildSystemPrompt } from "./system-prompt";
 import { readFile, writeFile, unlink, readdir, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -204,43 +206,24 @@ export async function createAgent(config: AgentConfig) {
         description: "Searches the web using DuckDuckGo.",
         inputSchema: z.object({ label: z.string().optional(), query: z.string() }),
         execute: ep("web_search", async ({ query }: { query: string }) => {
-          const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-          const response = await fetch(url, {
-            headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9" },
-          });
-          const html = await response.text();
-          const results: Array<{ title: string; snippet: string; url: string }> = [];
-          const blockRegex = /<div class="result[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
-          let m;
-          while ((m = blockRegex.exec(html)) !== null) {
-            const block = m[1];
-            const titleMatch = block.match(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/);
-            const snippetMatch = block.match(/<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
-              if (titleMatch) {
-                let rawUrl = titleMatch[1];
-                // Resolve protocol-relative URLs (DuckDuckGo redirects)
-                if (rawUrl.startsWith("//")) rawUrl = `https:${rawUrl}`;
-                // Extract actual target from DuckDuckGo redirect
-                const uddg = rawUrl.match(/uddg=([^&]+)/);
-                if (uddg) rawUrl = decodeURIComponent(uddg[1]);
-                results.push({
-                  url: rawUrl,
-                  title: titleMatch[2].replace(/<[^>]*>/g, "").trim(),
-                  snippet: snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, "").trim() : "",
-                });
-              }
-          }
-          return JSON.stringify({ query, results: results.slice(0, 6), totalResults: results.length });
+          const ddgs = new DDGS({ timeout: 8000 });
+          const raw = await ddgs.text({ keywords: query, maxResults: 6 });
+          const results = raw.map((r: { title: string; href: string; body: string }) => ({
+            title: r.title,
+            url: r.href && !r.href.startsWith("/") ? r.href : "",
+            snippet: r.body.replace(/\s+/g, " ").trim().slice(0, 300),
+          })).filter((r: { url: string }) => r.url);
+          return JSON.stringify({ query, results, totalResults: results.length });
         }),
       }),
 
       web_fetch: tool({
-        description: "Fetches a URL and returns its text content.",
-        inputSchema: z.object({ label: z.string().optional(), url: z.string() })
+        description: "Fetches a URL and returns its text content. Optionally pass a CSS selector to extract a specific section.",
+        inputSchema: z.object({ label: z.string().optional(), url: z.string(), selector: z.string().optional() })
           .refine(({ url }) => {
             try { new URL(url); return true; } catch { return false; }
           }, { message: "Invalid URL" }),
-        execute: ep("web_fetch", async ({ url }: { url: string }) => {
+        execute: ep("web_fetch", async ({ url, selector }: { url: string; selector?: string }) => {
           let targetUrl = url.trim();
           try {
             const parsed = new URL(targetUrl);
@@ -254,32 +237,33 @@ export async function createAgent(config: AgentConfig) {
           const raw = await response.text();
           const ct = response.headers.get("content-type") || "";
           const isText = ct.includes("text") || ct.includes("json") || ct.includes("xml") || ct.includes("html");
-          let cleaned = "";
           let content = `[Binary: ${ct}]`;
           let truncated = false;
           if (isText) {
-            const articleMatch = raw.match(/<article[\s\S]*?<\/article>/i) || raw.match(/<main[\s\S]*?<\/main>/i) || raw.match(/id="mw-content-text"[\s\S]*?(?=<div class="printfooter"|$)/i) || raw.match(/id="bodyContent"[\s\S]*?(?=<div class="visualClear"|$)/i);
-            const target = articleMatch ? articleMatch[0] : raw;
-            cleaned = target
-              .replace(/<script[\s\S]*?<\/script>/gi, "")
-              .replace(/<style[\s\S]*?<\/style>/gi, "")
-              .replace(/<nav[\s\S]*?<\/nav>/gi, "")
-              .replace(/<header[\s\S]*?<\/header>/gi, "")
-              .replace(/<footer[\s\S]*?<\/footer>/gi, "")
-              .replace(/<[^>]+>/g, "")
-              .replace(/\s+/g, " ")
-              .trim();
-            const maxLen = 6_000;
-            if (cleaned.length <= maxLen) {
-              content = cleaned;
+            if (selector) {
+              const dom = new JSDOM(raw);
+              const elements = dom.window.document.querySelectorAll(selector);
+              content = Array.from(elements).map((el: Element) => el.textContent?.trim?.() || "").filter(Boolean).join("\n\n");
+              if (!content) content = `[No elements matched selector "${selector}"]`;
             } else {
-              const leadLen = Math.min(4_000, Math.floor(maxLen * 0.33));
-              const tailLen = maxLen - leadLen;
-              content = cleaned.slice(0, leadLen) + "\n\n[...]\n\n" + cleaned.slice(-tailLen);
-              truncated = true;
+              const articleMatch = raw.match(/<article[\s\S]*?<\/article>/i) || raw.match(/<main[\s\S]*?<\/main>/i) || raw.match(/id="mw-content-text"[\s\S]*?(?=<div class="printfooter"|$)/i) || raw.match(/id="bodyContent"[\s\S]*?(?=<div class="visualClear"|$)/i);
+              const target = articleMatch ? articleMatch[0] : raw;
+              content = target
+                .replace(/<script[\s\S]*?<\/script>/gi, "")
+                .replace(/<style[\s\S]*?<\/style>/gi, "")
+                .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+                .replace(/<header[\s\S]*?<\/header>/gi, "")
+                .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+                .replace(/<[^>]+>/g, "")
+                .replace(/\s+/g, " ")
+                .trim();
+              if (content.length > 25_000) {
+                content = content.slice(0, 25_000) + "\n\n[...truncated...]";
+                truncated = true;
+              }
             }
           }
-          return JSON.stringify({ url: targetUrl, originalUrl: targetUrl !== url.trim() ? url.trim() : undefined, status: response.status, contentType: ct, content, truncated, size: raw.length });
+          return JSON.stringify({ url: targetUrl, originalUrl: targetUrl !== url.trim() ? url.trim() : undefined, status: response.status, contentType: ct, content, truncated, size: raw.length, selectorUsed: selector });
         }),
       }),
 

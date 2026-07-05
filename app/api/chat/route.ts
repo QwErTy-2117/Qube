@@ -74,6 +74,7 @@ async function verifyCompletion(
   request: string,
   prevMessages: any[],
   agentText: string,
+  streamEndedNaturally: boolean,
 ): Promise<{ done: boolean; message: string }> {
   const contextLines = prevMessages.slice(-6).map(extractContext).filter(Boolean);
   const hasToolResults = prevMessages.some((m: any) => {
@@ -81,12 +82,20 @@ async function verifyCompletion(
     return parts.some((p: any) => p.type === "tool-result");
   });
 
-  const system = `You are a task completion verifier. Reply EXACTLY "COMPLETE" or "CONTINUE: <reason>".`;
+  const hasDeliveryText = agentText.length > 50 && !agentText.startsWith("[Tool calls made,");
+
+  const system = `You are a task completion verifier. Reply EXACTLY "COMPLETE" or "CONTINUE: <reason>".
+
+COMPLETE = the agent wrote a final answer for the user AND the work is done. The agent must have addressed the user directly with a summary of what was accomplished.
+CONTINUE = the work may be technically done but the agent hasn't delivered the answer to the user yet, or more work is needed.`;
 
   const prompt = `Request: "${request}"
 Context: ${contextLines.join(" | ")}
-Agent response: "${(agentText || "(no text yet)").slice(0, 500)}"
-Has tool results with data: ${hasToolResults}`;
+Agent text to user: "${(agentText || "(no text yet)").slice(0, 500)}"
+Has tool results: ${hasToolResults}
+Agent delivered answer to user: ${hasDeliveryText}
+Stream ended naturally: ${streamEndedNaturally}
+Task: Decide if the agent fully completed the request AND told the user the result.`;
 
   try {
     const result = await generateText({
@@ -175,13 +184,14 @@ export async function POST(req: Request) {
 
             const reader = uiStream.getReader();
             let textOutput = "";
+            let streamEndedNaturally = false;
             const assistantParts: any[] = [];
             const textBuf = new Map<string, string>();
             const pendingCalls = new Map<string, any>();
             try {
               while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (done) { streamEndedNaturally = true; break; }
                 const v = value as any;
                 if (v.type === "text-delta") textOutput += v.delta;
                 if (v.type === "text-start") textBuf.set(v.id, "");
@@ -228,9 +238,9 @@ export async function POST(req: Request) {
               reader.releaseLock();
             }
 
-            const textToVerify = textOutput || (assistantParts.length > 0 ? "[Tool calls made, no text before timeout]" : "");
+            const textToVerify = textOutput || (assistantParts.length > 0 ? "[Tool calls made, no delivery text]" : "");
             try {
-              const verify = await verifyCompletion(originalRequest, currentUIMessages, textToVerify);
+              const verify = await verifyCompletion(originalRequest, currentUIMessages, textToVerify, streamEndedNaturally);
               if (!verify.done) {
                 if (attempt < 9) {
                   console.log(`[bgcheck] Attempt ${attempt + 1} incomplete (verify: ${verify.message}), retrying`);

@@ -77,7 +77,7 @@ export async function createAgent(config: AgentConfig) {
       if (steps.length >= 15) return true;
       return false;
     },
-    timeout: 60_000,
+    timeout: 15_000,
     temperature: config.temperature !== undefined ? config.temperature : 0.7,
 
     tools: ({
@@ -201,21 +201,21 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       web_search: tool({
-        description: "Searches the web using Bing.",
+        description: "Searches the web using DuckDuckGo.",
         inputSchema: z.object({ label: z.string().optional(), query: z.string() }),
         execute: ep("web_search", async ({ query }: { query: string }) => {
-          const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&form=QBLH&mkt=en-US`;
+          const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
           const response = await fetch(url, {
             headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9" },
           });
           const html = await response.text();
           const results: Array<{ title: string; snippet: string; url: string }> = [];
-          const blockRegex = /<li class="b_algo"[^>]*>([\s\S]*?)<\/li>/g;
+          const blockRegex = /<div class="result[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
           let m;
           while ((m = blockRegex.exec(html)) !== null) {
             const block = m[1];
-            const titleMatch = block.match(/<h2[^>]*>.*?<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/);
-            const snippetMatch = block.match(/<div class="b_caption"[^>]*>.*?<p[^>]*>(.*?)<\/p>/);
+            const titleMatch = block.match(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+            const snippetMatch = block.match(/<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
             if (titleMatch) {
               results.push({
                 url: titleMatch[1],
@@ -230,9 +230,21 @@ export async function createAgent(config: AgentConfig) {
 
       web_fetch: tool({
         description: "Fetches a URL and returns its text content.",
-        inputSchema: z.object({ label: z.string().optional(), url: z.string().url() }),
+        inputSchema: z.object({ label: z.string().optional(), url: z.string() })
+          .refine(({ url }) => {
+            try { new URL(url); return true; } catch { return false; }
+          }, { message: "Invalid URL" }),
         execute: ep("web_fetch", async ({ url }: { url: string }) => {
-          const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }, signal: AbortSignal.timeout(30_000) });
+          let targetUrl = url.trim();
+          try {
+            const parsed = new URL(targetUrl);
+            if (!["http:", "https:"].includes(parsed.protocol)) {
+              return JSON.stringify({ url: targetUrl, error: `Unsupported protocol "${parsed.protocol}" — use http:// or https://`, status: 400 });
+            }
+          } catch {
+            targetUrl = `https://${targetUrl.replace(/^https?:\/+/, "")}`;
+          }
+          const response = await fetch(targetUrl, { headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }, signal: AbortSignal.timeout(30_000) });
           const raw = await response.text();
           const ct = response.headers.get("content-type") || "";
           const isText = ct.includes("text") || ct.includes("json") || ct.includes("xml") || ct.includes("html");
@@ -261,7 +273,7 @@ export async function createAgent(config: AgentConfig) {
               truncated = true;
             }
           }
-          return JSON.stringify({ url, status: response.status, contentType: ct, content, truncated, size: raw.length });
+          return JSON.stringify({ url: targetUrl, originalUrl: targetUrl !== url.trim() ? url.trim() : undefined, status: response.status, contentType: ct, content, truncated, size: raw.length });
         }),
       }),
 

@@ -2,8 +2,11 @@ export function buildSystemPrompt(memoryContext?: string): string {
   const memorySection = memoryContext
     ? `\n\n## Memory\n\n${memoryContext}`
     : "";
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
 
-  return `You are a capable and helpful coding agent.
+  return `You are a capable and helpful coding agent. Today is ${today}.
 
 ## ⚠️ THE RULE: NEVER WRITE TEXT UNTIL THE TASK IS DONE
 
@@ -32,8 +35,9 @@ For "create a PPT about X":
 5. Write your final response
 
 For "compare X and Y in a table":
-1. web_fetch (get data from Wikipedia directly)
-2. Write the table
+1. web_fetch ONE relevant Wikipedia page that already has all the data (e.g. "List of countries by GDP" already contains every country's GDP — no need to fetch individual country pages)
+2. Extract the needed values from the first result and write the table immediately
+3. Never fetch individual pages when the list page has everything
 
 After each step, immediately proceed to the next. Never write text. Never pause. Never search for data you already have.
 

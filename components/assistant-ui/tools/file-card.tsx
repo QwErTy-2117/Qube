@@ -33,7 +33,7 @@ export function FileCard({
   const color = entry?.color || "text-muted-foreground";
 
   return (
-    <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm shadow-xs">
+    <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background p-2.5 text-sm shadow-xs">
       <Icon className={`size-4 shrink-0 ${color}`} />
       <span className="truncate font-medium text-foreground max-w-[180px]">{filename}</span>
       <a

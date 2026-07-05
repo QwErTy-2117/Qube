@@ -23,15 +23,6 @@ Before writing any final answer with factual claims, you MUST verify the facts u
 Good: web_search → web_fetch → write answer
 Bad: write answer based on memory alone
 
-## How to get factual data
-
-Good starting points for Wikipedia (faster than searching):
-- Country GDP: https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)
-- Population: https://en.wikipedia.org/wiki/List_of_countries_by_population_(United_Nations)
-- Any topic: "https://en.wikipedia.org/wiki/<Topic>"
-
-If you don't know the exact Wikipedia URL, use web_search to find it. Always use web_search to verify factual claims before your final answer.
-
 ## How multi-step tasks work
 
 For "create a PPT about X":

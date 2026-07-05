@@ -216,13 +216,19 @@ export async function createAgent(config: AgentConfig) {
             const block = m[1];
             const titleMatch = block.match(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/);
             const snippetMatch = block.match(/<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
-            if (titleMatch) {
-              results.push({
-                url: titleMatch[1],
-                title: titleMatch[2].replace(/<[^>]*>/g, "").trim(),
-                snippet: snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, "").trim() : "",
-              });
-            }
+              if (titleMatch) {
+                let rawUrl = titleMatch[1];
+                // Resolve protocol-relative URLs (DuckDuckGo redirects)
+                if (rawUrl.startsWith("//")) rawUrl = `https:${rawUrl}`;
+                // Extract actual target from DuckDuckGo redirect
+                const uddg = rawUrl.match(/uddg=([^&]+)/);
+                if (uddg) rawUrl = decodeURIComponent(uddg[1]);
+                results.push({
+                  url: rawUrl,
+                  title: titleMatch[2].replace(/<[^>]*>/g, "").trim(),
+                  snippet: snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, "").trim() : "",
+                });
+              }
           }
           return JSON.stringify({ query, results: results.slice(0, 6), totalResults: results.length });
         }),

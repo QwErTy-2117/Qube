@@ -188,11 +188,14 @@ export async function POST(req: Request) {
           try {
             const modelMessages = await convertToModelMessages(currentUIMessages);
 
+            const retryOverride = attempt > 0
+              ? `## CRITICAL OVERRIDE\n\nThe "NEVER WRITE TEXT UNTIL THE TASK IS DONE" rule is TEMPORARILY SUSPENDED. You MUST write your final response to the user NOW. Do not make any more tool calls. This OVERRIDES all previous instructions.`
+              : undefined;
             const agent = await createAgent({
               messages: modelMessages,
               threadId: currentThreadId,
               modelName,
-              customSystemPrompt: customSystemPrompt || undefined,
+              customSystemPrompt: retryOverride || customSystemPrompt || undefined,
               temperature: temperature !== undefined ? Number(temperature) : undefined,
             });
 

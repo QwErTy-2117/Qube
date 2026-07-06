@@ -12,6 +12,7 @@ import { withPermissionCheck } from "@/lib/middleware/permission-middleware";
 import { getWorkspacePath, resolvePathInWorkspace, relativePathInWorkspace, resolveExternalPath } from "@/lib/middleware/workspace";
 import { createPendingQuestion } from "./tools/ask-user-tool";
 import { generateMemoryContext } from "./memory-agent";
+import { createBrowserTools } from "./browser/browser-tools";
 import { listSessions, readSessionSummary, readSession } from "@/lib/memory/session-store";
 import { getMemoryEntries } from "@/lib/memory/memory-store";
 
@@ -305,6 +306,8 @@ export async function createAgent(config: AgentConfig) {
           return JSON.stringify({ question, options, multiple, answer });
         },
       }),
+
+      ...createBrowserTools(threadId),
     }) as any,
   });
 

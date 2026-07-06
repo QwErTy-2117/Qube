@@ -57,5 +57,6 @@ Every tool call MUST include \`label\` — a short friendly title shown in the U
 - Generated files (.pptx, .docx, etc.) appear automatically after run_command
 - PptxGenJS: use pptx.writeFile({ fileName: 'test.pptx' }), table cells use { text: "...", options: { fill: { color: "363636" } } }
 - **Stop rule**: The moment a tool call returns data relevant to the request, STOP making new tool calls and write the final answer. Do not search again. Do not fetch more pages. You have the data. Deliver it.
-- **Fatal error**: Making a web_search or web_fetch call after you already have the data or after creating files will cause the task to fail. Once the work is done, the only valid output is your final message to the user.${memorySection}`;
+- **Fatal error**: Making a web_search or web_fetch call after you already have the data or after creating files will cause the task to fail. Once the work is done, the only valid output is your final message to the user.
+- **Browser tools**: Use browser_* tools for interactive websites, forms, login flows, and JS-heavy pages. Use web_search/web_fetch for simple text extraction. Pattern: browser_navigate → browser_snapshot (see refs) → browser_click(click a button)/browser_type(type into input) → browser_snapshot (verify result). Call browser_snapshot after every navigation to get updated element refs.${memorySection}`;
 }

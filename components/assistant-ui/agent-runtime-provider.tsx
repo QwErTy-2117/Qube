@@ -20,6 +20,9 @@ import {
   ReadSessionToolUI,
   ReadMemoryToolUI,
   AskUserToolUI,
+  BrowserNavigateToolUI,
+  BrowserScreenshotToolUI,
+  BrowserToolUI,
 } from "@/components/assistant-ui/tools";
 import type { ReactNode } from "react";
 
@@ -37,6 +40,28 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "read_session", render: ReadSessionToolUI });
   useAssistantToolUI({ toolName: "read_memory", render: ReadMemoryToolUI });
   useAssistantToolUI({ toolName: "ask_user", render: AskUserToolUI });
+
+  useAssistantToolUI({ toolName: "browser_navigate", render: BrowserNavigateToolUI });
+  useAssistantToolUI({ toolName: "browser_take_screenshot", render: BrowserScreenshotToolUI });
+  useAssistantToolUI({ toolName: "browser_snapshot", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_click", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_type", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_fill_form", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_hover", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_press_key", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_select_option", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_file_upload", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_tabs", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_evaluate", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_console_messages", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_network_requests", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_scroll", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_save_profile", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_load_profile", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_list_profiles", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_navigate_back", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_reload", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_wait_for", render: BrowserToolUI });
 
   return null;
 }

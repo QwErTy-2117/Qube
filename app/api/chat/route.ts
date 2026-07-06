@@ -113,6 +113,7 @@ COMPLETE or CONTINUE: what's missing?`;
   try {
     const result = await generateText({
       model: cerebras.chat("zai-glm-4.7"),
+      maxRetries: 0,
       system: "COMPLETE if agent wrote the answer. CONTINUE: <what's missing> otherwise.",
       prompt,
       temperature: 0,

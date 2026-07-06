@@ -76,6 +76,7 @@ export async function createAgent(config: AgentConfig) {
     model: cerebras.chat(toCerebrasModelId(resolvedModel)),
     system: systemPrompt,
     messages: config.messages as any,
+    maxRetries: 0,
     stopWhen: async ({ steps }: { steps: any[] }) => {
       if (steps.length >= 15) return true;
       return false;

@@ -184,6 +184,8 @@ export async function POST(req: Request) {
       execute: async ({ writer }) => {
         let currentUIMessages = uiMessages;
 
+        let loopExhausted = false;
+        let hasAnyToolResults = false;
         for (let attempt = 0; attempt < 10; attempt++) {
           try {
             const modelMessages = await convertToModelMessages(currentUIMessages);
@@ -251,6 +253,7 @@ export async function POST(req: Request) {
                   const p = pendingCalls.get(v.toolCallId);
                   if (p && p.args && v.args) p.args = v.args;
                 }
+                if (v.type === "tool-result") hasAnyToolResults = true;
                 writer.write(v);
               }
             } catch (e) {
@@ -274,11 +277,13 @@ export async function POST(req: Request) {
                   }];
                   continue;
                 }
+                loopExhausted = true;
                 console.error(`[bgcheck] Last attempt (${attempt + 1}) still incomplete:`, verify.message);
               }
             } catch (e) {
               console.error("[bgcheck] Verify error (non-fatal):", e);
               if (attempt < 9) continue;
+              loopExhausted = true;
             }
             break;
           } catch (e) {
@@ -289,7 +294,15 @@ export async function POST(req: Request) {
               await new Promise(r => setTimeout(r, delay));
               continue;
             }
+            loopExhausted = true;
           }
+        }
+
+        // Fallback: retries exhausted with tool results but no delivery text
+        if (loopExhausted && hasAnyToolResults) {
+          writer.write({ type: "text-start", id: "fallback" });
+          writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The agent gathered data but ran out of retries while drafting the final response. The tool results above show what was collected.)*" });
+          writer.write({ type: "text-end", id: "fallback" });
         }
       },
     });

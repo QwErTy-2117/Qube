@@ -5,7 +5,6 @@ import {
   ComposerAttachments,
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
-import { ThinkingToggle } from "@/components/assistant-ui/thinking-toggle";
 import {
   MarkdownText,
   MarkdownTextPrimitive,
@@ -647,7 +646,6 @@ const ComposerAction: FC = () => {
       <div className="flex items-center gap-1">
         <ComposerAddAttachment />
         <ModelPicker />
-        <ThinkingToggle />
       </div>
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>

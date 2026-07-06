@@ -154,7 +154,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { messages, threadId, config, customSystemPrompt, temperature } = body;
     const modelName = config?.modelName;
-    const reasoningEffort = config?.reasoningEffort;
     const currentThreadId = threadId || `thread_${Date.now()}`;
 
     const lastThreadId = await getLastThreadId();
@@ -221,7 +220,6 @@ export async function POST(req: Request) {
               modelName,
               customSystemPrompt,
               temperature: temperature !== undefined ? Number(temperature) : undefined,
-              reasoningEffort,
             });
 
             const uiStream = agent.toUIMessageStream({

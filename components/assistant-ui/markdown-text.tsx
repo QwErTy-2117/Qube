@@ -112,6 +112,7 @@ export function MarkdownText() {
       remarkPlugins={[remarkGfm]}
       className="aui-md"
       components={defaultComponents}
+      preprocess={(text) => text.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<script\b[^>]*\/>/gi, "")}
     />
   );
 }

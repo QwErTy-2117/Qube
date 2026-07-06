@@ -24,6 +24,7 @@ import {
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { cn } from "@/lib/utils";
+import { DEFAULT_MODEL_ID } from "@/constants/model";
 
 const useFileSrc = (file: File | undefined) => {
   const [src, setSrc] = useState<string | undefined>(undefined);
@@ -207,10 +208,17 @@ export const ComposerAttachments: FC = () => {
   );
 };
 
+const IMAGE_MODELS = new Set(["gemma-4-31b"]);
+
 export const ComposerAddAttachment: FC = () => {
-  // Only gemma-4-31b supports image attachments
-  const isGemma = typeof localStorage !== "undefined" && localStorage.getItem("qube-default-model") === "gemma-4-31b";
-  if (!isGemma) return null;
+  const [model, setModel] = useState(DEFAULT_MODEL_ID);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("qube-default-model") || DEFAULT_MODEL_ID;
+    setModel(saved);
+  }, []);
+
+  const supportsImages = IMAGE_MODELS.has(model);
 
   return (
     <ComposerPrimitive.AddAttachment asChild>
@@ -220,7 +228,7 @@ export const ComposerAddAttachment: FC = () => {
         variant="ghost"
         size="icon"
         className="aui-composer-add-attachment hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30 !size-7 rounded-full p-1 text-xs font-semibold"
-        aria-label="Add Attachment"
+        aria-label={supportsImages ? "Add Attachment (images & docs)" : "Add Attachment (docs only)"}
       >
         <PlusIcon className="aui-attachment-add-icon size-4.5 stroke-[1.5px]" />
       </TooltipIconButton>

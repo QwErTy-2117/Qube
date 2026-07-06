@@ -209,7 +209,7 @@ export const ComposerAttachments: FC = () => {
 
 export const ComposerAddAttachment: FC = () => {
   // Only gemma-4-31b supports image attachments
-  const isGemma = localStorage.getItem("qube-default-model") === "gemma-4-31b";
+  const isGemma = typeof localStorage !== "undefined" && localStorage.getItem("qube-default-model") === "gemma-4-31b";
   if (!isGemma) return null;
 
   return (

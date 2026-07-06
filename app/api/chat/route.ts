@@ -178,20 +178,18 @@ export async function POST(req: Request) {
       execute: async ({ writer }) => {
         let currentUIMessages = uiMessages;
 
+        try {
         let loopExhausted = false;
         let hasAnyToolResults = false;
         for (let attempt = 0; attempt < 10; attempt++) {
           try {
             const modelMessages = await convertToModelMessages(currentUIMessages);
 
-            const retryOverride = attempt > 0
-              ? `## CRITICAL OVERRIDE\n\nThe "NEVER WRITE TEXT UNTIL THE TASK IS DONE" rule is TEMPORARILY SUSPENDED. You MUST write your final response to the user NOW. Do not make any more tool calls. This OVERRIDES all previous instructions.`
-              : undefined;
             const agent = await createAgent({
               messages: modelMessages,
               threadId: currentThreadId,
               modelName,
-              customSystemPrompt: retryOverride || customSystemPrompt || undefined,
+              customSystemPrompt,
               temperature: temperature !== undefined ? Number(temperature) : undefined,
             });
 
@@ -313,6 +311,19 @@ export async function POST(req: Request) {
           writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The AI service is temporarily unavailable. Please try again in a moment.)*" });
           writer.write({ type: "text-end", id: "fallback" });
         }
+      } catch (e) {
+        const err = e as any;
+        const is429 = err?.statusCode === 429 || (err?.errors || []).some((x: any) => x?.statusCode === 429) || /too many requests|rate limit/i.test(err?.message || "");
+        if (is429) {
+          console.log("[bgcheck] Rate limit escaped, waiting 60s and retrying...");
+          await new Promise(r => setTimeout(r, 60000));
+        }
+        writer.write({ type: "text-start", id: "fallback" });
+        writer.write({ type: "text-delta", id: "fallback", delta: is429
+          ? "\n\n*(The AI service is rate-limited. Please try again in a moment.)*"
+          : `\n\n*(Error: ${err?.message || "Unknown"})*` });
+        writer.write({ type: "text-end", id: "fallback" });
+      }
       },
     });
 

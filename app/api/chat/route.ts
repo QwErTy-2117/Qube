@@ -178,10 +178,15 @@ export async function POST(req: Request) {
       execute: async ({ writer }) => {
         let currentUIMessages = uiMessages;
 
-        try {
         let loopExhausted = false;
         let hasAnyToolResults = false;
+        let lastWasRateLimit = false;
         for (let attempt = 0; attempt < 10; attempt++) {
+          if (lastWasRateLimit) {
+            console.log(`[bgcheck] Waiting 60s after rate limit before retry ${attempt + 1}...`);
+            await new Promise(r => setTimeout(r, 60000));
+            lastWasRateLimit = false;
+          }
           try {
             const modelMessages = await convertToModelMessages(currentUIMessages);
 
@@ -252,8 +257,8 @@ export async function POST(req: Request) {
               const err = e as any;
               const is429 = err?.statusCode === 429 || (err?.errors || []).some((x: any) => x?.statusCode === 429);
               if (is429 || /too many requests|rate limit/i.test(err?.message || "")) {
-                console.log("[bgcheck] Rate limit on stream, waiting 60s before retry...");
-                await new Promise(r => setTimeout(r, 60000));
+                lastWasRateLimit = true;
+                console.log("[bgcheck] Rate limit on stream");
               } else {
                 console.error("[bgcheck] Stream read error:", e);
               }
@@ -288,13 +293,18 @@ export async function POST(req: Request) {
           } catch (e) {
             const err = e as any;
             const isRateLimit = err?.statusCode === 429 || (err?.errors || []).some((x: any) => x?.statusCode === 429) || /too many requests|rate limit|token_quota_exceeded/i.test(err?.message || "");
-            console.error(`[bgcheck] Attempt ${attempt + 1} error${isRateLimit ? ' (rate limit)' : ''}:`, e);
+            if (isRateLimit) {
+              lastWasRateLimit = true;
+              console.log(`[bgcheck] Attempt ${attempt + 1} rate limited`);
+            } else {
+              console.error(`[bgcheck] Attempt ${attempt + 1} error:`, e);
+            }
             if (attempt < 9) {
-              const delay = isRateLimit
-                ? Math.min(1000 * Math.pow(4, attempt), 60000)
-                : Math.min(1000 * Math.pow(2, attempt), 8000);
-              console.log(`[bgcheck] Backoff ${delay}ms before retry`);
-              await new Promise(r => setTimeout(r, delay));
+              if (!isRateLimit) {
+                const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
+                console.log(`[bgcheck] Backoff ${delay}ms before retry`);
+                await new Promise(r => setTimeout(r, delay));
+              }
               continue;
             }
             loopExhausted = true;
@@ -311,19 +321,6 @@ export async function POST(req: Request) {
           writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The AI service is temporarily unavailable. Please try again in a moment.)*" });
           writer.write({ type: "text-end", id: "fallback" });
         }
-      } catch (e) {
-        const err = e as any;
-        const is429 = err?.statusCode === 429 || (err?.errors || []).some((x: any) => x?.statusCode === 429) || /too many requests|rate limit/i.test(err?.message || "");
-        if (is429) {
-          console.log("[bgcheck] Rate limit escaped, waiting 60s and retrying...");
-          await new Promise(r => setTimeout(r, 60000));
-        }
-        writer.write({ type: "text-start", id: "fallback" });
-        writer.write({ type: "text-delta", id: "fallback", delta: is429
-          ? "\n\n*(The AI service is rate-limited. Please try again in a moment.)*"
-          : `\n\n*(Error: ${err?.message || "Unknown"})*` });
-        writer.write({ type: "text-end", id: "fallback" });
-      }
       },
     });
 

@@ -47,6 +47,7 @@ export type AgentConfig = {
   modelName?: string;
   customSystemPrompt?: string;
   temperature?: number;
+  reasoningEffort?: string;
 };
 
 export async function createAgent(config: AgentConfig) {
@@ -82,6 +83,7 @@ export async function createAgent(config: AgentConfig) {
       return false;
     },
     temperature: config.temperature !== undefined ? config.temperature : 0.7,
+    ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
 
     tools: ({
       read_file: tool({

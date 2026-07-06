@@ -70,6 +70,21 @@ function extractContext(m: any): string {
   }).filter(Boolean).join(" | ").slice(0, 300);
 }
 
+function computeRateLimitDelay(err: any): number {
+  try {
+    if (typeof err?.responseBody === "string") {
+      const body = JSON.parse(err.responseBody);
+      if (typeof body.retry_after === "number") return body.retry_after * 1000;
+      if (typeof body.retryAfter === "number") return body.retryAfter * 1000;
+    }
+  } catch {}
+  if (typeof err?.retryAfter === "number") return err.retryAfter * 1000;
+  if (typeof err?.retry_after === "number") return err.retry_after * 1000;
+  const msg = err?.message || "";
+  if (/token_quota_exceeded/i.test(msg)) return 65000;
+  return 60000;
+}
+
 async function verifyCompletion(
   request: string,
   prevMessages: any[],
@@ -139,6 +154,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { messages, threadId, config, customSystemPrompt, temperature } = body;
     const modelName = config?.modelName;
+    const reasoningEffort = config?.reasoningEffort;
     const currentThreadId = threadId || `thread_${Date.now()}`;
 
     const lastThreadId = await getLastThreadId();
@@ -183,10 +199,17 @@ export async function POST(req: Request) {
         let loopExhausted = false;
         let hasAnyToolResults = false;
         let lastWasRateLimit = false;
-        for (let attempt = 0; attempt < 10; attempt++) {
+        let lastRateLimitDelayMs = 0;
+        let generalAttempts = 0;
+        let rateLimitAttempts = 0;
+        const MAX_GENERAL = 10;
+        const MAX_RATE_LIMIT = 30;
+
+        while (true) {
+          generalAttempts++;
           if (lastWasRateLimit) {
-            console.log(`[bgcheck] Waiting 60s after rate limit before retry ${attempt + 1}...`);
-            await new Promise(r => setTimeout(r, 60000));
+            console.log(`[bgcheck] Waiting ${lastRateLimitDelayMs}ms after rate limit before retry ${generalAttempts}...`);
+            await new Promise(r => setTimeout(r, lastRateLimitDelayMs));
             lastWasRateLimit = false;
           }
           try {
@@ -198,10 +221,16 @@ export async function POST(req: Request) {
               modelName,
               customSystemPrompt,
               temperature: temperature !== undefined ? Number(temperature) : undefined,
+              reasoningEffort,
             });
 
             const uiStream = agent.toUIMessageStream({
               originalMessages: currentUIMessages,
+              onError: (error: any) => JSON.stringify({
+                statusCode: error?.statusCode,
+                message: error?.message,
+                responseBody: error?.responseBody,
+              }),
             });
 
             const reader = uiStream.getReader();
@@ -253,14 +282,27 @@ export async function POST(req: Request) {
                   if (p && p.args && v.args) p.args = v.args;
                 }
                 if (v.type === "tool-result") hasAnyToolResults = true;
+                if (v.type === "error") {
+                  let errData: any = {};
+                  try { errData = JSON.parse(v.errorText); } catch {}
+                  const isRateLimit = errData?.statusCode === 429 || /too many|rate limit|token_quota/i.test(errData?.message || "");
+                  if (isRateLimit) {
+                    lastWasRateLimit = true;
+                    lastRateLimitDelayMs = computeRateLimitDelay(errData);
+                    break;
+                  }
+                  writer.write(v);
+                  break;
+                }
                 writer.write(v);
               }
             } catch (e) {
               const err = e as any;
               const is429 = err?.statusCode === 429 || (err?.errors || []).some((x: any) => x?.statusCode === 429);
-              if (is429 || /too many requests|rate limit/i.test(err?.message || "")) {
+              if (is429 || /too many requests|rate limit|token_quota_exceeded/i.test(err?.message || "")) {
                 lastWasRateLimit = true;
-                console.log("[bgcheck] Rate limit on stream");
+                lastRateLimitDelayMs = computeRateLimitDelay(err);
+                console.log("[bgcheck] Rate limit on stream (delay: " + lastRateLimitDelayMs + "ms)");
               } else {
                 console.error("[bgcheck] Stream read error:", e);
               }
@@ -268,12 +310,21 @@ export async function POST(req: Request) {
               reader.releaseLock();
             }
 
+            if (lastWasRateLimit) {
+              rateLimitAttempts++;
+              if (rateLimitAttempts >= MAX_RATE_LIMIT) {
+                loopExhausted = true;
+                break;
+              }
+              continue;
+            }
+
             const textToVerify = textOutput || (assistantParts.length > 0 ? "[Tool calls made, no delivery text]" : "");
             try {
               const verify = await verifyCompletion(originalRequest, currentUIMessages, textToVerify, streamEndedNaturally);
               if (!verify.done) {
-                if (attempt < 9) {
-                  console.log(`[bgcheck] Attempt ${attempt + 1} incomplete (verify: ${verify.message}), retrying`);
+                if (generalAttempts < MAX_GENERAL) {
+                  console.log(`[bgcheck] Attempt ${generalAttempts} incomplete (verify: ${verify.message}), retrying`);
                   const assistantMsg = assistantParts.length > 0
                     ? [{ role: "assistant", parts: assistantParts }]
                     : [];
@@ -284,11 +335,11 @@ export async function POST(req: Request) {
                   continue;
                 }
                 loopExhausted = true;
-                console.error(`[bgcheck] Last attempt (${attempt + 1}) still incomplete:`, verify.message);
+                console.error(`[bgcheck] Last attempt (${generalAttempts}) still incomplete:`, verify.message);
               }
             } catch (e) {
               console.error("[bgcheck] Verify error (non-fatal):", e);
-              if (attempt < 9) continue;
+              if (generalAttempts < MAX_GENERAL) continue;
               loopExhausted = true;
             }
             break;
@@ -297,19 +348,24 @@ export async function POST(req: Request) {
             const isRateLimit = err?.statusCode === 429 || (err?.errors || []).some((x: any) => x?.statusCode === 429) || /too many requests|rate limit|token_quota_exceeded/i.test(err?.message || "");
             if (isRateLimit) {
               lastWasRateLimit = true;
-              console.log(`[bgcheck] Attempt ${attempt + 1} rate limited`);
-            } else {
-              console.error(`[bgcheck] Attempt ${attempt + 1} error:`, e);
-            }
-            if (attempt < 9) {
-              if (!isRateLimit) {
-                const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
-                console.log(`[bgcheck] Backoff ${delay}ms before retry`);
-                await new Promise(r => setTimeout(r, delay));
+              lastRateLimitDelayMs = computeRateLimitDelay(err);
+              rateLimitAttempts++;
+              console.log(`[bgcheck] Attempt ${generalAttempts} rate limited (delay: ${lastRateLimitDelayMs}ms, rateLimit: ${rateLimitAttempts}/${MAX_RATE_LIMIT})`);
+              if (rateLimitAttempts >= MAX_RATE_LIMIT) {
+                loopExhausted = true;
+                break;
               }
               continue;
             }
+            console.error(`[bgcheck] Attempt ${generalAttempts} error:`, e);
+            if (generalAttempts < MAX_GENERAL) {
+              const delay = Math.min(1000 * Math.pow(2, generalAttempts - 1), 8000);
+              console.log(`[bgcheck] Backoff ${delay}ms before retry`);
+              await new Promise(r => setTimeout(r, delay));
+              continue;
+            }
             loopExhausted = true;
+            break;
           }
         }
 
@@ -318,7 +374,7 @@ export async function POST(req: Request) {
           writer.write({ type: "text-start", id: "fallback" });
           writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The agent gathered data but ran out of retries while drafting the final response. The tool results above show what was collected.)*" });
           writer.write({ type: "text-end", id: "fallback" });
-        } else if (loopExhausted && !hasAnyToolResults) {
+        } else if (loopExhausted && !hasAnyToolResults && !lastWasRateLimit) {
           writer.write({ type: "text-start", id: "fallback" });
           writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The AI service is temporarily unavailable. Please try again in a moment.)*" });
           writer.write({ type: "text-end", id: "fallback" });

@@ -143,7 +143,17 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { messages, threadId, config, customSystemPrompt, temperature } = body;
-    const modelName = config?.modelName;
+    const requestedModel = config?.modelName;
+    // Auto-fallback from 8k-context models if messages likely exceed their limit
+    let modelName = requestedModel;
+    if (requestedModel && ["zai-glm-4.7", "z-ai/glm-5.2"].includes(requestedModel)) {
+      const rawLen = JSON.stringify(messages || []).length;
+      const estTokens = Math.round(rawLen / 3.5);
+      if (estTokens > 6000) {
+        console.log(`[model] zai-glm-4.7 context (~${estTokens}t) exceeds 8k limit, falling back to gpt-oss-120b`);
+        modelName = "gpt-oss-120b";
+      }
+    }
     const currentThreadId = threadId || `thread_${Date.now()}`;
 
     const lastThreadId = await getLastThreadId();
@@ -190,14 +200,11 @@ export async function POST(req: Request) {
           try {
             const modelMessages = await convertToModelMessages(currentUIMessages);
 
-            const retryOverride = attempt > 0
-              ? `## CRITICAL OVERRIDE\n\nThe "NEVER WRITE TEXT UNTIL THE TASK IS DONE" rule is TEMPORARILY SUSPENDED. You MUST write your final response to the user NOW. Do not make any more tool calls. This OVERRIDES all previous instructions.`
-              : undefined;
             const agent = await createAgent({
               messages: modelMessages,
               threadId: currentThreadId,
               modelName,
-              customSystemPrompt: retryOverride || customSystemPrompt || undefined,
+              customSystemPrompt,
               temperature: temperature !== undefined ? Number(temperature) : undefined,
             });
 
@@ -262,30 +269,42 @@ export async function POST(req: Request) {
               reader.releaseLock();
             }
 
-            const textToVerify = textOutput || (assistantParts.length > 0 ? "[Tool calls made, no delivery text]" : "");
-            try {
-              const verify = await verifyCompletion(originalRequest, currentUIMessages, textToVerify, streamEndedNaturally);
-              if (!verify.done) {
-                if (attempt < 9) {
-                  console.log(`[bgcheck] Attempt ${attempt + 1} incomplete (verify: ${verify.message}), retrying`);
-                  const assistantMsg = assistantParts.length > 0
-                    ? [{ role: "assistant", parts: assistantParts }]
-                    : [];
-                  currentUIMessages = [...currentUIMessages, ...assistantMsg, {
-                    role: "user",
-                    parts: [{ type: "text", text: `[INSTRUCTION] ${verify.message}` }],
-                  }];
-                  continue;
+            // Only verify when the agent finished naturally (reached end of reasoning, not timeout/error)
+            if (streamEndedNaturally) {
+              const textToVerify = textOutput || (assistantParts.length > 0 ? "[Tool calls made, no delivery text]" : "");
+              try {
+                const verify = await verifyCompletion(originalRequest, currentUIMessages, textToVerify, true);
+                if (!verify.done) {
+                  if (attempt < 9) {
+                    console.log(`[bgcheck] Attempt ${attempt + 1} incomplete (verify: ${verify.message}), retrying`);
+                    const assistantMsg = assistantParts.length > 0 ? [{ role: "assistant", parts: assistantParts }] : [];
+                    currentUIMessages = [...currentUIMessages, ...assistantMsg, {
+                      role: "user",
+                      parts: [{ type: "text", text: `[INSTRUCTION] ${verify.message}` }],
+                    }];
+                    continue;
+                  }
+                  loopExhausted = true;
+                  console.error(`[bgcheck] Last attempt (${attempt + 1}) still incomplete:`, verify.message);
                 }
+              } catch (e) {
+                console.error("[bgcheck] Verify error (non-fatal):", e);
+                if (attempt < 9) continue;
                 loopExhausted = true;
-                console.error(`[bgcheck] Last attempt (${attempt + 1}) still incomplete:`, verify.message);
               }
-            } catch (e) {
-              console.error("[bgcheck] Verify error (non-fatal):", e);
-              if (attempt < 9) continue;
-              loopExhausted = true;
+              break;
             }
-            break;
+
+            // Stream interrupted (timeout/error) — retry without verify, without delivery override
+            if (assistantParts.length > 0) {
+              currentUIMessages = [...currentUIMessages, { role: "assistant", parts: assistantParts }];
+            }
+            if (attempt < 9) {
+              console.log(`[bgcheck] Attempt ${attempt + 1} interrupted, retrying`);
+              continue;
+            }
+            loopExhausted = true;
+            console.error(`[bgcheck] Last attempt (${attempt + 1}) interrupted, giving up`);
           } catch (e) {
             console.error(`[bgcheck] Attempt ${attempt + 1} error:`, e);
             if (attempt < 9) {

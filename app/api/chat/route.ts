@@ -251,7 +251,14 @@ export async function POST(req: Request) {
                 writer.write(v);
               }
             } catch (e) {
-              console.error("[bgcheck] Stream read error:", e);
+              const err = e as any;
+              const is429 = err?.statusCode === 429 || (err?.errors || []).some((x: any) => x?.statusCode === 429);
+              if (is429 || /too many requests|rate limit/i.test(err?.message || "")) {
+                console.log("[bgcheck] Rate limit on stream, waiting 60s before retry...");
+                await new Promise(r => setTimeout(r, 60000));
+              } else {
+                console.error("[bgcheck] Stream read error:", e);
+              }
             } finally {
               reader.releaseLock();
             }
@@ -282,7 +289,7 @@ export async function POST(req: Request) {
             break;
           } catch (e) {
             const err = e as any;
-            const isRateLimit = err?.statusCode === 429 || (err?.message || "").toLowerCase().includes("rate limit") || (err?.message || "").toLowerCase().includes("too many requests");
+            const isRateLimit = err?.statusCode === 429 || (err?.errors || []).some((x: any) => x?.statusCode === 429) || /too many requests|rate limit|token_quota_exceeded/i.test(err?.message || "");
             console.error(`[bgcheck] Attempt ${attempt + 1} error${isRateLimit ? ' (rate limit)' : ''}:`, e);
             if (attempt < 9) {
               const delay = isRateLimit

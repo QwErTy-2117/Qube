@@ -3,15 +3,14 @@
 import { Sparkles } from "lucide-react";
 import { type FC, useEffect, useState } from "react";
 import { useAui } from "@assistant-ui/react";
+import { cn } from "@/lib/utils";
 import { TooltipIconButton } from "./tooltip-icon-button";
 
 export const ThinkingToggle: FC = () => {
-  const [thinking, setThinking] = useState(false);
+  const [thinking, setThinking] = useState(
+    () => localStorage.getItem("qube-thinking") === "on",
+  );
   const api = useAui();
-
-  useEffect(() => {
-    setThinking(localStorage.getItem("qube-thinking") === "on");
-  }, []);
 
   const toggle = () => {
     const next = !thinking;
@@ -35,7 +34,7 @@ export const ThinkingToggle: FC = () => {
       side="bottom"
       variant="ghost"
       size="icon"
-      className={`!size-7 rounded-full p-1 ${thinking ? "text-sky-500" : "text-muted-foreground"}`}
+      className={cn("!size-7 rounded-full p-1", thinking ? "text-sky-500" : "text-muted-foreground")}
       aria-label={thinking ? "Disable thinking" : "Enable thinking"}
       onClick={toggle}
     >

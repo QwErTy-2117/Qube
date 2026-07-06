@@ -5,6 +5,7 @@ import {
   ComposerAttachments,
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
+import { ThinkingToggle } from "@/components/assistant-ui/thinking-toggle";
 import {
   MarkdownText,
   MarkdownTextPrimitive,
@@ -646,6 +647,7 @@ const ComposerAction: FC = () => {
       <div className="flex items-center gap-1">
         <ComposerAddAttachment />
         <ModelPicker />
+        <ThinkingToggle />
       </div>
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
@@ -851,7 +853,7 @@ const AssistantMessage: FC = () => {
                 const extPattern = "(pptx?|docx?|xlsx?|pdf|csv|zip|png|jpe?g|gif|svg)";
                 const fileRefs = [
                   ...rawText.matchAll(new RegExp(`\\[file:\\s*(.+?)\\]`, "gi")),
-                  ...rawText.matchAll(new RegExp(`\\[([^\\]]+\\.${extPattern})\\]`, "gi")),
+                  ...rawText.matchAll(new RegExp(`\\[(?!file:)([^\\]]+\\.${extPattern})\\]`, "gi")),
                 ];
                 if (!fileRefs.length) return <MarkdownText />;
 
@@ -860,7 +862,10 @@ const AssistantMessage: FC = () => {
                     <MarkdownTextPrimitive
                       remarkPlugins={[remarkGfm]}
                       components={defaultComponents}
-                      preprocess={(t: string) => t.replace(new RegExp(`\\[file:\\s*.+?\\]|\\[[^\\]]+\\.${extPattern}\\]`, "gi"), "").trim()}
+                      preprocess={(t: string) => t
+                        .replace(/<script[\s\S]*?<\/script>/gi, "")
+                        .replace(/<script\b[^>]*\/>/gi, "")
+                        .replace(new RegExp(`\\[file:\\s*.+?\\]|\\[[^\\]]+\\.${extPattern}\\]`, "gi"), "").trim()}
                     />
                     {fileRefs.map(([, path, fallbackExt], i) => {
                       const filePath = (path || fallbackExt).trim();

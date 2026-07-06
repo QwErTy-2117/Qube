@@ -177,6 +177,7 @@ export async function POST(req: Request) {
         return `Error [${errMsg}]`;
       },
       execute: async ({ writer }) => {
+        try {
         let currentUIMessages = uiMessages;
 
         let loopExhausted = false;
@@ -322,6 +323,12 @@ export async function POST(req: Request) {
           writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The AI service is temporarily unavailable. Please try again in a moment.)*" });
           writer.write({ type: "text-end", id: "fallback" });
         }
+      } catch (e) {
+        // Nuclear backstop: any error that escapes all other catches writes a text-delta
+        try { writer.write({ type: "text-start", id: "fallback" }); } catch {}
+        try { writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The AI service is temporarily unavailable. Please try again in a moment.)*" }); } catch {}
+        try { writer.write({ type: "text-end", id: "fallback" }); } catch {}
+      }
       },
     });
 

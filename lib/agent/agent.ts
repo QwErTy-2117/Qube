@@ -79,7 +79,6 @@ export async function createAgent(config: AgentConfig) {
       if (steps.length >= 15) return true;
       return false;
     },
-    timeout: 15_000,
     temperature: config.temperature !== undefined ? config.temperature : 0.7,
 
     tools: ({

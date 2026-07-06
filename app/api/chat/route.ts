@@ -281,9 +281,13 @@ export async function POST(req: Request) {
             }
             break;
           } catch (e) {
-            console.error(`[bgcheck] Attempt ${attempt + 1} error:`, e);
+            const err = e as any;
+            const isRateLimit = err?.statusCode === 429 || (err?.message || "").toLowerCase().includes("rate limit") || (err?.message || "").toLowerCase().includes("too many requests");
+            console.error(`[bgcheck] Attempt ${attempt + 1} error${isRateLimit ? ' (rate limit)' : ''}:`, e);
             if (attempt < 9) {
-              const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
+              const delay = isRateLimit
+                ? Math.min(1000 * Math.pow(4, attempt), 60000)
+                : Math.min(1000 * Math.pow(2, attempt), 8000);
               console.log(`[bgcheck] Backoff ${delay}ms before retry`);
               await new Promise(r => setTimeout(r, delay));
               continue;
@@ -296,6 +300,10 @@ export async function POST(req: Request) {
         if (loopExhausted && hasAnyToolResults) {
           writer.write({ type: "text-start", id: "fallback" });
           writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The agent gathered data but ran out of retries while drafting the final response. The tool results above show what was collected.)*" });
+          writer.write({ type: "text-end", id: "fallback" });
+        } else if (loopExhausted && !hasAnyToolResults) {
+          writer.write({ type: "text-start", id: "fallback" });
+          writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The AI service is temporarily unavailable. Please try again in a moment.)*" });
           writer.write({ type: "text-end", id: "fallback" });
         }
       },

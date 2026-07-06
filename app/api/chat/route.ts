@@ -103,26 +103,20 @@ async function verifyCompletion(
     return toolNames.includes("web_search") || toolNames.includes("web_fetch");
   });
 
-  const system = `You are a task completion verifier. Reply EXACTLY "COMPLETE" or "CONTINUE: <reason>".
-
-COMPLETE = the agent wrote a final answer for the user AND the work is done.
-CONTINUE = the work may be technically done but the agent hasn't delivered the answer to the user yet, or more work is needed.`;
-
   const prompt = `Request: "${request}"
 Context: ${contextLines.join(" | ")}
-Agent text to user: "${(agentText || "(no text yet)").slice(0, 500)}"
+Agent text: "${(agentText || "(no text yet)").slice(0, 500)}"
 Has tool results: ${hasToolResults}
-Agent delivered answer to user: ${hasDeliveryText}
-Stream ended naturally: ${streamEndedNaturally}
-Task: Decide if the agent fully completed the request AND told the user the result.`;
+Delivered: ${hasDeliveryText}
+COMPLETE or CONTINUE: what's missing?`;
 
   try {
     const result = await generateText({
-      model: cerebras.chat(toCerebrasModelId("gpt-oss-120b")),
-      system,
+      model: cerebras.chat("zai-glm-4.7"),
+      system: "COMPLETE if agent wrote the answer. CONTINUE: <what's missing> otherwise.",
       prompt,
       temperature: 0,
-      maxOutputTokens: 100,
+      maxOutputTokens: 60,
     });
 
     const text = result.text.trim();

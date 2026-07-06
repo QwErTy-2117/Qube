@@ -145,7 +145,7 @@ export async function POST(req: Request) {
       const { readSession } = await import("@/lib/memory/session-store");
       const prevSession = await readSession(lastThreadId);
       if (prevSession?.transcript) {
-        await extractAndStoreMemories(prevSession.transcript);
+        extractAndStoreMemories(prevSession.transcript).catch(() => {});
         cleanupMemories().catch(() => {});
       }
     }

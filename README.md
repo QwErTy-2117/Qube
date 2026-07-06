@@ -4,7 +4,7 @@ Qube is an AI agent app. It's a desktop chat interface for an AI that can work w
 
 Designed for non-power users who want the capabilities of a coding agent without the terminal setup.
 
-![Qube screenshot](logo.png)
+<img src="public/logo.png" alt="Qube screenshot" width="400">
 
 ---
 

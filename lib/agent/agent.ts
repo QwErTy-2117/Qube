@@ -1,6 +1,6 @@
 import { streamText, tool } from "ai";
 import { z } from "zod";
-import { cerebras, resolveCerebrasModel, toCerebrasModelId } from "./cerebras";
+import { zen, resolveZenModel } from "./zen";
 import { DDGS } from "@phukon/duckduckgo-search";
 import { JSDOM } from "jsdom";
 import { buildSystemPrompt } from "./system-prompt";
@@ -83,10 +83,10 @@ export async function createAgent(config: AgentConfig) {
     };
   };
 
-  const resolvedModel = resolveCerebrasModel(config.modelName);
+  const resolvedModel = resolveZenModel(config.modelName);
 
   const result = streamText({
-    model: cerebras.chat(toCerebrasModelId(resolvedModel)),
+    model: zen.chat(resolvedModel),
     system: systemPrompt,
     messages: config.messages as any,
     maxRetries: 0,

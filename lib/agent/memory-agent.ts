@@ -1,5 +1,5 @@
 import { generateText } from "ai";
-import { cerebras, resolveCerebrasModel } from "./cerebras";
+import { zen, resolveZenModel } from "./zen";
 import {
   addMemoryEntry,
   getMemoryEntries,
@@ -9,7 +9,7 @@ import {
   type MemoryEntry,
 } from "@/lib/memory/memory-store";
 
-const MEMORY_MODEL = process.env.MEMORY_MODEL || "zai-glm-4.7";
+const MEMORY_MODEL = process.env.MEMORY_MODEL || "deepseek-v4-flash-free";
 
 function parseScore(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
@@ -81,7 +81,7 @@ ${transcript.slice(0, 10000)}${existingContext}`;
 
   try {
     const result = await generateText({
-      model: cerebras.chat(resolveCerebrasModel(MEMORY_MODEL)),
+      model: zen.chat(resolveZenModel(MEMORY_MODEL)),
       prompt,
       temperature: 0.3,
     });
@@ -161,7 +161,7 @@ JSON array:`;
 
   try {
     const result = await generateText({
-      model: cerebras.chat(resolveCerebrasModel(MEMORY_MODEL)),
+      model: zen.chat(resolveZenModel(MEMORY_MODEL)),
       prompt,
       temperature: 0.2,
       maxOutputTokens: 2000,

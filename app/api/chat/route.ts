@@ -1,6 +1,6 @@
 import { createAgent } from "@/lib/agent/agent";
 import { extractAndStoreMemories, cleanupMemories } from "@/lib/agent/memory-agent";
-import { cerebras, toCerebrasModelId } from "@/lib/agent/cerebras";
+import { zen } from "@/lib/agent/zen";
 import { saveSession } from "@/lib/memory/session-store";
 import {
   getLastThreadId,
@@ -127,7 +127,7 @@ COMPLETE or CONTINUE: what's missing?`;
 
   try {
     const result = await generateText({
-      model: cerebras.chat("zai-glm-4.7"),
+      model: zen.chat("deepseek-v4-flash-free"),
       maxRetries: 0,
       system: "COMPLETE if agent wrote the answer. CONTINUE: <what's missing> otherwise.",
       prompt,

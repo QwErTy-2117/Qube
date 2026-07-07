@@ -15,3 +15,5 @@ generate_ppt.*
 *.docx
 *.pptx
 .memory/browser-profiles/
+*.log
+*.log.*

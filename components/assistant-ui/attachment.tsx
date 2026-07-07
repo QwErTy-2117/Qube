@@ -208,7 +208,7 @@ export const ComposerAttachments: FC = () => {
   );
 };
 
-const IMAGE_MODELS = new Set(["gemma-4-31b"]);
+const IMAGE_MODELS = new Set<string>();
 const IMAGE_ACCEPT = "image/*,.pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
 const DOCS_ACCEPT = ".pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
 

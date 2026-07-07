@@ -1,12 +1,12 @@
-import ZAI from "@lobehub/icons/es/ZAI";
-import OpenAI from "@lobehub/icons/es/OpenAI";
-import Gemma from "@lobehub/icons/es/Gemma";
+import DeepSeek from "@lobehub/icons/es/DeepSeek";
+import Nvidia from "@lobehub/icons/es/Nvidia";
+import XiaomiMiMo from "@lobehub/icons/es/XiaomiMiMo";
+import { Sparkles } from "lucide-react";
 
 export function docsModelOptions() {
   return [
-    { id: "zai-glm-4.7", name: "GLM 4.7", icon: <ZAI size={16} /> },
-    { id: "gpt-oss-120b", name: "GPT-OSS 120B", icon: <OpenAI size={16} /> },
-    { id: "gemma-4-31b", name: "Gemma 4 31B", icon: <Gemma.Color size={16} /> },
+    { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash", icon: <DeepSeek.Color size={16} /> },
+    { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra", icon: <Nvidia.Color size={16} /> },
+    { id: "mimo-v2.5-free", name: "MiMo V2.5", icon: <XiaomiMiMo size={16} /> },
   ];
 }
-

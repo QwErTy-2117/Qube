@@ -69,7 +69,7 @@ Qube is sandboxed in its own workspace directory:
 ### Requirements
 
 - Node.js 20 or newer
-- A [Cerebras](https://console.cerebras.ai/api-keys) API key
+- An [OpenCode Zen](https://opencode.ai/zen) API key
 
 ### Setup
 
@@ -80,7 +80,7 @@ cp .env.example .env.local
 Add your API key to `.env.local`:
 
 ```
-CEREBRAS_API_KEY=your_key_here
+OPENCODE_API_KEY=your_key_here
 ```
 
 Then:
@@ -94,7 +94,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Running without an API key
 
-The app works without a key — it returns a simulated response so you can explore the interface. To use the live AI, add your Cerebras API key.
+The app works without a key — it returns a simulated response so you can explore the interface. To use the live AI, add your OpenCode Zen API key.
 
 ---
 
@@ -102,10 +102,10 @@ The app works without a key — it returns a simulated response so you can explo
 
 | Environment variable | Default | Description |
 |---|---|---|
-| `CEREBRAS_API_KEY` | — | API key for Cerebras inference |
+| `OPENCODE_API_KEY` | — | API key for OpenCode Zen inference |
 | `WORKSPACE_PATH` | `./workspace` | Agent's working directory |
 | `PERMISSION_TIMEOUT_MS` | `300000` | How long permission prompts wait (ms) |
-| `MEMORY_MODEL` | `zai-glm-4.7` | Model used for memory extraction |
+| `MEMORY_MODEL` | `deepseek-v4-flash-free` | Model used for memory extraction |
 
 ---
 
@@ -113,7 +113,7 @@ The app works without a key — it returns a simulated response so you can explo
 
 - **Next.js 16** with App Router and TypeScript
 - **assistant-ui** — chat UI primitives and runtime
-- **Cerebras** — AI inference (OpenAI-compatible API)
+- **OpenCode Zen** — AI inference (free models)
 - **Tailwind CSS 4** — styling
 - **Lexical** — rich text composer with slash commands and mentions
 - **Zustand** — client state
@@ -147,7 +147,7 @@ Qube/
 ## Built with
 
 - [assistant-ui](https://www.assistant-ui.com/) — React components for AI chat interfaces
-- [Cerebras](https://cerebras.ai/) — fast AI inference hardware
+- [OpenCode Zen](https://opencode.ai/zen) — AI gateway with free coding models
 - [shadcn/ui](https://ui.shadcn.com/) — UI component primitives
 - [Vercel AI SDK](https://sdk.vercel.ai/docs) — streaming and tool use
 

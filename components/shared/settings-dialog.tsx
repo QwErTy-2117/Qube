@@ -492,12 +492,12 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               {/* Default model */}
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-foreground">Default Model</label>
-                <p className="text-xs text-muted-foreground">Which Cerebras model to load by default for new chats.</p>
+                <p className="text-xs text-muted-foreground">Which model to use by default for new chats.</p>
                 <div className="grid grid-cols-1 gap-2 mt-2">
                   {[
-                    { id: "zai-glm-4.7", name: "GLM 4.7", desc: "355B Z.ai flagship — reasoning, coding & agentic workflows" },
-                    { id: "gpt-oss-120b", name: "GPT-OSS 120B", desc: "Production MoE with 120B params — fast & capable" },
-                    { id: "gemma-4-31b", name: "Gemma 4 31B", desc: "Efficient 31B Google model — strong reasoning" },
+                    { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash", desc: "Free — strong coding model from DeepSeek" },
+                    { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra", desc: "Free — NVIDIA's flagship reasoning model" },
+                    { id: "mimo-v2.5-free", name: "MiMo V2.5", desc: "Free — lightweight and fast" },
                   ].map((m) => (
                     <button
                       key={m.id}

@@ -88,11 +88,11 @@ export function AskUserBar({
   }, [question.options, selectedOptions, customAnswer, onRespond]);
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-sky-200 bg-sky-50/80 p-4 dark:border-sky-800/50 dark:bg-sky-950/20">
+    <div className="flex flex-col gap-3 rounded-[1.5rem] border border-border bg-muted/20 p-4">
       <div className="flex items-start gap-3">
-        <HelpCircleIcon className="mt-0.5 size-5 shrink-0 text-sky-600 dark:text-sky-400" />
+        <HelpCircleIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-sky-800 dark:text-sky-200">
+          <p className="text-sm font-medium text-foreground">
             Question
           </p>
           <p className="mt-1 text-sm text-foreground">{question.question}</p>

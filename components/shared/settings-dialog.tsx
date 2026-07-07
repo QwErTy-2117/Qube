@@ -9,17 +9,26 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   BrainIcon,
-  HistoryIcon,
   SlidersIcon,
   Trash2Icon,
   CheckIcon,
   Loader2Icon,
-  AlertCircleIcon,
   TagIcon,
   CalendarIcon,
+  SunIcon,
+  MoonIcon,
+  MonitorIcon,
+  Settings2Icon,
 } from "lucide-react";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/assistant-ui/tabs";
 import { DEFAULT_MODEL_ID } from "@/constants/model";
 import { cn } from "@/lib/utils";
+import { useTheme } from "next-themes";
 
 interface MemoryEntry {
   id: string;
@@ -91,8 +100,9 @@ function SectionHeader({ title, action }: { title: string; action?: ReactNode })
 }
 
 export function SettingsDialog({ children }: { children: ReactNode }) {
+  const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"memories" | "sessions" | "preferences">("memories");
+  const [tabValue, setTabValue] = useState("preferences");
 
   // Memory state
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
@@ -108,6 +118,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [defaultModel, setDefaultModel] = useState(DEFAULT_MODEL_ID);
   const [customSystemPrompt, setCustomSystemPrompt] = useState("");
   const [temperature, setTemperature] = useState(0.7);
+  const [userName, setUserName] = useState("");
+  const [userAbout, setUserAbout] = useState("");
   const [savedPrefs, setSavedPrefs] = useState(false);
 
   const fetchMemories = useCallback(async () => {
@@ -172,6 +184,15 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     localStorage.setItem("qube-default-model", defaultModel);
     localStorage.setItem("qube-custom-system-prompt", customSystemPrompt);
     localStorage.setItem("qube-temperature", String(temperature));
+    localStorage.setItem("qube-user-name", userName);
+    localStorage.setItem("qube-user-about", userAbout);
+    setSavedPrefs(true);
+    setTimeout(() => setSavedPrefs(false), 2000);
+  };
+
+  const handleSaveUserPreferences = () => {
+    localStorage.setItem("qube-user-name", userName);
+    localStorage.setItem("qube-user-about", userAbout);
     setSavedPrefs(true);
     setTimeout(() => setSavedPrefs(false), 2000);
   };
@@ -184,21 +205,19 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       setCustomSystemPrompt(localStorage.getItem("qube-custom-system-prompt") || "");
       const t = localStorage.getItem("qube-temperature");
       if (t) setTemperature(parseFloat(t));
+      setUserName(localStorage.getItem("qube-user-name") || "");
+      setUserAbout(localStorage.getItem("qube-user-about") || "");
     }
   }, [open]);
 
   // Load data when tab changes
   useEffect(() => {
     if (!open) return;
-    if (activeTab === "memories") fetchMemories();
-    else if (activeTab === "sessions") fetchSessions();
-  }, [open, activeTab, fetchMemories, fetchSessions]);
-
-  const tabs: { id: typeof activeTab; label: string; icon: React.FC<any>; count?: number }[] = [
-    { id: "memories", label: "Memories", icon: BrainIcon, count: memories.length || undefined },
-    { id: "sessions", label: "Sessions", icon: HistoryIcon, count: sessions.length || undefined },
-    { id: "preferences", label: "Preferences", icon: SlidersIcon },
-  ];
+    if (tabValue === "memories") {
+      fetchMemories();
+      fetchSessions();
+    }
+  }, [open, tabValue, fetchMemories, fetchSessions]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -209,51 +228,105 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         className="sm:max-w-4xl max-w-4xl w-full p-0 flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden"
         style={{ height: "min(660px, 90vh)" }}
       >
-        <div className="flex flex-1 overflow-hidden">
-
-          {/* ── Left sidebar nav ── */}
-          <nav className="w-52 shrink-0 border-e border-border/60 bg-muted/20 flex flex-col py-5 px-3 gap-1">
-            <div className="px-2 mb-3">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Qube Settings</p>
-            </div>
-
-            {tabs.map(({ id, label, icon: Icon, count }) => (
-              <button
-                key={id}
-                onClick={() => setActiveTab(id)}
-                className={cn(
-                  "group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full",
-                  activeTab === id
-                    ? "bg-background text-foreground shadow-sm border border-border/60"
-                    : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
-                )}
-              >
-                <Icon className={cn("size-4 shrink-0", activeTab === id ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
-                <span className="flex-1">{label}</span>
-                {count !== undefined && (
-                  <span className={cn(
-                    "text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
-                    activeTab === id ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-                  )}>
-                    {count}
+        <Tabs value={tabValue} onValueChange={setTabValue} className="flex flex-col flex-1 overflow-hidden">
+          <div className="shrink-0 px-6 pt-5 pb-0 border-b border-border/60">
+            <TabsList variant="line">
+              <TabsTrigger value="preferences">
+                <SlidersIcon className="size-4" />
+                Preferences
+              </TabsTrigger>
+              <TabsTrigger value="memories">
+                <BrainIcon className="size-4" />
+                Memories
+                {(memories.length + sessions.length) > 0 && (
+                  <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">
+                    {memories.length + sessions.length}
                   </span>
                 )}
-              </button>
-            ))}
+              </TabsTrigger>
+              <TabsTrigger value="advanced">
+                <Settings2Icon className="size-4" />
+                Advanced
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-            <div className="mt-auto px-2 pt-3 border-t border-border/60">
-              <p className="text-[10px] text-muted-foreground/50 leading-relaxed">
-                Memories and sessions are stored locally on disk. Model keys are sourced from environment variables.
-              </p>
+          {/* Preferences Tab */}
+          <TabsContent value="preferences" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
+            <div className="flex-1 overflow-y-auto space-y-6 pr-1">
+              {/* Your Name */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">Your Name</label>
+                <p className="text-xs text-muted-foreground">What Qube should call you.</p>
+                <input
+                  type="text"
+                  placeholder="Enter your name..."
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 mt-1 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+
+              {/* About You */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">About You</label>
+                <p className="text-xs text-muted-foreground">Tell Qube about yourself for personalized responses.</p>
+                <textarea
+                  placeholder="E.g. I'm a full-stack developer who loves Rust and TypeScript..."
+                  value={userAbout}
+                  onChange={(e) => setUserAbout(e.target.value)}
+                  rows={4}
+                  className="w-full px-3.5 py-2.5 mt-1 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
+                />
+              </div>
+
+              {/* Theme */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">Theme</label>
+                <p className="text-xs text-muted-foreground">Choose your preferred appearance.</p>
+                <div className="grid grid-cols-3 gap-3 mt-2">
+                  {[
+                    { id: "light", icon: SunIcon, label: "Light" },
+                    { id: "dark", icon: MoonIcon, label: "Dark" },
+                    { id: "system", icon: MonitorIcon, label: "System" },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setTheme(t.id)}
+                      className={cn(
+                        "flex flex-col items-center gap-2 p-3.5 rounded-xl border text-center transition-all",
+                        theme === t.id
+                          ? "border-primary/60 bg-primary/5 shadow-xs"
+                          : "border-border hover:border-border/80 hover:bg-muted/40"
+                      )}
+                    >
+                      <t.icon className="size-5" />
+                      <span className="text-sm font-medium">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          </nav>
 
-          {/* ── Right content panel ── */}
-          <main className="flex-1 flex flex-col overflow-hidden">
+            {/* Save button */}
+            <div className="pt-4 border-t border-border/60 mt-4 flex justify-end shrink-0">
+              <Button
+                onClick={handleSaveUserPreferences}
+                className={cn("font-semibold px-5 transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
+              >
+                {savedPrefs
+                  ? <><CheckIcon className="size-4 mr-1.5" />Saved!</>
+                  : "Save Preferences"
+                }
+              </Button>
+            </div>
+          </TabsContent>
 
-            {/* ── MEMORIES TAB ── */}
-            {activeTab === "memories" && (
-              <div className="flex-1 flex flex-col overflow-hidden p-6">
+          {/* Memories Tab */}
+          <TabsContent value="memories" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
+            <div className="flex-1 overflow-y-auto space-y-8 pr-1">
+              {/* Long-Term Memories */}
+              <div>
                 <SectionHeader
                   title="Long-Term Memories"
                   action={
@@ -269,10 +342,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   Facts and preferences Qube has automatically learned from your conversations.
                 </p>
 
-                {/* Memories list */}
-                <div className="flex-1 overflow-y-auto rounded-xl border border-border/60 bg-muted/10 mb-4">
+                <div className="rounded-xl border border-border/60 bg-muted/10">
                   {loadingMemories ? (
-                    <div className="flex items-center justify-center h-full py-16">
+                    <div className="flex items-center justify-center py-16">
                       <Loader2Icon className="size-5 animate-spin text-muted-foreground/40" />
                     </div>
                   ) : memories.length === 0 ? (
@@ -312,14 +384,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                     </div>
                   )}
                 </div>
-
-
               </div>
-            )}
 
-            {/* ── SESSIONS TAB ── */}
-            {activeTab === "sessions" && (
-              <div className="flex-1 flex flex-col overflow-hidden p-6">
+              {/* Past Sessions */}
+              <div>
                 <SectionHeader
                   title="Past Sessions"
                   action={
@@ -335,14 +403,14 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   Your conversation history, stored locally. Qube uses these for long-term context.
                 </p>
 
-                <div className="flex-1 overflow-y-auto rounded-xl border border-border/60 bg-muted/10">
+                <div className="rounded-xl border border-border/60 bg-muted/10">
                   {loadingSessions ? (
-                    <div className="flex items-center justify-center h-full py-16">
+                    <div className="flex items-center justify-center py-16">
                       <Loader2Icon className="size-5 animate-spin text-muted-foreground/40" />
                     </div>
                   ) : sessions.length === 0 ? (
                     <EmptyState
-                      icon={HistoryIcon}
+                      icon={CalendarIcon}
                       title="No sessions recorded"
                       description="Start a conversation and it will be saved here for reference."
                     />
@@ -393,103 +461,99 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   )}
                 </div>
               </div>
-            )}
+            </div>
+          </TabsContent>
 
-            {/* ── PREFERENCES TAB ── */}
-            {activeTab === "preferences" && (
-              <div className="flex-1 flex flex-col overflow-hidden p-6">
-                <SectionHeader title="Preferences" />
-                <div className="flex-1 overflow-y-auto space-y-6 pr-1">
-
-                  {/* Default model */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">Default Model</label>
-                    <p className="text-xs text-muted-foreground">Which Cerebras model to load by default for new chats.</p>
-                    <div className="grid grid-cols-1 gap-2 mt-2">
-                      {[
-                        { id: "zai-glm-4.7", name: "GLM 4.7", desc: "355B Z.ai flagship — reasoning, coding & agentic workflows" },
-                        { id: "gpt-oss-120b", name: "GPT-OSS 120B", desc: "Production MoE with 120B params — fast & capable" },
-                        { id: "gemma-4-31b", name: "Gemma 4 31B", desc: "Efficient 31B Google model — strong reasoning" },
-                      ].map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => setDefaultModel(m.id)}
-                          className={cn(
-                            "flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all",
-                            defaultModel === m.id
-                              ? "border-primary/60 bg-primary/5 shadow-xs"
-                              : "border-border hover:border-border/80 hover:bg-muted/40"
-                          )}
-                        >
-                          <div className={cn(
-                            "size-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-all",
-                            defaultModel === m.id ? "border-primary bg-primary" : "border-muted-foreground/30"
-                          )}>
-                            {defaultModel === m.id && <div className="size-1.5 rounded-full bg-white" />}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-foreground">{m.name}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">{m.desc}</p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Temperature */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-semibold text-foreground">Temperature</label>
-                      <span className="text-sm font-mono font-bold bg-muted px-2 py-0.5 rounded-md">
-                        {temperature.toFixed(1)}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Higher values = more creative, lower values = more focused.</p>
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs text-muted-foreground w-10 text-right">Focus</span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1.5"
-                        step="0.1"
-                        value={temperature}
-                        onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                        className="flex-1 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                      />
-                      <span className="text-xs text-muted-foreground w-14">Creative</span>
-                    </div>
-                  </div>
-
-                  {/* Custom system instructions */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">Custom System Instructions</label>
-                    <p className="text-xs text-muted-foreground">Additional instructions appended to Qube's core agent prompt on every request.</p>
-                    <textarea
-                      placeholder="E.g. Always respond in Italian. Prefer functional programming patterns. Never use semicolons in JS…"
-                      value={customSystemPrompt}
-                      onChange={(e) => setCustomSystemPrompt(e.target.value)}
-                      rows={5}
-                      className="w-full px-3.5 py-2.5 mt-1 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
-                    />
-                  </div>
-                </div>
-
-                {/* Save button */}
-                <div className="pt-4 border-t border-border/60 mt-4 flex justify-end shrink-0">
-                  <Button
-                    onClick={handleSavePreferences}
-                    className={cn("font-semibold px-5 transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
-                  >
-                    {savedPrefs
-                      ? <><CheckIcon className="size-4 mr-1.5" />Saved!</>
-                      : "Save Preferences"
-                    }
-                  </Button>
+          {/* Advanced Tab */}
+          <TabsContent value="advanced" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
+            <div className="flex-1 overflow-y-auto space-y-6 pr-1">
+              {/* Default model */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">Default Model</label>
+                <p className="text-xs text-muted-foreground">Which Cerebras model to load by default for new chats.</p>
+                <div className="grid grid-cols-1 gap-2 mt-2">
+                  {[
+                    { id: "zai-glm-4.7", name: "GLM 4.7", desc: "355B Z.ai flagship — reasoning, coding & agentic workflows" },
+                    { id: "gpt-oss-120b", name: "GPT-OSS 120B", desc: "Production MoE with 120B params — fast & capable" },
+                    { id: "gemma-4-31b", name: "Gemma 4 31B", desc: "Efficient 31B Google model — strong reasoning" },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setDefaultModel(m.id)}
+                      className={cn(
+                        "flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all",
+                        defaultModel === m.id
+                          ? "border-primary/60 bg-primary/5 shadow-xs"
+                          : "border-border hover:border-border/80 hover:bg-muted/40"
+                      )}
+                    >
+                      <div className={cn(
+                        "size-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-all",
+                        defaultModel === m.id ? "border-primary bg-primary" : "border-muted-foreground/30"
+                      )}>
+                        {defaultModel === m.id && <div className="size-1.5 rounded-full bg-white" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{m.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{m.desc}</p>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
-          </main>
-        </div>
+
+              {/* Temperature */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-foreground">Temperature</label>
+                  <span className="text-sm font-mono font-bold bg-muted px-2 py-0.5 rounded-md">
+                    {temperature.toFixed(1)}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">Higher values = more creative, lower values = more focused.</p>
+                <div className="flex items-center gap-3 mt-2">
+                  <span className="text-xs text-muted-foreground w-10 text-right">Focus</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1.5"
+                    step="0.1"
+                    value={temperature}
+                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                    className="flex-1 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                  <span className="text-xs text-muted-foreground w-14">Creative</span>
+                </div>
+              </div>
+
+              {/* Custom system instructions */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">Custom System Instructions</label>
+                <p className="text-xs text-muted-foreground">Additional instructions appended to Qube's core agent prompt on every request.</p>
+                <textarea
+                  placeholder="E.g. Always respond in Italian. Prefer functional programming patterns. Never use semicolons in JS…"
+                  value={customSystemPrompt}
+                  onChange={(e) => setCustomSystemPrompt(e.target.value)}
+                  rows={5}
+                  className="w-full px-3.5 py-2.5 mt-1 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
+                />
+              </div>
+            </div>
+
+            {/* Save button */}
+            <div className="pt-4 border-t border-border/60 mt-4 flex justify-end shrink-0">
+              <Button
+                onClick={handleSavePreferences}
+                className={cn("font-semibold px-5 transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
+              >
+                {savedPrefs
+                  ? <><CheckIcon className="size-4 mr-1.5" />Saved!</>
+                  : "Save Preferences"
+                }
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

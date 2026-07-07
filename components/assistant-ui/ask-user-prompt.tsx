@@ -88,15 +88,18 @@ export function AskUserBar({
   }, [question.options, selectedOptions, customAnswer, onRespond]);
 
   return (
-    <div className="text-sm">
-      <div className="flex items-start gap-3 px-2 pt-2">
-        <HelpCircleIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+    <div className="flex flex-col gap-3 rounded-xl border border-sky-200 bg-sky-50/80 p-4 dark:border-sky-800/50 dark:bg-sky-950/20">
+      <div className="flex items-start gap-3">
+        <HelpCircleIcon className="mt-0.5 size-5 shrink-0 text-sky-600 dark:text-sky-400" />
         <div className="min-w-0 flex-1">
-          <p className="text-foreground">{question.question}</p>
+          <p className="text-sm font-medium text-sky-800 dark:text-sky-200">
+            Question
+          </p>
+          <p className="mt-1 text-sm text-foreground">{question.question}</p>
         </div>
       </div>
 
-      <div className="mt-2 flex flex-col gap-2 px-2 pb-2">
+      <div className="flex flex-col gap-2">
         {question.options && question.options.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {question.options.map((opt) => {
@@ -139,7 +142,7 @@ export function AskUserBar({
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-1.5 px-2 pb-2">
+      <div className="flex items-center justify-end gap-1.5">
         <button
           onClick={sendAnswer}
           disabled={question.options && question.options.length > 0 ? selectedOptions.size === 0 : !customAnswer.trim()}

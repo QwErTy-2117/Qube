@@ -250,11 +250,39 @@ const ThreadScrollToBottom: FC = () => {
   );
 };
 
+const WELCOMES = [
+  "Ready to build something?",
+  "What are we making today?",
+  "Let's write some code.",
+  "What's on your mind?",
+  "Hit me with it.",
+  "What should we break today?",
+  "Another day, another feature.",
+  "Ready when you are.",
+  "What's the plan?",
+  "What are we shipping?",
+  "Let's make it work.",
+  "What's the task?",
+  "Go ahead, I'm listening.",
+  "What's cooking?",
+  "Let's get to it.",
+  "Spill the requirements.",
+  "What's the damage?",
+  "Fire away.",
+  "What will it be?",
+  "I'm all ears.",
+];
+
 const ThreadWelcome: FC = () => {
+  const [welcome] = useState(() => WELCOMES[Math.floor(Math.random() * WELCOMES.length)]);
+
   return (
     <div className="aui-thread-welcome-root mx-auto mb-6 flex w-full max-w-(--thread-max-width) flex-col items-center px-4 text-center">
-      <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200">
-        How can I help you today?
+      <h1
+        suppressHydrationWarning
+        className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200"
+      >
+        {welcome}
       </h1>
     </div>
   );

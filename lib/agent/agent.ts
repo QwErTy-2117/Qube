@@ -47,15 +47,28 @@ export type AgentConfig = {
   modelName?: string;
   customSystemPrompt?: string;
   temperature?: number;
+  userName?: string;
+  userAbout?: string;
 };
 
 export async function createAgent(config: AgentConfig) {
   const threadId = config.threadId || `thread_${Date.now()}`;
   const memoryContext = await generateMemoryContext();
   const basePrompt = buildSystemPrompt(memoryContext);
-  const systemPrompt = config.systemPrompt || (config.customSystemPrompt 
-    ? `${basePrompt}\n\n## Custom System Instructions\n\n${config.customSystemPrompt}`
-    : basePrompt);
+
+  let userInfoSection = "";
+  if (config.userName || config.userAbout) {
+    const parts: string[] = [];
+    if (config.userName) parts.push(`User name: ${config.userName}`);
+    if (config.userAbout) parts.push(`About the user: ${config.userAbout}`);
+    userInfoSection = `\n\n## User Context\n\n${parts.join("\n")}`;
+  }
+
+  const systemPrompt = config.systemPrompt || (
+    config.customSystemPrompt
+      ? `${basePrompt}${userInfoSection}\n\n## Custom System Instructions\n\n${config.customSystemPrompt}`
+      : `${basePrompt}${userInfoSection}`
+  );
 
   const ep = (name: string, fn: (...args: any[]) => Promise<string>) => {
     return async (...args: any[]) => {

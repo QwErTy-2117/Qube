@@ -1,22 +1,145 @@
-import { generateText } from "ai";
-import { cerebras, resolveCerebrasModel } from "./cerebras";
-import {
-  addMemoryEntry,
-  getMemoryEntries,
-  getRelevantContext,
-  replaceAllEntries,
-  updateMemoryEntry,
-  type MemoryEntry,
-} from "@/lib/memory/memory-store";
+# Smarter & More Selective Memory — Implementation Plan
 
-const MEMORY_MODEL = process.env.MEMORY_MODEL || "zai-glm-4.7";
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-function parseScore(raw: string | undefined, fallback: number): number {
-  if (raw === undefined) return fallback;
-  const val = parseFloat(raw);
-  return isNaN(val) ? fallback : Math.max(0, Math.min(1, val));
+**Goal:** Make memory extraction deductive (infer implicit facts) and more selective (dedup at source, confidence scoring, relevance decay).
+
+**Architecture:** Add `confidence` field to schema, rewrite extraction prompt to infer + dedup in one LLM call, apply age-based decay when reading memories.
+
+**Tech Stack:** TypeScript, AI SDK (`generateText`), JSON file storage.
+
+---
+
+### Task 1: Memory Store — Add `confidence` + Relevance Decay
+
+**Files:**
+- Modify: `lib/memory/memory-store.ts`
+
+- [ ] **Step 1: Add `confidence` to `MemoryEntry` type and update default store version**
+
+```typescript
+export type MemoryEntry = {
+  id: string;
+  category: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  relevance: number;
+  confidence: number;   // NEW: 0.0-1.0, how sure we are about this fact
+};
+
+type MemoryStore = {
+  entries: MemoryEntry[];
+  version: number;
+};
+
+function defaultStore(): MemoryStore {
+  return { entries: [], version: 3 };   // Bump from 2 to 3
+}
+```
+
+- [ ] **Step 2: Update `migrateEntry` to handle v2→v3 migration (default `confidence = relevance`)**
+
+```typescript
+function migrateEntry(e: Record<string, unknown>): MemoryEntry {
+  return {
+    id: String(e.id ?? `mem_${Date.now()}`),
+    category: String(e.category ?? "general"),
+    content: String(e.content ?? ""),
+    createdAt: Number(e.createdAt ?? Date.now()),
+    updatedAt: Number(e.updatedAt ?? Date.now()),
+    relevance: e.relevance !== undefined ? Number(e.relevance) : e.confidence !== undefined ? Number(e.confidence) : 0.5,
+    confidence: e.confidence !== undefined ? Number(e.confidence) : Number(e.relevance ?? 0.5),
+  };
+}
+```
+
+- [ ] **Step 3: Update `readStore` and `replaceAllEntries` to use version 3**
+
+In `readStore()`, change `return { entries, version: 2 }` to `return { entries, version: 3 }`.
+
+In `replaceAllEntries()`, change `await writeStore({ entries, version: 2 })` to `await writeStore({ entries, version: 3 })`.
+
+- [ ] **Step 4: Update `addMemoryEntry` and `updateMemoryEntry` to accept `confidence`**
+
+```typescript
+export async function addMemoryEntry(
+  category: string,
+  content: string,
+  relevance = 0.5,
+  confidence?: number,   // NEW
+): Promise<MemoryEntry> {
+  const store = await readStore();
+  const entry: MemoryEntry = {
+    id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    category,
+    content,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    relevance,
+    confidence: confidence ?? relevance,
+  };
+  store.entries.push(entry);
+  await writeStore(store);
+  return entry;
 }
 
+export async function updateMemoryEntry(
+  id: string,
+  updates: Partial<Pick<MemoryEntry, "content" | "category" | "relevance" | "confidence">>,
+): Promise<boolean> {
+  const store = await readStore();
+  const entry = store.entries.find((e) => e.id === id);
+  if (!entry) return false;
+  if (updates.content !== undefined) entry.content = updates.content;
+  if (updates.category !== undefined) entry.category = updates.category;
+  if (updates.relevance !== undefined) entry.relevance = updates.relevance;
+  if (updates.confidence !== undefined) entry.confidence = updates.confidence;
+  entry.updatedAt = Date.now();
+  await writeStore(store);
+  return true;
+}
+```
+
+- [ ] **Step 5: Apply relevance decay in `getRelevantContext()`**
+
+```typescript
+export async function getRelevantContext(): Promise<string> {
+  const store = await readStore();
+  if (store.entries.length === 0) return "";
+  const now = Date.now();
+  const decayFactor = 0.95; // per day
+  const relevant = store.entries
+    .map((e) => {
+      const ageInDays = (now - e.createdAt) / (1000 * 60 * 60 * 24);
+      const adjustedRelevance = e.relevance * Math.pow(decayFactor, ageInDays);
+      return { ...e, adjustedRelevance };
+    })
+    .filter((e) => e.adjustedRelevance >= 0.4)
+    .sort((a, b) => b.adjustedRelevance - a.adjustedRelevance);
+  if (relevant.length === 0) return "";
+  const lines = relevant.map((e) => `- ${e.category}: ${e.content}`);
+  return lines.join("\n");
+}
+```
+
+- [ ] **Step 6: Verify TypeScript compiles**
+
+Run: `npx tsc --noEmit`
+Expected: no errors
+
+---
+
+### Task 2: Extraction Agent — Deductive Prompt + Combined Dedup
+
+**Files:**
+- Modify: `lib/agent/memory-agent.ts`
+
+- [ ] **Step 1: Update `extractAndStoreMemories` to load existing entries, rewrite prompt**
+
+Replace the function body with:
+
+```typescript
 export async function extractAndStoreMemories(
   transcript: string,
 ): Promise<void> {
@@ -93,13 +216,13 @@ ${transcript.slice(0, 10000)}${existingContext}`;
 
       const mergeMatch = trimmed.match(/^merge:(\S+?)\|\|/);
       if (mergeMatch) {
-        const parts = trimmed.slice(mergeMatch[0].length).split("||");
+        const parts = trimmed.slice(mergeMatch[0].length - mergeMatch[1].length - 2).split("||");
         const mergeId = mergeMatch[1];
         if (parts.length < 2) continue;
         const category = parts[0].trim().toLowerCase();
         const content = parts[1].trim();
-        const relevance = parseScore(parts[2], 0.5);
-        const confidence = parseScore(parts[3], relevance);
+        const relevance = parts[2] ? Math.max(0, Math.min(1, parseFloat(parts[2]) || 0.5)) : 0.5;
+        const confidence = parts[3] ? Math.max(0, Math.min(1, parseFloat(parts[3]) || relevance)) : relevance;
         if (category && content && content.length > 40) {
           const existing = existingEntries.find((e) => e.id === mergeId);
           if (existing) {
@@ -120,8 +243,8 @@ ${transcript.slice(0, 10000)}${existingContext}`;
       if (parts.length < 2) continue;
       const category = parts[0].trim().toLowerCase();
       const content = parts[1].trim();
-      const relevance = parseScore(parts[2], 0.5);
-      const confidence = parseScore(parts[3], relevance);
+      const relevance = parts[2] ? Math.max(0, Math.min(1, parseFloat(parts[2]) || 0.5)) : 0.5;
+      const confidence = parts[3] ? Math.max(0, Math.min(1, parseFloat(parts[3]) || relevance)) : relevance;
       if (category && content && content.length > 40) {
         await addMemoryEntry(category, content, relevance, confidence);
       }
@@ -130,7 +253,13 @@ ${transcript.slice(0, 10000)}${existingContext}`;
     // Memory extraction is best-effort; failures should not affect the main flow
   }
 }
+```
 
+- [ ] **Step 2: Update `cleanupMemories()` to handle confidence**
+
+Replace the cleanup prompt and logic:
+
+```typescript
 export async function cleanupMemories(): Promise<void> {
   const entries = await getMemoryEntries();
   if (entries.length < 2) return;
@@ -142,7 +271,7 @@ export async function cleanupMemories(): Promise<void> {
   const prompt = `You are a memory curator. Review these saved facts and clean them up:
 
 1. Merge duplicate or overlapping facts into a single, more complete fact
-2. Remove facts that are clearly outdated or irrelevant (relevance < 0.3 AND confidence < 0.3)
+2. Remove facts that are clearly outdated or irrelevant (relevance < 0.3 OR confidence < 0.3)
 3. Improve phrasing for clarity
 4. Keep the most relevant version when facts conflict
 5. Adjust confidence scores: merged facts should use the max confidence of their sources
@@ -211,8 +340,53 @@ JSON array:`;
     // Cleanup is best-effort
   }
 }
+```
 
-export async function generateMemoryContext(): Promise<string> {
-  const context = await getRelevantContext();
-  return context;
+- [ ] **Step 3: Verify TypeScript compiles**
+
+Run: `npx tsc --noEmit`
+Expected: no errors
+
+---
+
+### Task 3: Settings API — Accept `confidence` in POST
+
+**Files:**
+- Modify: `app/api/settings/memory/route.ts`
+
+- [ ] **Step 1: Pass `confidence` from POST body to `addMemoryEntry`**
+
+Update the POST handler:
+
+```typescript
+export async function POST(req: Request) {
+  try {
+    const { category, content, confidence } = await req.json();
+    if (!category || !content) {
+      return NextResponse.json({ error: "Category and content are required" }, { status: 400 });
+    }
+    await addMemoryEntry(category, content, undefined, confidence);
+    const entries = await getMemoryEntries();
+    return NextResponse.json({ entries });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }
+```
+
+- [ ] **Step 2: Verify TypeScript compiles**
+
+Run: `npx tsc --noEmit`
+Expected: no errors
+
+---
+
+### Verification
+
+- [ ] **Final check: Run full type check**
+
+```bash
+npx tsc --noEmit
+```
+
+Expected: clean exit (no errors)

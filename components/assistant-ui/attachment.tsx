@@ -209,8 +209,11 @@ export const ComposerAttachments: FC = () => {
 };
 
 const IMAGE_MODELS = new Set(["gemma-4-31b"]);
+const IMAGE_ACCEPT = "image/*,.pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
+const DOCS_ACCEPT = ".pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
 
 export const ComposerAddAttachment: FC = () => {
+  const aui = useAui();
   const [model, setModel] = useState(DEFAULT_MODEL_ID);
 
   useEffect(() => {
@@ -219,19 +222,41 @@ export const ComposerAddAttachment: FC = () => {
   }, []);
 
   const supportsImages = IMAGE_MODELS.has(model);
+  const accept = supportsImages ? IMAGE_ACCEPT : DOCS_ACCEPT;
+
+  const handleClick = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.accept = accept;
+    input.hidden = true;
+    document.body.appendChild(input);
+    input.onchange = (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (!files) { document.body.removeChild(input); return; }
+      for (const file of files) {
+        if (!supportsImages && file.type.startsWith("image/")) continue;
+        aui.composer().addAttachment(file).catch(console.error);
+      }
+      document.body.removeChild(input);
+    };
+    input.oncancel = () => {
+      if (!input.files || input.files.length === 0) document.body.removeChild(input);
+    };
+    input.click();
+  };
 
   return (
-    <ComposerPrimitive.AddAttachment asChild>
-      <TooltipIconButton
-        tooltip="Add Attachment"
-        side="bottom"
-        variant="ghost"
-        size="icon"
-        className="aui-composer-add-attachment hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30 !size-7 rounded-full p-1 text-xs font-semibold"
-        aria-label={supportsImages ? "Add Attachment (images & docs)" : "Add Attachment (docs only)"}
-      >
-        <PlusIcon className="aui-attachment-add-icon size-4.5 stroke-[1.5px]" />
-      </TooltipIconButton>
-    </ComposerPrimitive.AddAttachment>
+    <TooltipIconButton
+      tooltip="Add Attachment"
+      side="bottom"
+      variant="ghost"
+      size="icon"
+      className="aui-composer-add-attachment hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30 !size-7 rounded-full p-1 text-xs font-semibold"
+      aria-label={supportsImages ? "Add Attachment (images & docs)" : "Add Attachment (docs only)"}
+      onClick={handleClick}
+    >
+      <PlusIcon className="aui-attachment-add-icon size-4.5 stroke-[1.5px]" />
+    </TooltipIconButton>
   );
 };

@@ -12,11 +12,11 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { category, content } = await req.json();
+    const { category, content, relevance, confidence } = await req.json();
     if (!category || !content) {
       return NextResponse.json({ error: "Category and content are required" }, { status: 400 });
     }
-    await addMemoryEntry(category, content);
+    await addMemoryEntry(category, content, relevance, confidence);
     const entries = await getMemoryEntries();
     return NextResponse.json({ entries });
   } catch (error: any) {

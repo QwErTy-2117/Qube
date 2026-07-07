@@ -107,6 +107,55 @@
   }
 }
 
+@property --border-angle {
+  inherits: false;
+  initial-value: 0deg;
+  syntax: "<angle>";
+}
+
+@keyframes border-rotate {
+  to {
+    --border-angle: 360deg;
+  }
+}
+
+.rainbow-border {
+  background:
+    linear-gradient(var(--composer-bg, var(--color-background)), var(--composer-bg, var(--color-background))) padding-box,
+    conic-gradient(from var(--border-angle),
+      transparent 60%,
+      #6366f1 68%,
+      #a5b4fc 72%,
+      #ec4899 76%,
+      #22d3ee 80%,
+      #6366f1 84%,
+      transparent 92%
+    ) border-box;
+  border: 1px solid transparent;
+  animation: border-rotate 8s linear infinite;
+}
+
+.rainbow-border-active {
+  animation-duration: 3s;
+}
+
+.aui-composer-send:not(:disabled) {
+  background:
+    color-mix(in oklab, var(--color-background) 70%, transparent) padding-box,
+    conic-gradient(from var(--border-angle),
+      transparent 50%,
+      #6366f1 58%,
+      #a5b4fc 62%,
+      #ec4899 66%,
+      #22d3ee 70%,
+      #6366f1 74%,
+      transparent 82%
+    ) border-box;
+  box-shadow: none;
+  border: 1.5px solid transparent;
+  animation: border-rotate 4s linear infinite;
+}
+
 :focus-visible {
   box-shadow: none;
 }

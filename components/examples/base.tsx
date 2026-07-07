@@ -513,6 +513,7 @@ const PLACEHOLDERS = [
 ];
 
 const Composer: FC = () => {
+  const isRunning = useAuiState((s) => s.thread.isRunning);
   const [showAnimated, setShowAnimated] = useState(true);
 
   useEffect(() => {
@@ -566,7 +567,12 @@ const Composer: FC = () => {
         <ComposerPrimitive.AttachmentDropzone asChild>
           <div
             data-slot="aui_composer-shell"
-            className="border-border/60 data-[dragging=true]:border-ring focus-within:border-border dark:border-muted-foreground/15 dark:focus-within:border-muted-foreground/30 flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))] dark:shadow-none"
+            className={cn(
+              "flex w-full flex-col gap-2 rounded-(--composer-radius) p-(--composer-padding) transition-[border-color,box-shadow] data-[dragging=true]:border-dashed",
+              "rainbow-border bg-(--composer-bg) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] dark:shadow-none",
+              isRunning && "rainbow-border-active",
+              "data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))]",
+            )}
           >
             <motion.div layout transition={{ duration: 0.15 }}>
               <AnimatePresence mode="wait">
@@ -640,6 +646,26 @@ const Composer: FC = () => {
   );
 };
 
+const SendButton: FC = () => {
+  const aui = useAui();
+  const isEmpty = useAuiState((s) => s.composer.isEmpty);
+  return (
+    <TooltipIconButton
+      tooltip="Send message"
+      side="bottom"
+      type="button"
+      variant="default"
+      size="icon"
+      disabled={isEmpty}
+      className="aui-composer-send flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)]"
+      aria-label="Send message"
+      onClick={() => aui.composer().send()}
+    >
+      <ArrowUpIcon className="aui-composer-send-icon size-4.5" />
+    </TooltipIconButton>
+  );
+};
+
 const ComposerAction: FC = () => {
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
@@ -681,19 +707,7 @@ const ComposerAction: FC = () => {
           </AuiIf>
         </AuiIf>
         <AuiIf condition={(s) => !s.thread.isRunning}>
-          <ComposerPrimitive.Send asChild>
-            <TooltipIconButton
-              tooltip="Send message"
-              side="bottom"
-              type="button"
-              variant="default"
-              size="icon"
-               className="aui-composer-send flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] hover:bg-primary/90"
-              aria-label="Send message"
-            >
-              <ArrowUpIcon className="aui-composer-send-icon size-4.5" />
-            </TooltipIconButton>
-          </ComposerPrimitive.Send>
+          <SendButton />
         </AuiIf>
         <AuiIf condition={(s) => s.thread.isRunning}>
           <ComposerPrimitive.Cancel asChild>

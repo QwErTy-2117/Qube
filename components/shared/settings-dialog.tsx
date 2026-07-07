@@ -29,6 +29,7 @@ import {
 import { DEFAULT_MODEL_ID } from "@/constants/model";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
+import { motion } from "motion/react";
 
 interface MemoryEntry {
   id: string;
@@ -100,9 +101,25 @@ function SectionHeader({ title, action }: { title: string; action?: ReactNode })
 }
 
 export function SettingsDialog({ children }: { children: ReactNode }) {
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
+  const [themePref, setThemePref] = useState("light");
   const [open, setOpen] = useState(false);
   const [tabValue, setTabValue] = useState("preferences");
+
+  useEffect(() => {
+    const sync = () => {
+      const stored = localStorage.getItem("theme");
+      if (stored === "light" || stored === "dark" || stored === "system") {
+        setThemePref(stored);
+      } else {
+        setThemePref(document.documentElement.classList.contains("dark") ? "dark" : "light");
+      }
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   // Memory state
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
@@ -229,30 +246,31 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         style={{ height: "min(660px, 90vh)" }}
       >
         <Tabs value={tabValue} onValueChange={setTabValue} className="flex flex-col flex-1 overflow-hidden">
-          <div className="shrink-0 px-6 pt-5 pb-0 border-b border-border/60">
-            <TabsList variant="line">
-              <TabsTrigger value="preferences">
-                <SlidersIcon className="size-4" />
-                Preferences
-              </TabsTrigger>
-              <TabsTrigger value="memories">
-                <BrainIcon className="size-4" />
-                Memories
-                {(memories.length + sessions.length) > 0 && (
-                  <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">
-                    {memories.length + sessions.length}
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="advanced">
-                <Settings2Icon className="size-4" />
-                Advanced
-              </TabsTrigger>
-            </TabsList>
-          </div>
+    <div className="flex justify-center px-6 pt-5 pb-0">
+      <TabsList variant="pills" className="bg-muted rounded-full p-1">
+        <TabsTrigger value="preferences">
+          <SlidersIcon className="size-4" />
+          Preferences
+        </TabsTrigger>
+        <TabsTrigger value="memories">
+          <BrainIcon className="size-4" />
+          Memories
+        </TabsTrigger>
+        <TabsTrigger value="advanced">
+          <Settings2Icon className="size-4" />
+          Advanced
+        </TabsTrigger>
+      </TabsList>
+    </div>
 
           {/* Preferences Tab */}
           <TabsContent value="preferences" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
+            <motion.div
+              initial={{ opacity: 0, filter: "blur(4px)" }}
+              animate={{ opacity: 1, filter: "blur(0px)" }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 flex flex-col overflow-hidden"
+            >
             <div className="flex-1 overflow-y-auto space-y-6 pr-1">
               {/* Your Name */}
               <div className="space-y-2">
@@ -281,32 +299,22 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               </div>
 
               {/* Theme */}
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground">Theme</label>
-                <p className="text-xs text-muted-foreground">Choose your preferred appearance.</p>
-                <div className="grid grid-cols-3 gap-3 mt-2">
-                  {[
-                    { id: "light", icon: SunIcon, label: "Light" },
-                    { id: "dark", icon: MoonIcon, label: "Dark" },
-                    { id: "system", icon: MonitorIcon, label: "System" },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => setTheme(t.id)}
-                      className={cn(
-                        "flex flex-col items-center gap-2 p-3.5 rounded-xl border text-center transition-all",
-                        theme === t.id
-                          ? "border-primary/60 bg-primary/5 shadow-xs"
-                          : "border-border hover:border-border/80 hover:bg-muted/40"
-                      )}
-                    >
-                      <t.icon className="size-5" />
-                      <span className="text-sm font-medium">{t.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <label className="text-base font-semibold text-foreground">Theme</label>
+          <p className="text-sm text-muted-foreground">Choose your preferred appearance.</p>
+        </div>
+        <Tabs value={themePref} onValueChange={(v) => setTheme(v)}>
+          <TabsList variant="pills" size="sm" className="bg-muted rounded-full p-0.5">
+            <TabsTrigger value="light"><SunIcon className="size-3.5" /> Light</TabsTrigger>
+            <TabsTrigger value="dark"><MoonIcon className="size-3.5" /> Dark</TabsTrigger>
+            <TabsTrigger value="system"><MonitorIcon className="size-3.5" /> System</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+    </div>
+  </div>
 
             {/* Save button */}
             <div className="pt-4 border-t border-border/60 mt-4 flex justify-end shrink-0">
@@ -320,10 +328,17 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 }
               </Button>
             </div>
+            </motion.div>
           </TabsContent>
 
           {/* Memories Tab */}
           <TabsContent value="memories" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
+            <motion.div
+              initial={{ opacity: 0, filter: "blur(4px)" }}
+              animate={{ opacity: 1, filter: "blur(0px)" }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 flex flex-col overflow-hidden"
+            >
             <div className="flex-1 overflow-y-auto space-y-8 pr-1">
               {/* Long-Term Memories */}
               <div>
@@ -462,10 +477,17 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 </div>
               </div>
             </div>
+            </motion.div>
           </TabsContent>
 
           {/* Advanced Tab */}
           <TabsContent value="advanced" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
+            <motion.div
+              initial={{ opacity: 0, filter: "blur(4px)" }}
+              animate={{ opacity: 1, filter: "blur(0px)" }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 flex flex-col overflow-hidden"
+            >
             <div className="flex-1 overflow-y-auto space-y-6 pr-1">
               {/* Default model */}
               <div className="space-y-2">
@@ -552,6 +574,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 }
               </Button>
             </div>
+            </motion.div>
           </TabsContent>
         </Tabs>
       </DialogContent>

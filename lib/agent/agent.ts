@@ -312,7 +312,7 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       ask_user: tool({
-        description: "Asks the user a question. Must use before creating presentations or content.",
+        description: "Asks the user a question. Only use when you cannot proceed without clarification — default to making reasonable decisions yourself.",
         inputSchema: z.object({ label: z.string().optional(), question: z.string(), options: z.array(z.string()).optional(), multiple: z.boolean().optional() }),
         execute: async ({ question, options, multiple }: { question: string; options?: string[]; multiple?: boolean }) => {
           const rid = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

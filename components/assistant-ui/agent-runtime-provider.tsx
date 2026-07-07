@@ -78,9 +78,13 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
         const customSystemPrompt = localStorage.getItem("qube-custom-system-prompt") || undefined;
         const temperatureRaw = localStorage.getItem("qube-temperature");
         const temperature = temperatureRaw ? parseFloat(temperatureRaw) : undefined;
+        const userName = localStorage.getItem("qube-user-name") || undefined;
+        const userAbout = localStorage.getItem("qube-user-about") || undefined;
         return {
           ...(customSystemPrompt ? { customSystemPrompt } : {}),
           ...(temperature !== undefined && !isNaN(temperature) ? { temperature } : {}),
+          ...(userName ? { userName } : {}),
+          ...(userAbout ? { userAbout } : {}),
         };
       },
     }),

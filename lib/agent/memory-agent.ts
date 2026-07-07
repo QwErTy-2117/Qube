@@ -100,7 +100,7 @@ ${transcript.slice(0, 10000)}${existingContext}`;
         const content = parts[1].trim();
         const relevance = parseScore(parts[2], 0.5);
         const confidence = parseScore(parts[3], relevance);
-        if (category && content && content.length > 40) {
+        if (category && content) {
           const existing = existingEntries.find((e) => e.id === mergeId);
           if (existing) {
             await updateMemoryEntry(mergeId, {
@@ -122,7 +122,7 @@ ${transcript.slice(0, 10000)}${existingContext}`;
       const content = parts[1].trim();
       const relevance = parseScore(parts[2], 0.5);
       const confidence = parseScore(parts[3], relevance);
-      if (category && content && content.length > 40) {
+      if (category && content) {
         await addMemoryEntry(category, content, relevance, confidence);
       }
     }

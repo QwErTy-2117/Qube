@@ -623,7 +623,7 @@ const Composer: FC = () => {
               </AnimatePresence>
             </motion.div>
             <motion.div layout transition={{ duration: 0.15 }}>
-              {!askUserPending && !permissionPending && <ComposerAction />}
+              <ComposerAction />
             </motion.div>
           </div>
         </ComposerPrimitive.AttachmentDropzone>

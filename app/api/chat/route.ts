@@ -152,7 +152,7 @@ COMPLETE or CONTINUE: what's missing?`;
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { messages, threadId, config, customSystemPrompt, temperature } = body;
+    const { messages, threadId, config, customSystemPrompt, temperature, userName, userAbout } = body;
     const modelName = config?.modelName;
     const currentThreadId = threadId || `thread_${Date.now()}`;
 
@@ -220,6 +220,8 @@ export async function POST(req: Request) {
               modelName,
               customSystemPrompt,
               temperature: temperature !== undefined ? Number(temperature) : undefined,
+              userName,
+              userAbout,
             });
 
             const uiStream = agent.toUIMessageStream({

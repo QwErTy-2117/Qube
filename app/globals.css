@@ -139,23 +139,6 @@
   animation-duration: 3s;
 }
 
-.aui-composer-send:not(:disabled) {
-  background:
-    color-mix(in oklab, var(--color-background) 70%, transparent) padding-box,
-    conic-gradient(from var(--border-angle),
-      transparent 50%,
-      #6366f1 58%,
-      #a5b4fc 62%,
-      #ec4899 66%,
-      #22d3ee 70%,
-      #6366f1 74%,
-      transparent 82%
-    ) border-box;
-  box-shadow: none;
-  border: 1.5px solid transparent;
-  animation: border-rotate 4s linear infinite;
-}
-
 :focus-visible {
   box-shadow: none;
 }

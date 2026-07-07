@@ -92,7 +92,7 @@ import {
   LexicalComposerInput,
   type DirectiveChipProps,
 } from "@assistant-ui/react-lexical";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import TextRotate from "@/components/fancy/text/text-rotate";
 import Image from "next/image";
 import { useState, useEffect, type FC, type ReactNode } from "react";
@@ -497,7 +497,11 @@ const PermissionBlocker: FC<{
   }
 
   if (askUserPending) {
-    return null;
+    return (
+      <div data-slot="aui-ask-user-blocker" className="mb-2 w-full">
+        <AskUserBar question={askUserPending} onRespond={onRespondAskUser} />
+      </div>
+    );
   }
 
   return null;
@@ -575,58 +579,36 @@ const Composer: FC = () => {
             )}
           >
             <motion.div layout transition={{ duration: 0.15 }}>
-              <AnimatePresence mode="wait">
-                {askUserPending ? (
-                  <motion.div
-                    key="ask-user"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <AskUserBar question={askUserPending} onRespond={respondAskUser} />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="composer-input"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <ComposerQuotePreview />
-                    <ComposerAttachments />
-                    <div className="relative">
-                      <LexicalComposerInput
-                        directiveChip={DirectiveChip}
-                        placeholder={PLACEHOLDERS[0]}
-                        className="aui-composer-input [&_.aui-lexical-placeholder]:text-muted-foreground/50 [&_.aui-lexical-placeholder]:opacity-0 relative max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-muted [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:text-foreground [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none [&_.aui-lexical-placeholder]:pointer-events-none [&_.aui-lexical-placeholder]:absolute [&_.aui-lexical-placeholder]:top-0 [&_.aui-lexical-placeholder]:right-0 [&_.aui-lexical-placeholder]:left-0 [&_.aui-lexical-placeholder]:truncate [&_.aui-lexical-placeholder]:px-2.5 [&_.aui-lexical-placeholder]:py-1"
-                      />
-                      {showAnimated && (
-                        <div className="absolute inset-x-2.5 top-1 overflow-hidden pointer-events-none">
-                          <TextRotate
-                            texts={PLACEHOLDERS}
-                            mainClassName="flex text-base text-muted-foreground/50"
-                            rotationInterval={4000}
-                            staggerFrom="last"
-                            initial={{ y: "100%" }}
-                            animate={{ y: 0 }}
-                            exit={{ y: "-120%" }}
-                            staggerDuration={0.025}
-                            transition={{
-                              type: "spring",
-                              damping: 30,
-                              stiffness: 400,
-                            }}
-                            splitBy="characters"
-                            splitLevelClassName="overflow-hidden"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
+              <ComposerQuotePreview />
+              <ComposerAttachments />
+              <div className="relative">
+                <LexicalComposerInput
+                  directiveChip={DirectiveChip}
+                  placeholder={PLACEHOLDERS[0]}
+                  className="aui-composer-input [&_.aui-lexical-placeholder]:text-muted-foreground/50 [&_.aui-lexical-placeholder]:opacity-0 relative max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-muted [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:text-foreground [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none [&_.aui-lexical-placeholder]:pointer-events-none [&_.aui-lexical-placeholder]:absolute [&_.aui-lexical-placeholder]:top-0 [&_.aui-lexical-placeholder]:right-0 [&_.aui-lexical-placeholder]:left-0 [&_.aui-lexical-placeholder]:truncate [&_.aui-lexical-placeholder]:px-2.5 [&_.aui-lexical-placeholder]:py-1"
+                />
+                {showAnimated && (
+                  <div className="absolute inset-x-2.5 top-1 overflow-hidden pointer-events-none">
+                    <TextRotate
+                      texts={PLACEHOLDERS}
+                      mainClassName="flex text-base text-muted-foreground/50"
+                      rotationInterval={4000}
+                      staggerFrom="last"
+                      initial={{ y: "100%" }}
+                      animate={{ y: 0 }}
+                      exit={{ y: "-120%" }}
+                      staggerDuration={0.025}
+                      transition={{
+                        type: "spring",
+                        damping: 30,
+                        stiffness: 400,
+                      }}
+                      splitBy="characters"
+                      splitLevelClassName="overflow-hidden"
+                    />
+                  </div>
                 )}
-              </AnimatePresence>
+              </div>
             </motion.div>
             <motion.div layout transition={{ duration: 0.15 }}>
               <ComposerAction />
@@ -647,22 +629,20 @@ const Composer: FC = () => {
 };
 
 const SendButton: FC = () => {
-  const aui = useAui();
-  const isEmpty = useAuiState((s) => s.composer.isEmpty);
   return (
-    <TooltipIconButton
-      tooltip="Send message"
-      side="bottom"
-      type="button"
-      variant="default"
-      size="icon"
-      disabled={isEmpty}
-      className="aui-composer-send flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-primary)_20%,transparent)]"
-      aria-label="Send message"
-      onClick={() => aui.composer().send()}
-    >
-      <ArrowUpIcon className="aui-composer-send-icon size-4.5" />
-    </TooltipIconButton>
+    <ComposerPrimitive.Send asChild>
+      <TooltipIconButton
+        tooltip="Send message"
+        side="bottom"
+        type="button"
+        variant="default"
+        size="icon"
+        className="aui-composer-send flex !size-7 items-center justify-center !rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+        aria-label="Send message"
+      >
+        <ArrowUpIcon className="aui-composer-send-icon size-4.5" />
+      </TooltipIconButton>
+    </ComposerPrimitive.Send>
   );
 };
 

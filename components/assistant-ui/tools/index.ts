@@ -12,3 +12,5 @@ export { ReadSessionToolUI } from "./read-session-tool-ui";
 export { ReadMemoryToolUI } from "./read-memory-tool-ui";
 export { AskUserToolUI } from "./ask-user-tool-ui";
 export { BrowserNavigateToolUI, BrowserScreenshotToolUI, BrowserToolUI } from "./browser-tool-ui";
+export { ScheduleTaskToolUI } from "./schedule-task-tool-ui";
+export { UpdateHeartbeatToolUI } from "./update-heartbeat-tool-ui";

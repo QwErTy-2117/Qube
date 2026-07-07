@@ -15,6 +15,8 @@ import { generateMemoryContext } from "./memory-agent";
 import { createBrowserTools } from "./browser/browser-tools";
 import { listSessions, readSessionSummary, readSession } from "@/lib/memory/session-store";
 import { getMemoryEntries } from "@/lib/memory/memory-store";
+import { getTasks, getTask, createTask, updateTask, deleteTask, updateTaskRunTime } from "@/lib/scheduler/task-store";
+import { executeTask } from "@/lib/scheduler/task-executor";
 
 const execAsync = promisify(exec);
 
@@ -309,6 +311,116 @@ export async function createAgent(config: AgentConfig) {
         description: "Reads persistent memory across sessions.",
         inputSchema: z.object({ label: z.string().optional() }),
         execute: async () => JSON.stringify({ entries: await getMemoryEntries() }),
+      }),
+
+      schedule_task: tool({
+        description: "Create, edit, delete, list, or immediately trigger scheduled tasks. Actions: create | edit | delete | list | trigger. For 'create': provide name, instructions, scheduleKind (interval/once), intervalMinutes or runAt, and optional permissions. For 'edit': provide task_id and fields to update. For 'delete': provide task_id. For 'list': no extra fields. For 'trigger': provide task_id.",
+        inputSchema: z.object({
+          action: z.enum(["create", "edit", "delete", "list", "trigger"]),
+          task_id: z.string().optional(),
+          name: z.string().optional(),
+          instructions: z.string().optional(),
+          schedule_kind: z.enum(["interval", "once"]).optional(),
+          interval_minutes: z.number().optional(),
+          run_at: z.string().optional(),
+          permissions: z.object({
+            runCommands: z.boolean().optional(),
+            destructiveCommands: z.boolean().optional(),
+            externalFiles: z.boolean().optional(),
+            webAccess: z.boolean().optional(),
+            browserAccess: z.boolean().optional(),
+          }).optional(),
+        }),
+        execute: async ({ action, task_id, name, instructions, schedule_kind, interval_minutes, run_at, permissions }) => {
+          try {
+            switch (action) {
+              case "create": {
+                if (!name || !instructions || !schedule_kind) {
+                  return JSON.stringify({ error: "name, instructions, and schedule_kind are required for create" });
+                }
+                const task = await createTask({
+                  name, instructions, scheduleKind: schedule_kind,
+                  intervalMinutes: interval_minutes,
+                  runAt: run_at ? new Date(run_at).getTime() : undefined,
+                  permissions,
+                });
+                return JSON.stringify({ task, message: `Task "${name}" created. It will run ${schedule_kind === "interval" ? `every ${interval_minutes || 30} minutes` : `once on ${run_at}`}.` });
+              }
+              case "edit": {
+                if (!task_id) return JSON.stringify({ error: "task_id is required for edit" });
+                const patch: any = {};
+                if (name !== undefined) patch.name = name;
+                if (instructions !== undefined) patch.instructions = instructions;
+                if (schedule_kind !== undefined) {
+                  patch.schedule = {
+                    kind: schedule_kind,
+                    intervalMinutes: interval_minutes,
+                    runAt: run_at ? new Date(run_at).getTime() : undefined,
+                  };
+                }
+                if (permissions !== undefined) patch.permissions = permissions;
+                const updated = await updateTask(task_id, patch);
+                if (!updated) return JSON.stringify({ error: "Task not found" });
+                return JSON.stringify({ task: updated, message: `Task "${updated.name}" updated.` });
+              }
+              case "delete": {
+                if (!task_id) return JSON.stringify({ error: "task_id is required for delete" });
+                const ok = await deleteTask(task_id);
+                if (!ok) return JSON.stringify({ error: "Task not found or heartbeat cannot be deleted" });
+                return JSON.stringify({ message: "Task deleted." });
+              }
+              case "list": {
+                const tasks = await getTasks();
+                const list = tasks.map((t) => ({
+                  id: t.id,
+                  name: t.name,
+                  type: t.type,
+                  enabled: t.enabled,
+                  schedule: t.schedule,
+                  lastRunAt: t.lastRunAt,
+                  nextRunAt: t.nextRunAt,
+                }));
+                return JSON.stringify({ tasks: list });
+              }
+              case "trigger": {
+                if (!task_id) return JSON.stringify({ error: "task_id is required for trigger" });
+                const task = await getTask(task_id);
+                if (!task) return JSON.stringify({ error: "Task not found" });
+                executeTask(task).then(async (result) => {
+                  await updateTaskRunTime(task.id, result.status === "success");
+                  console.log(`[scheduler] Triggered task ${task_id} completed: ${result.status}`);
+                }).catch((err) => console.error(`[scheduler] Triggered task ${task_id} failed:`, err));
+                return JSON.stringify({ message: `Task "${task.name}" triggered. It is now running in the background.` });
+              }
+              default:
+                return JSON.stringify({ error: `Unknown action: ${action}` });
+            }
+          } catch (error) {
+            return JSON.stringify({ error: String(error) });
+          }
+        },
+      }),
+
+      update_heartbeat: tool({
+        description: "Update the heartbeat task's instructions or interval. This is the system task that wakes the agent every N minutes.",
+        inputSchema: z.object({
+          instructions: z.string().optional(),
+          interval_minutes: z.number().min(1).max(1440).optional(),
+        }),
+        execute: async ({ instructions, interval_minutes }) => {
+          try {
+            const patch: any = {};
+            if (instructions !== undefined) patch.instructions = instructions;
+            if (interval_minutes !== undefined) {
+              patch.schedule = { kind: "interval", intervalMinutes: interval_minutes };
+            }
+            const task = await updateTask("heartbeat", patch);
+            if (!task) return JSON.stringify({ error: "Heartbeat task not found" });
+            return JSON.stringify({ task, message: "Heartbeat updated." });
+          } catch (error) {
+            return JSON.stringify({ error: String(error) });
+          }
+        },
       }),
 
       ask_user: tool({

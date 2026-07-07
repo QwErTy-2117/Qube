@@ -1,5 +1,6 @@
 import { resolve, relative } from "node:path";
 import { getWorkspacePath, isDestructiveCommand } from "./workspace";
+import type { TaskPermissions } from "@/lib/scheduler/types";
 
 export type PermissionRequest = {
   requestId: string;
@@ -184,4 +185,80 @@ export async function withPermissionCheck<T extends Record<string, unknown>>(
   } catch {
     return "Operation not permitted: permission request timed out or failed.";
   }
+}
+
+export function createTaskPermissionChecker(permissions: TaskPermissions) {
+  const workspacePath = getWorkspacePath();
+
+  return function checkTaskPermission(
+    toolName: string,
+    args: Record<string, unknown>,
+  ): { allowed: boolean; reason?: string } {
+    const evaluation = evaluateToolCall(toolName, args, workspacePath);
+    if (!evaluation.needsPermission) return { allowed: true };
+
+    if (toolName === "run_command") {
+      const command = (args.command as string) || "";
+      if (!permissions.runCommands) {
+        return {
+          allowed: false,
+          reason: "Task does not have permission to run commands.",
+        };
+      }
+      if (isDestructiveCommand(command) && !permissions.destructiveCommands) {
+        return {
+          allowed: false,
+          reason:
+            "Task does not have permission to run destructive commands.",
+        };
+      }
+    }
+
+    if (
+      (toolName === "list_external_directory" ||
+        toolName === "read_external_file") &&
+      !permissions.externalFiles
+    ) {
+      return {
+        allowed: false,
+        reason: "Task does not have permission to access external files.",
+      };
+    }
+
+    if (
+      (toolName === "web_search" || toolName === "web_fetch") &&
+      !permissions.webAccess
+    ) {
+      return {
+        allowed: false,
+        reason: "Task does not have permission to access the web.",
+      };
+    }
+
+    if (toolName.startsWith("browser_") && !permissions.browserAccess) {
+      return {
+        allowed: false,
+        reason: "Task does not have permission to use the browser.",
+      };
+    }
+
+    if (
+      (toolName === "write_file" ||
+        toolName === "edit_file" ||
+        toolName === "delete_file") &&
+      !permissions.externalFiles
+    ) {
+      const pathArg = (args.path as string) || "";
+      const rel = relative(workspacePath, resolve(workspacePath, pathArg));
+      if (rel.startsWith("..")) {
+        return {
+          allowed: false,
+          reason:
+            "Task does not have permission to modify files outside workspace.",
+        };
+      }
+    }
+
+    return { allowed: true };
+  };
 }

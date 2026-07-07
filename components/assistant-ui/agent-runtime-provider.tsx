@@ -23,6 +23,8 @@ import {
   BrowserNavigateToolUI,
   BrowserScreenshotToolUI,
   BrowserToolUI,
+  ScheduleTaskToolUI,
+  UpdateHeartbeatToolUI,
 } from "@/components/assistant-ui/tools";
 import type { ReactNode } from "react";
 
@@ -40,6 +42,8 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "read_session", render: ReadSessionToolUI });
   useAssistantToolUI({ toolName: "read_memory", render: ReadMemoryToolUI });
   useAssistantToolUI({ toolName: "ask_user", render: AskUserToolUI });
+  useAssistantToolUI({ toolName: "schedule_task", render: ScheduleTaskToolUI });
+  useAssistantToolUI({ toolName: "update_heartbeat", render: UpdateHeartbeatToolUI });
 
   useAssistantToolUI({ toolName: "browser_navigate", render: BrowserNavigateToolUI });
   useAssistantToolUI({ toolName: "browser_take_screenshot", render: BrowserScreenshotToolUI });

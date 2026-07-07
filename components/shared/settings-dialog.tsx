@@ -5,6 +5,7 @@ import {
   Dialog,
   DialogContent,
   DialogTrigger,
+  DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,7 @@ import {
   SlidersIcon,
   Trash2Icon,
   CheckIcon,
+  XIcon,
   Loader2Icon,
   TagIcon,
   CalendarIcon,
@@ -19,6 +21,7 @@ import {
   MoonIcon,
   MonitorIcon,
   Settings2Icon,
+  Clock,
 } from "lucide-react";
 import {
   Tabs,
@@ -30,6 +33,7 @@ import { DEFAULT_MODEL_ID } from "@/constants/model";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { motion } from "motion/react";
+import { SchedulingTab } from "./scheduling-tab";
 
 interface MemoryEntry {
   id: string;
@@ -241,12 +245,16 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       <DialogTrigger asChild>{children}</DialogTrigger>
 
       <DialogContent
-        showCloseButton={true}
-        className="sm:max-w-4xl max-w-4xl w-full p-0 flex flex-col rounded-2xl border border-border bg-background shadow-2xl overflow-hidden"
+        showCloseButton={false}
+        className="sm:max-w-4xl max-w-4xl w-full p-0 flex flex-col rounded-3xl border border-border bg-background shadow-2xl overflow-hidden"
         style={{ height: "min(660px, 90vh)" }}
       >
         <Tabs value={tabValue} onValueChange={setTabValue} className="flex flex-col flex-1 overflow-hidden">
-    <div className="flex justify-center px-6 pt-5 pb-0">
+    <div className="flex justify-center px-6 pt-5 pb-0 relative">
+      <DialogClose className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute end-6 top-1/2 -translate-y-1/2 rounded-full opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+        <XIcon className="size-4" />
+        <span className="sr-only">Close</span>
+      </DialogClose>
       <TabsList variant="pills" className="bg-muted rounded-full p-1">
         <TabsTrigger value="preferences">
           <SlidersIcon className="size-4" />
@@ -255,6 +263,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         <TabsTrigger value="memories">
           <BrainIcon className="size-4" />
           Memories
+        </TabsTrigger>
+        <TabsTrigger value="scheduling">
+          <Clock className="size-4" />
+          Scheduling
         </TabsTrigger>
         <TabsTrigger value="advanced">
           <Settings2Icon className="size-4" />
@@ -307,9 +319,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </div>
         <Tabs value={themePref} onValueChange={(v) => setTheme(v)}>
           <TabsList variant="pills" size="sm" className="bg-muted rounded-full p-0.5">
-            <TabsTrigger value="light"><SunIcon className="size-3.5" /> Light</TabsTrigger>
-            <TabsTrigger value="dark"><MoonIcon className="size-3.5" /> Dark</TabsTrigger>
-            <TabsTrigger value="system"><MonitorIcon className="size-3.5" /> System</TabsTrigger>
+            <TabsTrigger value="light" className="rounded-full size-8 p-0 flex items-center justify-center"><SunIcon className="size-4" /></TabsTrigger>
+            <TabsTrigger value="dark" className="rounded-full size-8 p-0 flex items-center justify-center"><MoonIcon className="size-4" /></TabsTrigger>
+            <TabsTrigger value="system" className="rounded-full size-8 p-0 flex items-center justify-center"><MonitorIcon className="size-4" /></TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -320,7 +332,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             <div className="pt-4 border-t border-border/60 mt-4 flex justify-end shrink-0">
               <Button
                 onClick={handleSaveUserPreferences}
-                className={cn("font-semibold px-5 transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
+                className={cn("font-semibold px-5 rounded-full transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
               >
                 {savedPrefs
                   ? <><CheckIcon className="size-4 mr-1.5" />Saved!</>
@@ -566,7 +578,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             <div className="pt-4 border-t border-border/60 mt-4 flex justify-end shrink-0">
               <Button
                 onClick={handleSavePreferences}
-                className={cn("font-semibold px-5 transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
+                className={cn("font-semibold px-5 rounded-full transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
               >
                 {savedPrefs
                   ? <><CheckIcon className="size-4 mr-1.5" />Saved!</>
@@ -575,6 +587,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               </Button>
             </div>
             </motion.div>
+          </TabsContent>
+
+          {/* Scheduling Tab */}
+          <TabsContent value="scheduling" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
+            <SchedulingTab />
           </TabsContent>
         </Tabs>
       </DialogContent>

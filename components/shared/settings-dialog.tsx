@@ -318,10 +318,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           <p className="text-sm text-muted-foreground">Choose your preferred appearance.</p>
         </div>
         <Tabs value={themePref} onValueChange={(v) => setTheme(v)}>
-          <TabsList variant="pills" size="sm" className="bg-muted rounded-full p-0.5">
-            <TabsTrigger value="light" className="rounded-full size-8 p-0 flex items-center justify-center"><SunIcon className="size-4" /></TabsTrigger>
-            <TabsTrigger value="dark" className="rounded-full size-8 p-0 flex items-center justify-center"><MoonIcon className="size-4" /></TabsTrigger>
-            <TabsTrigger value="system" className="rounded-full size-8 p-0 flex items-center justify-center"><MonitorIcon className="size-4" /></TabsTrigger>
+          <TabsList variant="pills" className="bg-muted rounded-full p-1">
+            <TabsTrigger value="light" className="!size-7 !min-w-7 !p-0 rounded-full flex items-center justify-center"><SunIcon className="size-4" /></TabsTrigger>
+            <TabsTrigger value="dark" className="!size-7 !min-w-7 !p-0 rounded-full flex items-center justify-center"><MoonIcon className="size-4" /></TabsTrigger>
+            <TabsTrigger value="system" className="!size-7 !min-w-7 !p-0 rounded-full flex items-center justify-center"><MonitorIcon className="size-4" /></TabsTrigger>
           </TabsList>
         </Tabs>
       </div>

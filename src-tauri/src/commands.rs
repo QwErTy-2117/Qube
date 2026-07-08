@@ -7,5 +7,5 @@ pub struct AppState {
 
 #[tauri::command]
 pub fn get_port(state: State<AppState>) -> Option<u16> {
-    *state.sidecar_port.lock().unwrap()
+    state.sidecar_port.lock().ok().and_then(|p| *p)
 }

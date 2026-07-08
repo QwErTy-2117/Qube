@@ -842,7 +842,7 @@ export function SchedulingTab() {
 
           {/* Log Dialog */}
           <Dialog open={showLog} onOpenChange={setShowLog}>
-            <DialogContent className="sm:max-w-xl max-h-[80vh] flex flex-col rounded-3xl">
+            <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col rounded-3xl">
               <DialogHeader>
                 <DialogTitle>Execution Log</DialogTitle>
                 <DialogDescription>
@@ -850,7 +850,7 @@ export function SchedulingTab() {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="flex-1 overflow-y-auto min-h-0 -mx-6 px-6">
+              <div className="flex-1 overflow-y-auto min-h-0">
                 {log.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <FileText className="size-8 text-muted-foreground/30 mb-2" />
@@ -883,8 +883,6 @@ export function SchedulingTab() {
                   </div>
                 )}
               </div>
-
-              <DialogFooter className="pt-4" />
             </DialogContent>
           </Dialog>
         </div>

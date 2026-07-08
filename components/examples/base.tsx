@@ -1113,11 +1113,14 @@ export const Base: FC = () => {
       <div>
         <Sidebar />
       </div>
-      <div className="flex flex-1 flex-col overflow-hidden p-2 md:pl-0">
-        <div className="bg-background flex flex-1 flex-col overflow-hidden rounded-lg">
-          <main className="flex-1 overflow-hidden">
-            <Thread />
-          </main>
+      <div className="flex flex-1 flex-col overflow-hidden md:pl-0 relative">
+        <div className="flex flex-1 flex-col overflow-hidden p-2">
+          <div className="bg-background flex flex-1 flex-col overflow-hidden rounded-lg [&_main]:overflow-hidden relative"
+          >
+            <main className="flex-1">
+              <Thread />
+            </main>
+          </div>
         </div>
       </div>
     </div>

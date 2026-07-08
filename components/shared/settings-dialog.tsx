@@ -335,7 +335,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 className={cn("font-semibold px-5 rounded-full transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
               >
                 {savedPrefs
-                  ? <><CheckIcon className="size-4 mr-1.5" />Saved!</>
+                  ? <CheckIcon className="size-4" />
                   : "Save Preferences"
                 }
               </Button>
@@ -581,7 +581,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 className={cn("font-semibold px-5 rounded-full transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
               >
                 {savedPrefs
-                  ? <><CheckIcon className="size-4 mr-1.5" />Saved!</>
+                  ? <CheckIcon className="size-4" />
                   : "Save Preferences"
                 }
               </Button>

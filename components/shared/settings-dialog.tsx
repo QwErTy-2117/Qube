@@ -185,6 +185,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       const res = await fetch("/api/settings/memory", { method: "DELETE" });
       const data = await res.json();
       if (data.entries !== undefined) setMemories([]);
+      setOpen(false);
     } catch { /* ignore */ }
   };
 
@@ -203,6 +204,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       const res = await fetch("/api/settings/sessions", { method: "DELETE" });
       const data = await res.json();
       if (data.sessions !== undefined) setSessions([]);
+      setOpen(false);
     } catch { /* ignore */ }
   };
 
@@ -601,9 +603,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </Tabs>
       </DialogContent>
 
-      {/* Clear confirmation dialog */}
+      {/* Clear confirmation dialog (sibling of DialogContent, inside main Dialog) */}
       <Dialog open={!!clearConfirm} onOpenChange={(v) => { if (!v) setClearConfirm(null); }}>
-        <DialogContent className="sm:max-w-sm rounded-3xl">
+        <DialogContent className="sm:max-w-sm rounded-3xl" onPointerDownOutside={(e) => {
+          if (clearConfirm) e.preventDefault();
+        }}>
           <DialogHeader>
             <DialogTitle>Clear {clearConfirm === "memories" ? "Memories" : "Sessions"}</DialogTitle>
             <DialogDescription>

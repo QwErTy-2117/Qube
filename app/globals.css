@@ -147,6 +147,16 @@ html, body {
   height: 100%;
 }
 
+html.tauri {
+  --window-radius: 1.5rem;
+  border-radius: var(--window-radius);
+  overflow: hidden;
+}
+
+html.tauri main {
+  height: calc(100dvh - 2.5rem);
+}
+
 body {
   margin: 0;
 }

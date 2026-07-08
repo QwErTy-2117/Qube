@@ -2,6 +2,12 @@
 
 import { useEffect, useState } from "react";
 
+let windowApi: Promise<typeof import("@tauri-apps/api/window")> | null = null;
+function getWindow() {
+  if (!windowApi) windowApi = import("@tauri-apps/api/window");
+  return windowApi;
+}
+
 export function Titlebar() {
   const [isTauri, setIsTauri] = useState(false);
 
@@ -16,12 +22,12 @@ export function Titlebar() {
   if (!isTauri) return null;
 
   const handleMinimize = async () => {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const { getCurrentWindow } = await getWindow();
     await getCurrentWindow().minimize();
   };
 
   const handleToggleMaximize = async () => {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const { getCurrentWindow } = await getWindow();
     const win = getCurrentWindow();
     const maximized = await win.isMaximized();
     if (maximized) {
@@ -32,7 +38,7 @@ export function Titlebar() {
   };
 
   const handleClose = async () => {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const { getCurrentWindow } = await getWindow();
     await getCurrentWindow().close();
   };
 

@@ -3,7 +3,6 @@ mod tray;
 
 use commands::AppState;
 use std::sync::Mutex;
-use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

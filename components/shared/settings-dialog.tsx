@@ -6,6 +6,10 @@ import {
   DialogContent,
   DialogTrigger,
   DialogClose,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -97,7 +101,7 @@ function EmptyState({ icon: Icon, title, description }: { icon: React.FC<any>; t
 
 function SectionHeader({ title, action }: { title: string; action?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between pb-3 shrink-0 border-b border-border/60 mb-4">
+    <div className="flex items-center justify-between pb-3 shrink-0 mb-4">
       <h3 className="text-base font-semibold tracking-tight">{title}</h3>
       {action}
     </div>
@@ -134,6 +138,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+
+  // Clear confirmation state
+  const [clearConfirm, setClearConfirm] = useState<"memories" | "sessions" | null>(null);
 
   // Preferences state
   const [defaultModel, setDefaultModel] = useState(DEFAULT_MODEL_ID);
@@ -174,7 +181,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   };
 
   const handleClearMemories = async () => {
-    if (!confirm("Delete all long-term memories? This cannot be undone.")) return;
     try {
       const res = await fetch("/api/settings/memory", { method: "DELETE" });
       const data = await res.json();
@@ -193,7 +199,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   };
 
   const handleClearSessions = async () => {
-    if (!confirm("Delete all past sessions? This cannot be undone.")) return;
     try {
       const res = await fetch("/api/settings/sessions", { method: "DELETE" });
       const data = await res.json();
@@ -358,7 +363,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   title="Long-Term Memories"
                   action={
                     memories.length > 0 ? (
-                      <Button variant="outline" size="sm" onClick={handleClearMemories} className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive">
+                      <Button variant="outline" size="sm" onClick={() => setClearConfirm("memories")} className="h-7 text-xs text-destructive border-destructive/30 hover:text-red-500 hover:bg-destructive/10">
                         <Trash2Icon className="size-3 mr-1" />
                         Clear All
                       </Button>
@@ -399,7 +404,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                             size="icon"
                             disabled={deletingMemoryId === entry.id}
                             onClick={() => handleDeleteMemory(entry.id)}
-                            className="size-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 rounded-lg mt-0.5"
+                            className="size-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/60 hover:text-red-500 rounded-lg mt-0.5"
                           >
                             {deletingMemoryId === entry.id
                               ? <Loader2Icon className="size-3.5 animate-spin" />
@@ -419,7 +424,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   title="Past Sessions"
                   action={
                     sessions.length > 0 ? (
-                      <Button variant="outline" size="sm" onClick={handleClearSessions} className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive">
+                      <Button variant="outline" size="sm" onClick={() => setClearConfirm("sessions")} className="h-7 text-xs text-destructive border-destructive/30 hover:text-red-500 hover:bg-destructive/10">
                         <Trash2Icon className="size-3 mr-1" />
                         Clear All
                       </Button>
@@ -474,7 +479,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                               size="icon"
                               disabled={deletingSessionId === session.id}
                               onClick={() => handleDeleteSession(session.id)}
-                              className="size-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 rounded-lg mt-0.5"
+                              className="size-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/60 hover:text-red-500 rounded-lg mt-0.5"
                             >
                               {deletingSessionId === session.id
                                 ? <Loader2Icon className="size-3.5 animate-spin" />
@@ -595,6 +600,35 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </TabsContent>
         </Tabs>
       </DialogContent>
+
+      {/* Clear confirmation dialog */}
+      <Dialog open={!!clearConfirm} onOpenChange={(v) => { if (!v) setClearConfirm(null); }}>
+        <DialogContent className="sm:max-w-sm rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Clear {clearConfirm === "memories" ? "Memories" : "Sessions"}</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete all {clearConfirm === "memories" ? "long-term memories" : "past sessions"}? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (clearConfirm === "memories") handleClearMemories();
+                else handleClearSessions();
+                setClearConfirm(null);
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              <Trash2Icon className="size-4 mr-1" />
+              Clear All
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

@@ -111,7 +111,7 @@ function SwitchToggle({ checked, onCheckedChange }: { checked: boolean; onChecke
 
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between pb-3 shrink-0 border-b border-border/60 mb-4">
+    <div className="flex items-center justify-between pb-3 shrink-0 mb-4">
       <h3 className="text-base font-semibold tracking-tight">{title}</h3>
       {action}
     </div>

@@ -1109,13 +1109,13 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
 
 export const Base: FC = () => {
   return (
-    <div className="bg-muted flex h-full w-full">
-      <div>
+    <div className="bg-muted relative flex h-full w-full rounded-[1.5rem] overflow-hidden">
+      <div data-tauri-no-drag-region>
         <Sidebar />
       </div>
-      <div className="flex flex-1 flex-col overflow-hidden md:pl-0 relative">
+      <div data-tauri-no-drag-region className="flex flex-1 flex-col overflow-hidden md:pl-0 relative">
         <div className="flex flex-1 flex-col overflow-hidden p-2">
-          <div className="bg-background flex flex-1 flex-col overflow-hidden rounded-lg [&_main]:overflow-hidden relative"
+          <div className="bg-background flex flex-1 flex-col overflow-hidden rounded-2xl [&_main]:overflow-hidden relative"
           >
             <main className="flex-1">
               <Thread />

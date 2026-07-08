@@ -386,11 +386,10 @@ export async function createAgent(config: AgentConfig) {
                 if (!task_id) return JSON.stringify({ error: "task_id is required for trigger" });
                 const task = await getTask(task_id);
                 if (!task) return JSON.stringify({ error: "Task not found" });
-                executeTask(task).then(async (result) => {
-                  await updateTaskRunTime(task.id, result.status === "success");
-                  console.log(`[scheduler] Triggered task ${task_id} completed: ${result.status}`);
-                }).catch((err) => console.error(`[scheduler] Triggered task ${task_id} failed:`, err));
-                return JSON.stringify({ message: `Task "${task.name}" triggered. It is now running in the background.` });
+                const result = await executeTask(task);
+                await updateTaskRunTime(task.id, result.status === "success");
+                const summary = result.output.slice(0, 200);
+                return JSON.stringify({ message: `Task "${task.name}" executed: ${result.status}`, output: summary });
               }
               default:
                 return JSON.stringify({ error: `Unknown action: ${action}` });

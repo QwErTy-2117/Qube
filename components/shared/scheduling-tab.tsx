@@ -817,136 +817,9 @@ export function SchedulingTab() {
       transition={{ duration: 0.2 }}
       className="flex-1 flex flex-col overflow-hidden"
     >
-      <div className="flex-1 overflow-y-auto space-y-6 pr-1">
-        {/* Scheduled Tasks Section */}
-        <div>
-          <SectionHeader
-            title="Scheduled Tasks"
-            action={
-              <Button
-                size="sm"
-                onClick={() => setCreating(true)}
-                className="h-8 text-xs rounded-full"
-              >
-                <Plus className="size-3.5 mr-1" />
-                Create Task
-              </Button>
-            }
-          />
-
-          <TaskFormDialog
-            open={creating}
-            onOpenChange={setCreating}
-            onSave={handleCreateTask}
-          />
-
-          <TaskFormDialog
-            open={!!editingTaskId}
-            onOpenChange={(v) => { if (!v) setEditingTaskId(null); }}
-            initial={editingTask || undefined}
-            onSave={(data) => editingTaskId && handleUpdateTask(editingTaskId, data)}
-          />
-
-          {scheduledTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-border/60 bg-muted/10">
-              <Clock className="size-8 text-muted-foreground/30 mb-3" />
-              <p className="text-sm font-semibold text-foreground/70">No scheduled tasks</p>
-              <p className="text-xs text-muted-foreground/60 mt-1 max-w-[240px]">
-                Create a task to run the agent on a schedule — daily reports, health checks, file cleanup.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {scheduledTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="flex items-start gap-3 px-4 py-3 rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors"
-                >
-                  <div className="flex items-center gap-3 shrink-0 pt-0.5">
-                    <SwitchToggle
-                      checked={task.enabled}
-                      onCheckedChange={(v) => handleToggleTask(task.id, v)}
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold">{task.name}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{task.instructions}</p>
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60 mt-1.5">
-                      <span>
-                        {task.schedule.kind === "interval"
-                          ? task.schedule.intervalMinutes === 1440
-                            ? "Every day"
-                            : task.schedule.intervalMinutes === 10080
-                              ? "Every week"
-                              : task.schedule.intervalMinutes === 43200
-                                ? "Every month"
-                                : `Every ${task.schedule.intervalMinutes || 1440} min`
-                          : `Once on ${formatDate(task.schedule.runAt || null)}`}
-                      </span>
-                      <span>Next: {formatDate(task.nextRunAt)}</span>
-                      <span>Last: {formatDate(task.lastRunAt)}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => handleTriggerTask(task.id)}
-                      className="size-8 flex items-center justify-center rounded-lg hover:bg-muted/60 transition-colors text-muted-foreground/60 hover:text-foreground"
-                      title="Run now"
-                    >
-                      <Play className="size-4" />
-                    </button>
-                    <button
-                      onClick={() => setEditingTaskId(task.id)}
-                      className="size-8 flex items-center justify-center rounded-lg hover:bg-muted/60 transition-colors text-muted-foreground/60 hover:text-foreground"
-                      title="Edit"
-                    >
-                      <Edit3 className="size-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteConfirmId(task.id)}
-                      className="size-8 flex items-center justify-center rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground/60 hover:text-destructive"
-                      title="Delete"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Delete confirmation dialog */}
-        <Dialog open={!!deleteConfirmId} onOpenChange={(v) => { if (!v) setDeleteConfirmId(null); }}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Delete Task</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to delete this task? This cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  if (deleteConfirmId) handleDeleteTask(deleteConfirmId);
-                  setDeleteConfirmId(null);
-                }}
-              >
-                <Trash2 className="size-4 mr-1" />
-                Delete
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
+      <div className="flex-1 flex flex-col overflow-hidden space-y-6 pr-1">
         {/* Execution Log Section */}
-        <div>
+        <div className="shrink-0">
           <div className="flex items-center justify-between pb-3 border-b border-border/60 mb-4">
             <div className="flex items-center gap-2">
               <h3 className="text-base font-semibold tracking-tight">Execution Log</h3>
@@ -1011,10 +884,140 @@ export function SchedulingTab() {
                 )}
               </div>
 
-              <DialogFooter showCloseButton className="pt-4" />
+              <DialogFooter className="pt-4" />
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* Scheduled Tasks Section */}
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+          <SectionHeader
+            title="Scheduled Tasks"
+            action={
+              <Button
+                size="sm"
+                onClick={() => setCreating(true)}
+                className="h-8 text-xs rounded-full"
+              >
+                <Plus className="size-3.5 mr-1" />
+                Create Task
+              </Button>
+            }
+          />
+
+          <TaskFormDialog
+            open={creating}
+            onOpenChange={setCreating}
+            onSave={handleCreateTask}
+          />
+
+          <TaskFormDialog
+            open={!!editingTaskId}
+            onOpenChange={(v) => { if (!v) setEditingTaskId(null); }}
+            initial={editingTask || undefined}
+            onSave={(data) => editingTaskId && handleUpdateTask(editingTaskId, data)}
+          />
+
+          <div className="flex-1 overflow-y-auto min-h-0">
+          {scheduledTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-border/60 bg-muted/10">
+              <Clock className="size-8 text-muted-foreground/30 mb-3" />
+              <p className="text-sm font-semibold text-foreground/70">No scheduled tasks</p>
+              <p className="text-xs text-muted-foreground/60 mt-1 max-w-[240px]">
+                Create a task to run the agent on a schedule — daily reports, health checks, file cleanup.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2 pr-1">
+              {scheduledTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className="flex items-start gap-3 px-4 py-3 rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors"
+                >
+                  <div className="flex items-center gap-3 shrink-0 pt-0.5">
+                    <SwitchToggle
+                      checked={task.enabled}
+                      onCheckedChange={(v) => handleToggleTask(task.id, v)}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold">{task.name}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{task.instructions}</p>
+                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60 mt-1.5">
+                      <span>
+                        {task.schedule.kind === "interval"
+                          ? task.schedule.intervalMinutes === 1440
+                            ? "Every day"
+                            : task.schedule.intervalMinutes === 10080
+                              ? "Every week"
+                              : task.schedule.intervalMinutes === 43200
+                                ? "Every month"
+                                : `Every ${task.schedule.intervalMinutes || 1440} min`
+                          : `Once on ${formatDate(task.schedule.runAt || null)}`}
+                      </span>
+                      <span>Next: {formatDate(task.nextRunAt)}</span>
+                      <span>Last: {formatDate(task.lastRunAt)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleTriggerTask(task.id)}
+                      className="size-8 flex items-center justify-center rounded-lg hover:bg-muted/60 transition-colors text-muted-foreground/60 hover:text-foreground"
+                      title="Run now"
+                    >
+                      <Play className="size-4" />
+                    </button>
+                    <button
+                      onClick={() => setEditingTaskId(task.id)}
+                      className="size-8 flex items-center justify-center rounded-lg hover:bg-muted/60 transition-colors text-muted-foreground/60 hover:text-foreground"
+                      title="Edit"
+                    >
+                      <Edit3 className="size-4" />
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirmId(task.id)}
+                      className="size-8 flex items-center justify-center rounded-lg transition-colors text-muted-foreground/60 hover:text-red-500"
+                      title="Delete"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          </div>
+        </div>
+
+        {/* Delete confirmation dialog */}
+        <Dialog open={!!deleteConfirmId} onOpenChange={(v) => { if (!v) setDeleteConfirmId(null); }}>
+          <DialogContent className="sm:max-w-sm rounded-3xl">
+            <DialogHeader>
+              <DialogTitle>Delete Task</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this task? This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (deleteConfirmId) handleDeleteTask(deleteConfirmId);
+                  setDeleteConfirmId(null);
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                <Trash2 className="size-4 mr-1" />
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </motion.div>
   );

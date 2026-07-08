@@ -1,4 +1,4 @@
-import { generateText, tool } from "ai";
+import { streamText, tool } from "ai";
 import { z } from "zod";
 import { zen, resolveZenModel } from "@/lib/agent/zen";
 import { type ScheduledTask } from "./types";
@@ -55,10 +55,21 @@ function buildTaskSystemPrompt(task: ScheduledTask): string {
 ## Your Task
 ${task.instructions}
 
+## Available Tools
+- write_file: Create or overwrite a file (path, content)
+- read_file: Read a file's contents (path)
+- edit_file: Find and replace text in a file (path, oldString, newString)
+- delete_file: Delete a file (path)
+- run_command: Execute a shell command (command)
+- list_directory: List files in a directory (path)
+- web_search: Search the web (query)
+- web_fetch: Fetch a URL and get text content (url, optional selector)
+- read_memory: Read persistent memory entries
+
 ## Rules
 - Do NOT ask the user any questions. Work autonomously.
-- You have pre-configured access. If a tool is denied, skip it.
-- Provide a concise summary of what you did.`;
+- You MUST call the tools to actually do the work. Do NOT just describe what you would do — execute the tools.
+- After using the tools, provide a concise summary of what you did.`;
 }
 
 export async function executeTask(
@@ -513,32 +524,39 @@ export async function executeTask(
   }
 
   try {
-    const result = await generateText({
+    const result = streamText({
       model: zen.chat(resolveZenModel()),
       system: buildTaskSystemPrompt(task),
       prompt: `Execute task: ${task.name}`,
       maxRetries: 0,
       temperature: 0.3,
       tools: baseTools,
+      stopWhen: async ({ steps }: { steps: any[] }) => steps.length >= 5,
     });
 
+    const output = await result.text;
+    const steps = await result.steps;
+    const toolCount = steps.reduce((sum: number, s: any) => sum + (s.toolCalls?.length ?? 0), 0);
     const duration = Date.now() - startTime;
-    const output = result.text || "(no output)";
+
+    console.log(`[task-executor] Task ${task.id} completed: tools=${toolCount}, steps=${steps.length}, output=${(output || "(no output)").slice(0, 100)}`);
 
     await appendLog({
       timestamp: startTime,
       taskId: task.id,
       name: task.name,
       status: "success",
-      output: output.slice(0, 500),
+      output: `[tools used: ${toolCount}] ${(output || "(no output)").slice(0, 480)}`,
       duration,
     });
 
-    return { status: "success" as const, output, duration };
+    return { status: "success" as const, output: output || "(no output)", duration };
   } catch (error) {
     const duration = Date.now() - startTime;
     const errMsg =
       error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+
+    console.error(`[task-executor] Task ${task.id} failed: ${errMsg}`);
 
     await appendLog({
       timestamp: startTime,

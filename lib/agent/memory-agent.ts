@@ -1,5 +1,4 @@
-import { generateText } from "ai";
-import { zen, resolveZenModel } from "./zen";
+import { generateText, type LanguageModel } from "ai";
 import {
   addMemoryEntry,
   getMemoryEntries,
@@ -9,7 +8,7 @@ import {
   type MemoryEntry,
 } from "@/lib/memory/memory-store";
 
-const MEMORY_MODEL = process.env.MEMORY_MODEL || "deepseek-v4-flash-free";
+
 
 function parseScore(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
@@ -19,6 +18,7 @@ function parseScore(raw: string | undefined, fallback: number): number {
 
 export async function extractAndStoreMemories(
   transcript: string,
+  model: LanguageModel,
 ): Promise<void> {
   if (!transcript || transcript.length < 10) return;
 
@@ -81,7 +81,7 @@ ${transcript.slice(0, 10000)}${existingContext}`;
 
   try {
     const result = await generateText({
-      model: zen.chat(resolveZenModel(MEMORY_MODEL)),
+      model,
       prompt,
       temperature: 0.3,
     });
@@ -131,7 +131,7 @@ ${transcript.slice(0, 10000)}${existingContext}`;
   }
 }
 
-export async function cleanupMemories(): Promise<void> {
+export async function cleanupMemories(model: LanguageModel): Promise<void> {
   const entries = await getMemoryEntries();
   if (entries.length < 2) return;
 
@@ -161,7 +161,7 @@ JSON array:`;
 
   try {
     const result = await generateText({
-      model: zen.chat(resolveZenModel(MEMORY_MODEL)),
+      model,
       prompt,
       temperature: 0.2,
       maxOutputTokens: 2000,

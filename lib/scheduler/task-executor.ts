@@ -555,7 +555,7 @@ export async function executeTask(
   try {
     const defaultModelId = providerStore.getDefaultModelId();
     if (!defaultModelId) {
-      return { status: "error", output: "No AI provider configured. Add one in Settings -> Advanced.", steps: [], toolCount: 0, duration: 0 };
+      return { status: "error", output: "No AI provider configured. Add one in Settings -> Advanced.", duration: 0 };
     }
     const result = streamText({
       model: createModelClient(defaultModelId),

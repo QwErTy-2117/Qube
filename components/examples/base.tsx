@@ -98,9 +98,7 @@ import Image from "next/image";
 import { useState, useEffect, type FC, type ReactNode } from "react";
 import { ModelSelector } from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
-import { docsModelOptions } from "@/components/docs/assistant/docs-model-options";
-import { DEFAULT_MODEL_ID } from "@/constants/model";
-import { SettingsDialog } from "@/components/shared/settings-dialog";
+import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from "@/components/shared/settings-dialog";
 
 const Sidebar: FC = () => {
   return (
@@ -146,16 +144,68 @@ const Sidebar: FC = () => {
   );
 };
 
-const models = docsModelOptions();
+import type { ModelOption } from "@/components/assistant-ui/model-selector";
 
 const ModelPicker: FC = () => {
   const hasMessages = useAuiState((s) => s.thread.messages.length > 0);
-  const [model, setModel] = useState(DEFAULT_MODEL_ID);
+  const [model, setModel] = useState("");
+  const [models, setModels] = useState<ModelOption[]>([]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("qube-default-model") || DEFAULT_MODEL_ID;
+    const syncModels = () => {
+      const stored = localStorage.getItem("qube-providers");
+      if (stored) {
+        try {
+          const providers: ProviderConfig[] = JSON.parse(stored);
+          const toggledModels: ModelOption[] = [];
+          providers.forEach((prov) => {
+            if (prov.enabled) {
+              prov.models.forEach((m) => {
+                if (m.enabled) {
+                  const iconName = m.icon || detectModelIcon(m.id, prov.id);
+                  toggledModels.push({
+                    id: m.id,
+                    name: m.name,
+                    icon: renderLobeIcon(iconName, 16),
+                  });
+                }
+              });
+            }
+          });
+          if (toggledModels.length > 0) {
+            setModels(toggledModels);
+            return;
+          }
+        } catch (e) {
+          console.error("Failed to parse providers", e);
+        }
+      }
+      setModels([]);
+    };
+
+    syncModels();
+    window.addEventListener("storage", syncModels);
+    window.addEventListener("qube-providers-changed", syncModels);
+    return () => {
+      window.removeEventListener("storage", syncModels);
+      window.removeEventListener("qube-providers-changed", syncModels);
+    };
+  }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("qube-default-model") || "";
     setModel(saved);
   }, []);
+
+  useEffect(() => {
+    if (models.length > 0) {
+      const isCurrentValid = models.some((m) => m.id === model);
+      if (!isCurrentValid) {
+        setModel(models[0].id);
+        localStorage.setItem("qube-default-model", models[0].id);
+      }
+    }
+  }, [models, model]);
 
   const handleValueChange = (val: string) => {
     setModel(val);

@@ -36,7 +36,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/assistant-ui/tabs";
-import { DEFAULT_MODEL_ID } from "@/constants/model";
+
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "motion/react";
@@ -399,7 +399,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [clearConfirm, setClearConfirm] = useState<"memories" | "sessions" | null>(null);
 
   // Preferences state
-  const [defaultModel, setDefaultModel] = useState(DEFAULT_MODEL_ID);
+  const [defaultModel, setDefaultModel] = useState("");
   const [customSystemPrompt, setCustomSystemPrompt] = useState("");
   const [temperature, setTemperature] = useState(0.7);
   const [userName, setUserName] = useState("");
@@ -666,7 +666,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!open) return;
     if (typeof window !== "undefined") {
-      setDefaultModel(localStorage.getItem("qube-default-model") || DEFAULT_MODEL_ID);
+      setDefaultModel(localStorage.getItem("qube-default-model") || "");
       setCustomSystemPrompt(localStorage.getItem("qube-custom-system-prompt") || "");
       const t = localStorage.getItem("qube-temperature");
       if (t) setTemperature(parseFloat(t));

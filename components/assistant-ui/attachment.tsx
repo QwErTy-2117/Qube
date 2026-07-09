@@ -24,7 +24,7 @@ import {
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { cn } from "@/lib/utils";
-import { DEFAULT_MODEL_ID } from "@/constants/model";
+
 
 const useFileSrc = (file: File | undefined) => {
   const [src, setSrc] = useState<string | undefined>(undefined);
@@ -214,10 +214,10 @@ const DOCS_ACCEPT = ".pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
 
 export const ComposerAddAttachment: FC = () => {
   const aui = useAui();
-  const [model, setModel] = useState(DEFAULT_MODEL_ID);
+  const [model, setModel] = useState("");
 
   useEffect(() => {
-    const saved = localStorage.getItem("qube-default-model") || DEFAULT_MODEL_ID;
+    const saved = localStorage.getItem("qube-default-model") || "";
     setModel(saved);
   }, []);
 

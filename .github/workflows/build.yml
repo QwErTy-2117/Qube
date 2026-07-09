@@ -3,9 +3,12 @@ name: Build and Release Qube Desktop
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -16,6 +19,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: swatinem/rust-cache@v2
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -45,5 +51,5 @@ jobs:
           tagName: v__VERSION__
           releaseName: "Qube v__VERSION__"
           releaseBody: "See the assets to download this version."
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false

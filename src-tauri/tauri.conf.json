@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3010",
-    "beforeBuildCommand": "TAURI_BUILD=true npm run build && rm -rf sidecar-dist && mkdir -p sidecar-dist && cp .next/standalone/server.js .next/standalone/package.json sidecar-dist/ && cp -r .next/standalone/.next sidecar-dist/ && rm -rf sidecar-dist/.next/node_modules && cp -r .next/static sidecar-dist/.next/static/ && cp -r .next/standalone/node_modules sidecar-dist/ && cp -r .next/standalone/public sidecar-dist/ 2>/dev/null; true",
+    "beforeBuildCommand": "node scripts/build-sidecar.js",
     "frontendDist": "../static"
   },
   "app": {

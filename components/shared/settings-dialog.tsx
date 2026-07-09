@@ -1139,15 +1139,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="flex items-center justify-between py-2 border-b border-border/40">
-              <span className="text-sm font-semibold text-foreground">Require API Key</span>
-              <SwitchToggle
-                checked={configHasApiKey}
-                onCheckedChange={setConfigHasApiKey}
-              />
-            </div>
-
-            {configHasApiKey && (
+            {configureProvider && !["ollama", "lmstudio", "custom"].includes(configureProvider.id) ? (
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-foreground">API Key</label>
                 <input
@@ -1158,6 +1150,29 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between py-2 border-b border-border/40">
+                  <span className="text-sm font-semibold text-foreground">Require API Key</span>
+                  <SwitchToggle
+                    checked={configHasApiKey}
+                    onCheckedChange={setConfigHasApiKey}
+                  />
+                </div>
+
+                {configHasApiKey && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">API Key</label>
+                    <input
+                      type="password"
+                      placeholder="Enter API Key..."
+                      value={configApiKey}
+                      onChange={(e) => setConfigApiKey(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  </div>
+                )}
+              </>
             )}
 
             <div className="space-y-2">

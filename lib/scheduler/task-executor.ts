@@ -1,6 +1,7 @@
 import { streamText, tool } from "ai";
 import { z } from "zod";
-import { zen, resolveZenModel } from "@/lib/agent/zen";
+import { createModelClient } from "@/lib/agent/model-client";
+import { providerStore } from "@/lib/agent/provider-store";
 import { type ScheduledTask } from "./types";
 import { appendLog } from "./task-log";
 import { createTaskPermissionChecker } from "@/lib/middleware/permission-middleware";
@@ -552,8 +553,12 @@ export async function executeTask(
   }
 
   try {
+    const defaultModelId = providerStore.getDefaultModelId();
+    if (!defaultModelId) {
+      return { status: "error", output: "No AI provider configured. Add one in Settings -> Advanced.", steps: [], toolCount: 0, duration: 0 };
+    }
     const result = streamText({
-      model: zen.chat(resolveZenModel()),
+      model: createModelClient(defaultModelId),
       system: buildTaskSystemPrompt(task),
       prompt: `Execute task: ${task.name}`,
       maxRetries: 0,

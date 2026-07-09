@@ -1,7 +1,9 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { providerStore } from "./provider-store";
 
-function createModelClient(qualifiedModelId: string) {
+type OpenAIChatModel = ReturnType<ReturnType<typeof createOpenAI>["chat"]>;
+
+export function createModelClient(qualifiedModelId: string): OpenAIChatModel {
   const result = providerStore.getProviderByModel(qualifiedModelId);
   if (!result) {
     throw new Error(
@@ -15,5 +17,3 @@ function createModelClient(qualifiedModelId: string) {
   });
   return client.chat(modelId);
 }
-
-export { createModelClient };

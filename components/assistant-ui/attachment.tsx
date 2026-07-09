@@ -208,9 +208,23 @@ export const ComposerAttachments: FC = () => {
   );
 };
 
-const IMAGE_MODELS = new Set<string>();
 const IMAGE_ACCEPT = "image/*,.pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
 const DOCS_ACCEPT = ".pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
+
+function modelSupportsImages(qualifiedModelId: string): boolean {
+  try {
+    const raw = localStorage.getItem("qube-providers");
+    if (!raw) return false;
+    const providers = JSON.parse(raw);
+    for (const p of providers) {
+      if (!p.models || !Array.isArray(p.models)) continue;
+      for (const m of p.models) {
+        if (m.id === qualifiedModelId) return m.imageInput === true;
+      }
+    }
+  } catch {}
+  return false;
+}
 
 export const ComposerAddAttachment: FC = () => {
   const aui = useAui();
@@ -221,7 +235,7 @@ export const ComposerAddAttachment: FC = () => {
     setModel(saved);
   }, []);
 
-  const supportsImages = IMAGE_MODELS.has(model);
+  const supportsImages = modelSupportsImages(model);
   const accept = supportsImages ? IMAGE_ACCEPT : DOCS_ACCEPT;
 
   const handleClick = () => {

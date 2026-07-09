@@ -139,6 +139,7 @@ export interface ProviderConfig {
     name: string;
     enabled: boolean;
     icon?: string;
+    imageInput?: boolean;
   }[];
 }
 
@@ -323,16 +324,60 @@ export function detectModelIcon(modelId: string, providerId: string): string {
   return "OpenAI";
 }
 
+export function detectModelImageSupport(modelId: string): boolean {
+  const lower = modelId.toLowerCase();
+  if (
+    lower.includes("vision") ||
+    lower.includes("vqa") ||
+    lower.includes("multimodal") ||
+    lower.includes("vl") ||
+    lower.includes("pixtral") ||
+    (lower.startsWith("claude") && /3\.\d/.test(lower)) ||
+    (lower.includes("claude") && /3(\.\d)?|4/.test(lower)) ||
+    (lower.includes("gemini") && !lower.includes("gemma")) ||
+    lower.includes("gpt-4o") ||
+    lower.includes("gpt-4.5") ||
+    lower.includes("gpt-4-turbo") ||
+    lower.includes("o1") ||
+    lower.includes("llama-3.2") ||
+    lower.includes("qwen-vl") ||
+    lower.includes("qwen2-vl") ||
+    lower.includes("reka") ||
+    lower.includes("idefics") ||
+    lower.includes("florence") ||
+    lower.includes("internvl") ||
+    lower.includes("paligemma") ||
+    lower.includes("phi-3-vision") ||
+    lower.includes("phi-3.5-vision") ||
+    lower.includes("moondream")
+  ) {
+    return true;
+  }
+  return false;
+}
+
 async function fetchProviderModels(baseURL: string, apiKey: string): Promise<string[]> {
-  const url = baseURL.replace(/\/+$/, "") + "/models";
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const base = baseURL.replace(/\/+$/, "");
+
+  const tryFetch = async (url: string): Promise<Response> => {
+    return fetch(url, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+  };
+
+  let url = base + "/models";
+  let res = await tryFetch(url);
+
+  if (res.status === 404 && !base.endsWith("/v1")) {
+    url = base + "/v1/models";
+    res = await tryFetch(url);
+  }
+
   if (!res.ok) {
-    throw new Error(`Failed to fetch models: ${res.status} ${res.statusText}`);
+    throw new Error(`Failed to fetch models from ${url}: ${res.status} ${res.statusText}`);
   }
   const body = await res.json();
   if (body?.data && Array.isArray(body.data)) {
@@ -341,7 +386,7 @@ async function fetchProviderModels(baseURL: string, apiKey: string): Promise<str
       .map((m: any) => m.id);
     return [...new Set(ids)];
   }
-  throw new Error("Unexpected response format from /v1/models");
+  throw new Error(`Unexpected response format from ${url}`);
 }
 
 function SwitchToggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (v: boolean) => void }) {
@@ -544,10 +589,15 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
     try {
       const fetchedModels = await fetchProviderModels(configBaseUrl || "", configApiKey || "");
+      const provId = configureProvider.id;
+      const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter"];
+      const providerIcon = PROVIDER_ID_TO_ICON[provId] || provId.charAt(0).toUpperCase() + provId.slice(1);
       const qualifiedModels = fetchedModels.map((id) => ({
-        id: `${configureProvider.id}:${id}`,
+        id: `${provId}:${id}`,
         name: id,
         enabled: false,
+        icon: autoDetectIcons.includes(provId) ? detectModelIcon(id, provId) : providerIcon,
+        imageInput: detectModelImageSupport(id),
       }));
 
       await new Promise((r) => setTimeout(r, 400));
@@ -631,10 +681,15 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     setSavedCustomModel(true);
     await new Promise((r) => setTimeout(r, 600));
 
+    const provId = manageProvider?.id || "";
+    const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter"];
+    const providerIcon = PROVIDER_ID_TO_ICON[provId] || provId.charAt(0).toUpperCase() + provId.slice(1);
     const newModel = {
       id: customModelCode.trim(),
       name: customModelName.trim(),
       enabled: true,
+      icon: autoDetectIcons.includes(provId) ? detectModelIcon(customModelCode.trim(), provId) : providerIcon,
+      imageInput: detectModelImageSupport(customModelCode.trim()),
     };
 
     setManageModels((prev) => [...prev, newModel]);
@@ -705,6 +760,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   }, [open, tabValue, fetchMemories, fetchSessions]);
 
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
 
@@ -822,7 +878,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   title="Long-Term Memories"
                   action={
                     memories.length > 0 ? (
-                      <Button variant="outline" size="sm" onClick={() => setClearConfirm("memories")} className="h-7 text-xs text-destructive border-destructive/30 hover:text-red-500 hover:bg-destructive/10">
+                      <Button variant="outline" size="sm" onClick={() => setClearConfirm("memories")} className="h-7 text-xs text-destructive border-destructive/30 hover:text-red-500 hover:bg-destructive/10 rounded-full">
                         <Trash2Icon className="size-3 mr-1" />
                         Clear All
                       </Button>
@@ -883,7 +939,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   title="Past Sessions"
                   action={
                     sessions.length > 0 ? (
-                      <Button variant="outline" size="sm" onClick={() => setClearConfirm("sessions")} className="h-7 text-xs text-destructive border-destructive/30 hover:text-red-500 hover:bg-destructive/10">
+                      <Button variant="outline" size="sm" onClick={() => setClearConfirm("sessions")} className="h-7 text-xs text-destructive border-destructive/30 hover:text-red-500 hover:bg-destructive/10 rounded-full">
                         <Trash2Icon className="size-3 mr-1" />
                         Clear All
                       </Button>
@@ -1054,15 +1110,13 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           {/* Scheduling Tab */}
           <TabsContent value="scheduling" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
             <SchedulingTab />
-          </TabsContent>
+            </TabsContent>
         </Tabs>
       </DialogContent>
+    </Dialog>
 
-      {/* Clear confirmation dialog (sibling of DialogContent, inside main Dialog) */}
       <Dialog open={!!clearConfirm} onOpenChange={(v) => { if (!v) setClearConfirm(null); }}>
-        <DialogContent className="sm:max-w-sm rounded-3xl" onPointerDownOutside={(e) => {
-          if (clearConfirm) e.preventDefault();
-        }}>
+        <DialogContent className="sm:max-w-sm rounded-3xl">
           <DialogHeader>
             <DialogTitle>Clear {clearConfirm === "memories" ? "Memories" : "Sessions"}</DialogTitle>
             <DialogDescription>
@@ -1071,25 +1125,24 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline" className="rounded-full">Cancel</Button>
             </DialogClose>
             <Button
-              variant="destructive"
+              variant="outline"
               onClick={() => {
                 if (clearConfirm === "memories") handleClearMemories();
                 else handleClearSessions();
                 setClearConfirm(null);
               }}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
             >
-              <Trash2Icon className="size-4 mr-1" />
+              <Trash2Icon className="size-3.5" />
               Clear All
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Add Provider Dialog */}
       <Dialog open={addProviderOpen} onOpenChange={setAddProviderOpen}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
@@ -1141,7 +1194,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      {/* Configure Provider Dialog */}
       <Dialog open={configureProvider !== null} onOpenChange={(v) => { if (!v) setConfigureProvider(null); }}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
@@ -1218,7 +1270,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      {/* Manage Provider Dialog */}
       <Dialog open={manageProvider !== null} onOpenChange={(v) => { if (!v) setManageProvider(null); }}>
         <DialogContent className="sm:max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1321,7 +1372,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Provider Confirmation Dialog */}
       <Dialog open={deleteConfirm} onOpenChange={setDeleteConfirm}>
         <DialogContent className="sm:max-w-sm rounded-3xl">
           <DialogHeader>
@@ -1336,12 +1386,12 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 Cancel
               </Button>
               <Button
-                variant="destructive"
+                variant="outline"
                 size="sm"
                 onClick={handleConfirmDeleteProvider}
-                className="rounded-full h-8 px-4 bg-red-600 hover:bg-red-700 text-white"
+                className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
               >
-                <Trash2Icon className="size-3.5 mr-1" />
+                <Trash2Icon className="size-3.5" />
                 Delete
               </Button>
             </div>
@@ -1349,7 +1399,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      {/* Browse Icons Dialog */}
       <Dialog open={browseIconModelId !== null} onOpenChange={(v) => { if (!v) setBrowseIconModelId(null); }}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
@@ -1380,7 +1429,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      {/* Add Custom Model Dialog */}
       <Dialog open={addCustomModelOpen} onOpenChange={setAddCustomModelOpen}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
@@ -1426,7 +1474,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      {/* Custom Instructions Dialog */}
       <Dialog open={customInstructionsOpen} onOpenChange={setCustomInstructionsOpen}>
         <DialogContent className="sm:max-w-lg rounded-3xl">
           <DialogHeader>
@@ -1456,7 +1503,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Dialog>
+    </>
   );
 }
 

@@ -153,9 +153,10 @@ html.tauri {
   overflow: hidden;
 }
 
-html.tauri main {
-  height: calc(100dvh - 2.5rem);
+html.tauri.maximized {
+  --window-radius: 0rem;
 }
+
 
 body {
   margin: 0;

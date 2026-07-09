@@ -5,6 +5,13 @@
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-set-size",
     "shell:allow-spawn",
     "shell:allow-stdin-write",
     "shell:allow-kill",

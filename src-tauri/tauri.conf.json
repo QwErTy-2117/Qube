@@ -5,9 +5,9 @@
   "identifier": "com.qube.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "TAURI_BUILD=true npm run build",
-    "frontendDist": "../dist"
+    "devUrl": "http://localhost:3010",
+    "beforeBuildCommand": "TAURI_BUILD=true npm run build && rm -rf sidecar-dist && mkdir -p sidecar-dist && cp .next/standalone/server.js .next/standalone/package.json sidecar-dist/ && cp -r .next/standalone/.next sidecar-dist/ && rm -rf sidecar-dist/.next/node_modules && cp -r .next/static sidecar-dist/.next/static/ && cp -r .next/standalone/node_modules sidecar-dist/ && cp -r .next/standalone/public sidecar-dist/ 2>/dev/null; true",
+    "frontendDist": "../static"
   },
   "app": {
     "windows": [
@@ -29,7 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": [],
+    "resources": ["../sidecar-dist/**/*"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

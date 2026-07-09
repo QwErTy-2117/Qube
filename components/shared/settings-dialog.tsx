@@ -986,7 +986,12 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                           key={p.id}
                           onClick={() => {
                             setManageProvider(p);
-                            setManageModels([...p.models]);
+                            const seen = new Set<string>();
+                            setManageModels([...p.models].filter((m) => {
+                              if (seen.has(m.id)) return false;
+                              seen.add(m.id);
+                              return true;
+                            }));
                           }}
                           className="flex flex-col items-center justify-center size-20 rounded-3xl border border-border bg-muted/20 hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-xs text-center p-2 gap-1 group relative"
                         >

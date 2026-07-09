@@ -1,6 +1,6 @@
 import { streamText, tool } from "ai";
 import { z } from "zod";
-import { zen, resolveZenModel } from "./zen";
+import { createModelClient } from "./model-client";
 import { DDGS } from "@phukon/duckduckgo-search";
 import { JSDOM } from "jsdom";
 import { buildSystemPrompt } from "./system-prompt";
@@ -103,10 +103,8 @@ export async function createAgent(config: AgentConfig) {
     };
   };
 
-  const resolvedModel = resolveZenModel(config.modelName);
-
   const result = streamText({
-    model: zen.chat(resolvedModel),
+    model: createModelClient(config.modelName || ""),
     system: systemPrompt,
     messages: config.messages as any,
     maxRetries: 0,

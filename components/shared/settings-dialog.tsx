@@ -398,6 +398,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   // Clear confirmation state
   const [clearConfirm, setClearConfirm] = useState<"memories" | "sessions" | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<boolean>(false);
 
   // Preferences state
   const [defaultModel, setDefaultModel] = useState("");
@@ -603,18 +604,24 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   const handleDeleteProvider = () => {
     if (!manageProvider) return;
+    setDeleteConfirm(true);
+  };
+
+  const handleConfirmDeleteProvider = () => {
+    if (!manageProvider) return;
     const updated = providers.map((p) => {
       if (p.id === manageProvider.id) {
         return {
           ...p,
           enabled: false,
-          models: p.models.map((m) => ({ ...m, enabled: false })),
+          models: [],
         };
       }
       return p;
     });
     saveProviders(updated);
     setManageProvider(null);
+    setDeleteConfirm(false);
   };
 
   const handleSaveCustomModel = async () => {
@@ -1310,6 +1317,34 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               saving={savingManage}
               saved={savedManage}
             />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Provider Confirmation Dialog */}
+      <Dialog open={deleteConfirm} onOpenChange={setDeleteConfirm}>
+        <DialogContent className="sm:max-w-sm rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Delete Provider</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove {manageProvider?.name}? All configured models will be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <div className="flex items-center gap-2 ml-auto">
+              <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(false)} className="rounded-full h-8 px-4">
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleConfirmDeleteProvider}
+                className="rounded-full h-8 px-4 bg-red-600 hover:bg-red-700 text-white"
+              >
+                <Trash2Icon className="size-3.5 mr-1" />
+                Delete
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

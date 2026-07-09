@@ -1369,33 +1369,33 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               saved={savedManage}
             />
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      <Dialog open={deleteConfirm} onOpenChange={setDeleteConfirm}>
-        <DialogContent className="sm:max-w-sm rounded-3xl">
-          <DialogHeader>
-            <DialogTitle>Delete Provider</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove {manageProvider?.name}? All configured models will be deleted.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <div className="flex items-center gap-2 ml-auto">
-              <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(false)} className="rounded-full h-8 px-4">
-                Cancel
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleConfirmDeleteProvider}
-                className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
-              >
-                <Trash2Icon className="size-3.5" />
-                Delete
-              </Button>
-            </div>
-          </DialogFooter>
+          <Dialog open={deleteConfirm} onOpenChange={setDeleteConfirm}>
+            <DialogContent className="sm:max-w-sm rounded-3xl">
+              <DialogHeader>
+                <DialogTitle>Delete Provider</DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to remove {manageProvider?.name}? All configured models will be deleted.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <div className="flex items-center gap-2 ml-auto">
+                  <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(false)} className="rounded-full h-8 px-4">
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleConfirmDeleteProvider}
+                    className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
+                  >
+                    <Trash2Icon className="size-3.5" />
+                    Delete
+                  </Button>
+                </div>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={browseIconModelId !== null} onOpenChange={(v) => { if (!v) setBrowseIconModelId(null); }}>
             <DialogContent className="sm:max-w-md rounded-3xl">
@@ -1426,51 +1426,51 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               </div>
             </DialogContent>
           </Dialog>
-        </DialogContent>
-      </Dialog>
 
-      <Dialog open={addCustomModelOpen} onOpenChange={setAddCustomModelOpen}>
-        <DialogContent className="sm:max-w-md rounded-3xl">
-          <DialogHeader>
-            <DialogTitle>Add Custom Model</DialogTitle>
-            <DialogDescription>
-              Enter the details of the custom model code and name.
-            </DialogDescription>
-          </DialogHeader>
+          <Dialog open={addCustomModelOpen} onOpenChange={setAddCustomModelOpen}>
+            <DialogContent className="sm:max-w-md rounded-3xl">
+              <DialogHeader>
+                <DialogTitle>Add Custom Model</DialogTitle>
+                <DialogDescription>
+                  Enter the details of the custom model code and name.
+                </DialogDescription>
+              </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground">Model Name</label>
-              <input
-                type="text"
-                placeholder="My custom model..."
-                value={customModelName}
-                onChange={(e) => setCustomModelName(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">Model Name</label>
+                  <input
+                    type="text"
+                    placeholder="My custom model..."
+                    value={customModelName}
+                    onChange={(e) => setCustomModelName(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground">Model Code (ID)</label>
-              <input
-                type="text"
-                placeholder="deepseek-r1:14b..."
-                value={customModelCode}
-                onChange={(e) => setCustomModelCode(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-          </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">Model Code (ID)</label>
+                  <input
+                    type="text"
+                    placeholder="deepseek-r1:14b..."
+                    value={customModelCode}
+                    onChange={(e) => setCustomModelCode(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+              </div>
 
-          <DialogFooter className="pt-2">
-            <ConfirmGroup
-              onCancel={() => setAddCustomModelOpen(false)}
-              onConfirm={handleSaveCustomModel}
-              saving={savingCustomModel}
-              saved={savedCustomModel}
-              confirmDisabled={!customModelName.trim() || !customModelCode.trim()}
-            />
-          </DialogFooter>
+              <DialogFooter className="pt-2">
+                <ConfirmGroup
+                  onCancel={() => setAddCustomModelOpen(false)}
+                  onConfirm={handleSaveCustomModel}
+                  saving={savingCustomModel}
+                  saved={savedCustomModel}
+                  confirmDisabled={!customModelName.trim() || !customModelCode.trim()}
+                />
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </DialogContent>
       </Dialog>
 

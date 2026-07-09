@@ -2,6 +2,12 @@
   "identifier": "default",
   "description": "Default capabilities for Qube desktop",
   "windows": ["main"],
+  "remote": {
+    "urls": [
+      "http://localhost:*",
+      "http://127.0.0.1:*"
+    ]
+  },
   "permissions": [
     "core:default",
     "core:window:default",

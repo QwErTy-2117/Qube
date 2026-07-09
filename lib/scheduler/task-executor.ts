@@ -4,7 +4,7 @@ import { zen, resolveZenModel } from "@/lib/agent/zen";
 import { type ScheduledTask } from "./types";
 import { appendLog } from "./task-log";
 import { createTaskPermissionChecker } from "@/lib/middleware/permission-middleware";
-import { readFile, writeFile, unlink, readdir, stat } from "node:fs/promises";
+import { readFile, writeFile, unlink, readdir, stat, mkdir } from "node:fs/promises";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -15,37 +15,50 @@ import {
 } from "@/lib/middleware/workspace";
 import { DDGS } from "@phukon/duckduckgo-search";
 import { JSDOM } from "jsdom";
-import { extname, join } from "node:path";
+import { extname, join, dirname } from "node:path";
 import { getMemoryEntries } from "@/lib/memory/memory-store";
 
 const execAsync = promisify(exec);
 
 async function scanGeneratedFiles() {
   const ws = getWorkspacePath();
-  const files = await readdir(ws);
   const generated: Array<{
     name: string;
     relativePath: string;
     size: number;
   }> = [];
   const now = Date.now();
-  for (const file of files) {
-    const ext = extname(file).toLowerCase();
-    if (![".pptx", ".docx", ".xlsx", ".pdf", ".csv", ".zip"].includes(ext))
-      continue;
+
+  async function walk(dir: string) {
     try {
-      const full = join(ws, file);
-      const s = await stat(full);
-      const birth = s.birthtime?.getTime() || s.ctime.getTime();
-      if (now - birth < 120_000) {
-        generated.push({
-          name: file,
-          relativePath: relativePathInWorkspace(full),
-          size: s.size,
-        });
+      const entries = await readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== "node_modules" && entry.name !== ".git") {
+            await walk(fullPath);
+          }
+        } else if (entry.isFile()) {
+          const ext = extname(entry.name).toLowerCase();
+          if ([".pptx", ".docx", ".xlsx", ".pdf", ".csv", ".zip", ".png", ".jpg", ".jpeg", ".gif", ".svg"].includes(ext)) {
+            try {
+              const s = await stat(fullPath);
+              const birth = s.birthtime?.getTime() || s.ctime.getTime();
+              if (now - birth < 120_000) {
+                generated.push({
+                  name: entry.name,
+                  relativePath: relativePathInWorkspace(fullPath),
+                  size: s.size,
+                });
+              }
+            } catch {}
+          }
+        }
       }
     } catch {}
   }
+
+  await walk(ws);
   return generated;
 }
 
@@ -65,6 +78,20 @@ ${task.instructions}
 - web_search: Search the web (query)
 - web_fetch: Fetch a URL and get text content (url, optional selector)
 - read_memory: Read persistent memory entries
+
+## Workspace Organization
+To keep the workspace clean and well-organized, you MUST save all generated files inside structured subdirectories instead of placing them directly at the workspace root. Do not dump a mix of raw files at the root level.
+Use the following folder structure:
+- documents/ — For text files, markdown files, and Word documents (e.g. .txt, readme.md, .docx, .pdf).
+- presentations/ — For presentation slides (e.g. .pptx).
+- spreadsheets/ — For Excel files and CSV datasets (e.g. .xlsx, .csv).
+- images/ — For generated or downloaded graphics, diagrams, and image assets (e.g. .png, .jpg, .jpeg, .gif, .svg).
+- code/ — For any scripts, source files, and utility code (e.g. .py, .js, .cjs, .sh, .ts).
+
+Rules for writing files:
+1. When calling write_file, ALWAYS prefix your file paths with the appropriate category folder name (e.g., presentations/my_slides.pptx or documents/apple_pie_recipe.txt instead of my_slides.pptx or apple_pie_recipe.txt).
+2. If you are executing a command/script (via run_command) that automatically writes/generates files, configure the script to output those files into these specific directories.
+3. When referencing these files in your final response or using them, always use their full structured path (e.g. [file: presentations/my_slides.pptx]).
 
 ## Rules
 - Do NOT ask the user any questions. Work autonomously.
@@ -147,6 +174,7 @@ export async function executeTask(
           content: string;
         }) => {
           const resolved = resolvePathInWorkspace(path);
+          await mkdir(dirname(resolved), { recursive: true });
           await writeFile(resolved, content, "utf-8");
           return JSON.stringify({
             path: resolved,

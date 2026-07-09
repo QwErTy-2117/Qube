@@ -53,5 +53,5 @@ jobs:
           tagName: v__VERSION__
           releaseName: "Qube v__VERSION__"
           releaseBody: "See the assets to download this version."
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false

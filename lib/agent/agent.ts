@@ -4,8 +4,8 @@ import { zen, resolveZenModel } from "./zen";
 import { DDGS } from "@phukon/duckduckgo-search";
 import { JSDOM } from "jsdom";
 import { buildSystemPrompt } from "./system-prompt";
-import { readFile, writeFile, unlink, readdir, stat } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { readFile, writeFile, unlink, readdir, stat, mkdir } from "node:fs/promises";
+import { extname, join, dirname } from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { withPermissionCheck } from "@/lib/middleware/permission-middleware";
@@ -24,21 +24,39 @@ const DOWNLOADABLE_EXTS = new Set(['.pptx', '.docx', '.xlsx', '.pdf', '.csv', '.
 
 async function scanGeneratedFiles() {
   const ws = getWorkspacePath();
-  const files = await readdir(ws);
   const generated: Array<{ name: string; relativePath: string; size: number }> = [];
   const now = Date.now();
-  for (const file of files) {
-    const ext = extname(file).toLowerCase();
-    if (!DOWNLOADABLE_EXTS.has(ext)) continue;
+
+  async function walk(dir: string) {
     try {
-      const full = join(ws, file);
-      const s = await stat(full);
-      const birth = s.birthtime?.getTime() || s.ctime.getTime();
-      if (now - birth < 120_000) {
-        generated.push({ name: file, relativePath: relativePathInWorkspace(full), size: s.size });
+      const entries = await readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== "node_modules" && entry.name !== ".git") {
+            await walk(fullPath);
+          }
+        } else if (entry.isFile()) {
+          const ext = extname(entry.name).toLowerCase();
+          if (DOWNLOADABLE_EXTS.has(ext)) {
+            try {
+              const s = await stat(fullPath);
+              const birth = s.birthtime?.getTime() || s.ctime.getTime();
+              if (now - birth < 120_000) {
+                generated.push({
+                  name: entry.name,
+                  relativePath: relativePathInWorkspace(fullPath),
+                  size: s.size,
+                });
+              }
+            } catch {}
+          }
+        }
       }
     } catch {}
   }
+
+  await walk(ws);
   return generated;
 }
 
@@ -116,6 +134,7 @@ export async function createAgent(config: AgentConfig) {
         inputSchema: z.object({ label: z.string().optional(), path: z.string(), content: z.string() }),
         execute: ep("write_file", async ({ path, content }: { path: string; content: string }) => {
           const resolved = resolvePathInWorkspace(path);
+          await mkdir(dirname(resolved), { recursive: true });
           await writeFile(resolved, content, "utf-8");
           return JSON.stringify({
             path: resolved,

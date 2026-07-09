@@ -1058,7 +1058,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                       size="sm"
                     >
                       <PlusIcon className="size-3.5" />
-                      Add Model
+                      Add Provider
                     </Button>
                   </div>
 
@@ -1091,7 +1091,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                     {providers.filter((p) => p.enabled).length === 0 && (
                       <div className="w-full py-8 text-center text-xs text-muted-foreground/60 border border-dashed border-border/80 rounded-2xl bg-muted/5 flex flex-col items-center justify-center gap-2">
                         <Settings2Icon className="size-5 text-muted-foreground/40" />
-                        No active providers configured. Click "Add Model" to get started.
+                        No active providers configured. Click "Add Provider" to get started.
                       </div>
                     )}
                   </div>
@@ -1130,13 +1130,26 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                                   onClick={() => handleSetDefaultModel(m.id)}
                                   type="button"
                                   title={isDefault ? "Default model" : "Set as default"}
-                                  className={`size-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer ${
+                                  className={`size-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer overflow-hidden ${
                                     isDefault
                                       ? "border-emerald-500 bg-emerald-500"
                                       : "border-muted-foreground/30 hover:border-emerald-400"
                                   }`}
                                 >
-                                  {isDefault && <CheckIcon className="size-3 text-white" />}
+                                  <AnimatePresence mode="wait">
+                                    {isDefault && (
+                                      <motion.div
+                                        key="check"
+                                        initial={{ scale: 2.5, rotate: -20, opacity: 0 }}
+                                        animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                                        exit={{ scale: 0, rotate: 20, opacity: 0 }}
+                                        transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                                        className="flex items-center justify-center"
+                                      >
+                                        <CheckIcon className="size-3 text-white" />
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
                                 </button>
                                 <div className="size-7 flex items-center justify-center shrink-0">
                                   {renderLobeIcon(iconName, 16)}

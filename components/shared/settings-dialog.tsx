@@ -1396,36 +1396,36 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               </Button>
             </div>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      <Dialog open={browseIconModelId !== null} onOpenChange={(v) => { if (!v) setBrowseIconModelId(null); }}>
-        <DialogContent className="sm:max-w-md rounded-3xl">
-          <DialogHeader>
-            <DialogTitle>Select Model Icon</DialogTitle>
-            <DialogDescription>
-              Choose a Lobe icon to represent this model.
-            </DialogDescription>
-          </DialogHeader>
+          <Dialog open={browseIconModelId !== null} onOpenChange={(v) => { if (!v) setBrowseIconModelId(null); }}>
+            <DialogContent className="sm:max-w-md rounded-3xl">
+              <DialogHeader>
+                <DialogTitle>Select Model Icon</DialogTitle>
+                <DialogDescription>
+                  Choose a Lobe icon to represent this model.
+                </DialogDescription>
+              </DialogHeader>
 
-          <div className="grid grid-cols-5 gap-3 py-4 max-h-[350px] overflow-y-auto pr-1">
-            {Object.keys(LOBE_ICONS_MAP).map((iconName) => (
-              <div
-                key={iconName}
-                onClick={() => {
-                  if (browseIconModelId) {
-                    setManageModels((prev) =>
-                      prev.map((m) => (m.id === browseIconModelId ? { ...m, icon: iconName } : m))
-                    );
-                    setBrowseIconModelId(null);
-                  }
-                }}
-                className="flex flex-col items-center justify-center size-14 rounded-2xl border border-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
-              >
-                {renderLobeIcon(iconName, 20)}
+              <div className="grid grid-cols-5 gap-3 py-4 max-h-[350px] overflow-y-auto pr-1">
+                {Object.keys(LOBE_ICONS_MAP).map((iconName) => (
+                  <div
+                    key={iconName}
+                    onClick={() => {
+                      if (browseIconModelId) {
+                        setManageModels((prev) =>
+                          prev.map((m) => (m.id === browseIconModelId ? { ...m, icon: iconName } : m))
+                        );
+                        setBrowseIconModelId(null);
+                      }
+                    }}
+                    className="flex flex-col items-center justify-center size-14 rounded-2xl border border-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
+                  >
+                    {renderLobeIcon(iconName, 20)}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </DialogContent>
+          </Dialog>
         </DialogContent>
       </Dialog>
 

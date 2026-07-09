@@ -29,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "license": "MIT",
     "resources": ["../sidecar-dist/**/*"],
     "icon": [
       "icons/32x32.png",

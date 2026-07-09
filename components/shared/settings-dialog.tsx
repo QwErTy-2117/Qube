@@ -26,6 +26,9 @@ import {
   MonitorIcon,
   Settings2Icon,
   Clock,
+  SearchIcon,
+  PlusIcon,
+  Sparkles,
 } from "lucide-react";
 import {
   Tabs,
@@ -36,8 +39,24 @@ import {
 import { DEFAULT_MODEL_ID } from "@/constants/model";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { SchedulingTab } from "./scheduling-tab";
+import { Switch } from "radix-ui";
+
+import OpenAI from "@lobehub/icons/es/OpenAI";
+import Anthropic from "@lobehub/icons/es/Anthropic";
+import Claude from "@lobehub/icons/es/Claude";
+import DeepSeek from "@lobehub/icons/es/DeepSeek";
+import Gemini from "@lobehub/icons/es/Gemini";
+import Google from "@lobehub/icons/es/Google";
+import Groq from "@lobehub/icons/es/Groq";
+import Mistral from "@lobehub/icons/es/Mistral";
+import Cohere from "@lobehub/icons/es/Cohere";
+import Together from "@lobehub/icons/es/Together";
+import Fireworks from "@lobehub/icons/es/Fireworks";
+import OpenRouter from "@lobehub/icons/es/OpenRouter";
+import Ollama from "@lobehub/icons/es/Ollama";
+import LmStudio from "@lobehub/icons/es/LmStudio";
 
 interface MemoryEntry {
   id: string;
@@ -105,6 +124,243 @@ function SectionHeader({ title, action }: { title: string; action?: ReactNode })
       <h3 className="text-base font-semibold tracking-tight">{title}</h3>
       {action}
     </div>
+  );
+}
+
+export interface ProviderConfig {
+  id: string;
+  name: string;
+  baseURL?: string;
+  enabled: boolean;
+  hasApiKey: boolean;
+  apiKey?: string;
+  models: {
+    id: string;
+    name: string;
+    enabled: boolean;
+    icon?: string;
+  }[];
+}
+
+export const DEFAULT_PROVIDERS: ProviderConfig[] = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    baseURL: "https://api.openai.com/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    baseURL: "https://api.anthropic.com/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    baseURL: "https://api.deepseek.com/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "google",
+    name: "Google Gemini",
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    baseURL: "https://openrouter.ai/api/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "together",
+    name: "Together AI",
+    baseURL: "https://api.together.xyz/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "fireworks",
+    name: "Fireworks",
+    baseURL: "https://api.fireworks.ai/inference/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    baseURL: "https://api.groq.com/openai/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    baseURL: "https://api.mistral.ai/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "cohere",
+    name: "Cohere",
+    baseURL: "https://api.cohere.com/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
+    id: "ollama",
+    name: "Ollama",
+    baseURL: "http://localhost:11434/v1",
+    enabled: false,
+    hasApiKey: false,
+    models: [],
+  },
+  {
+    id: "lmstudio",
+    name: "LM Studio",
+    baseURL: "http://localhost:1234/v1",
+    enabled: false,
+    hasApiKey: false,
+    models: [],
+  },
+  {
+    id: "custom",
+    name: "Custom OpenAI",
+    baseURL: "",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+];
+
+export const LOBE_ICONS_MAP: Record<string, any> = {
+  OpenAI,
+  Anthropic,
+  Claude,
+  DeepSeek,
+  Gemini,
+  Google,
+  Groq,
+  Mistral,
+  Cohere,
+  Together,
+  Fireworks,
+  OpenRouter,
+  Ollama,
+  LmStudio,
+};
+
+const PROVIDER_ID_TO_ICON: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  deepseek: "DeepSeek",
+  google: "Gemini",
+  openrouter: "OpenRouter",
+  together: "Together",
+  fireworks: "Fireworks",
+  groq: "Groq",
+  mistral: "Mistral",
+  cohere: "Cohere",
+  ollama: "Ollama",
+  lmstudio: "LmStudio",
+  custom: "OpenAI",
+};
+
+export function renderLobeIcon(iconName: string, size: number = 24, className?: string) {
+  const IconComp = LOBE_ICONS_MAP[iconName];
+  if (!IconComp) return <Sparkles className={cn("size-6 text-muted-foreground/60", className)} />;
+  if (IconComp.Color) {
+    return <IconComp.Color size={size} className={className} />;
+  }
+  return <IconComp size={size} className={className} />;
+}
+
+export function detectModelIcon(modelId: string, providerId: string): string {
+  const lowerId = modelId.toLowerCase();
+  const lowerProv = providerId.toLowerCase();
+  if (lowerId.includes("deepseek")) return "DeepSeek";
+  if (lowerId.includes("claude") || lowerId.includes("anthropic")) return "Claude";
+  if (lowerId.includes("gpt") || lowerId.includes("openai") || lowerId.includes("o1")) return "OpenAI";
+  if (lowerId.includes("gemini")) return "Gemini";
+  if (lowerId.includes("mistral")) return "Mistral";
+  if (lowerId.includes("groq") || lowerId.includes("llama")) return "Groq";
+  if (lowerId.includes("cohere")) return "Cohere";
+  if (lowerId.includes("together")) return "Together";
+  if (lowerId.includes("fireworks")) return "Fireworks";
+  if (lowerId.includes("openrouter")) return "OpenRouter";
+  if (lowerId.includes("ollama")) return "Ollama";
+  if (lowerId.includes("lmstudio") || lowerId.includes("lm-studio")) return "LmStudio";
+
+  if (lowerProv === "openai") return "OpenAI";
+  if (lowerProv === "anthropic") return "Anthropic";
+  if (lowerProv === "deepseek") return "DeepSeek";
+  if (lowerProv === "gemini" || lowerProv === "google") return "Gemini";
+  if (lowerProv === "groq") return "Groq";
+  if (lowerProv === "mistral") return "Mistral";
+  if (lowerProv === "cohere") return "Cohere";
+  if (lowerProv === "together") return "Together";
+  if (lowerProv === "fireworks") return "Fireworks";
+  if (lowerProv === "openrouter") return "OpenRouter";
+  if (lowerProv === "ollama") return "Ollama";
+  if (lowerProv === "lmstudio") return "LmStudio";
+
+  return "OpenAI";
+}
+
+async function fetchProviderModels(baseURL: string, apiKey: string): Promise<string[]> {
+  const url = baseURL.replace(/\/+$/, "") + "/models";
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch models: ${res.status} ${res.statusText}`);
+  }
+  const body = await res.json();
+  if (body?.data && Array.isArray(body.data)) {
+    return body.data
+      .filter((m: any) => m.object === "model" || !m.object)
+      .map((m: any) => m.id);
+  }
+  throw new Error("Unexpected response format from /v1/models");
+}
+
+function SwitchToggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (v: boolean) => void }) {
+  return (
+    <Switch.Root
+      checked={checked}
+      onCheckedChange={onCheckedChange}
+      className={cn(
+        "peer inline-flex shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
+        "h-6 w-11",
+        checked ? "bg-emerald-500" : "bg-input/40"
+      )}
+    >
+      <Switch.Thumb
+        className={cn(
+          "pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform",
+          checked ? "translate-x-[22px]" : "translate-x-[2px]"
+        )}
+      />
+    </Switch.Root>
   );
 }
 
@@ -225,6 +481,187 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     setTimeout(() => setSavedPrefs(false), 2000);
   };
 
+  // Providers & models states
+  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [addProviderOpen, setAddProviderOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [configureProvider, setConfigureProvider] = useState<ProviderConfig | null>(null);
+  const [manageProvider, setManageProvider] = useState<ProviderConfig | null>(null);
+  const [browseIconModelId, setBrowseIconModelId] = useState<string | null>(null);
+  const [addCustomModelOpen, setAddCustomModelOpen] = useState(false);
+  const [customModelName, setCustomModelName] = useState("");
+  const [customModelCode, setCustomModelCode] = useState("");
+  const [customInstructionsOpen, setCustomInstructionsOpen] = useState(false);
+  const [tempInstructions, setTempInstructions] = useState("");
+
+  const [savingInstructions, setSavingInstructions] = useState(false);
+  const [savedInstructions, setSavedInstructions] = useState(false);
+
+  const [savingConfigure, setSavingConfigure] = useState(false);
+  const [savedConfigure, setSavedConfigure] = useState(false);
+  const [configApiKey, setConfigApiKey] = useState("");
+  const [configBaseUrl, setConfigBaseUrl] = useState("");
+  const [configHasApiKey, setConfigHasApiKey] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  const [savingManage, setSavingManage] = useState(false);
+  const [savedManage, setSavedManage] = useState(false);
+  const [manageModels, setManageModels] = useState<any[]>([]);
+
+  const [savingCustomModel, setSavingCustomModel] = useState(false);
+  const [savedCustomModel, setSavedCustomModel] = useState(false);
+
+  const saveProviders = (updated: ProviderConfig[]) => {
+    setProviders(updated);
+    localStorage.setItem("qube-providers", JSON.stringify(updated));
+    const defaultModel = localStorage.getItem("qube-default-model") || null;
+    fetch("/api/providers/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providers: updated, defaultModelId: defaultModel }),
+    }).catch(() => {});
+    window.dispatchEvent(new Event("qube-providers-changed"));
+  };
+
+  const handleSaveInstructions = async () => {
+    setSavingInstructions(true);
+    await new Promise((r) => setTimeout(r, 400));
+    setSavedInstructions(true);
+    await new Promise((r) => setTimeout(r, 600));
+    setCustomSystemPrompt(tempInstructions);
+    localStorage.setItem("qube-custom-system-prompt", tempInstructions);
+    setSavingInstructions(false);
+    setSavedInstructions(false);
+    setCustomInstructionsOpen(false);
+  };
+
+  const handleSaveConfigure = async () => {
+    if (!configureProvider) return;
+    setConfigError(null);
+    setSavingConfigure(true);
+
+    try {
+      const fetchedModels = await fetchProviderModels(configBaseUrl || "", configApiKey || "");
+      const qualifiedModels = fetchedModels.map((id) => ({
+        id: `${configureProvider.id}:${id}`,
+        name: id,
+        enabled: false,
+      }));
+
+      await new Promise((r) => setTimeout(r, 400));
+      setSavedConfigure(true);
+      await new Promise((r) => setTimeout(r, 600));
+
+      const updated = providers.map((p) => {
+        if (p.id === configureProvider.id) {
+          return {
+            ...p,
+            enabled: true,
+            apiKey: configApiKey,
+            baseURL: configBaseUrl,
+            hasApiKey: configHasApiKey,
+            models: qualifiedModels,
+          };
+        }
+        return p;
+      });
+      saveProviders(updated);
+
+      setSavingConfigure(false);
+      setSavedConfigure(false);
+      setConfigureProvider(null);
+      setAddProviderOpen(false);
+    } catch (e) {
+      setConfigError(e instanceof Error ? e.message : "Failed to validate provider");
+      setSavingConfigure(false);
+    }
+  };
+
+  const handleSaveManage = async () => {
+    if (!manageProvider) return;
+    setSavingManage(true);
+    await new Promise((r) => setTimeout(r, 400));
+    setSavedManage(true);
+    await new Promise((r) => setTimeout(r, 600));
+
+    const updated = providers.map((p) => {
+      if (p.id === manageProvider.id) {
+        return {
+          ...p,
+          models: manageModels,
+        };
+      }
+      return p;
+    });
+    saveProviders(updated);
+
+    setSavingManage(false);
+    setSavedManage(false);
+    setManageProvider(null);
+  };
+
+  const handleDeleteProvider = () => {
+    if (!manageProvider) return;
+    const updated = providers.map((p) => {
+      if (p.id === manageProvider.id) {
+        return {
+          ...p,
+          enabled: false,
+          models: p.models.map((m) => ({ ...m, enabled: false })),
+        };
+      }
+      return p;
+    });
+    saveProviders(updated);
+    setManageProvider(null);
+  };
+
+  const handleSaveCustomModel = async () => {
+    if (!customModelCode.trim() || !customModelName.trim()) return;
+    setSavingCustomModel(true);
+    await new Promise((r) => setTimeout(r, 400));
+    setSavedCustomModel(true);
+    await new Promise((r) => setTimeout(r, 600));
+
+    const newModel = {
+      id: customModelCode.trim(),
+      name: customModelName.trim(),
+      enabled: true,
+    };
+
+    setManageModels((prev) => [...prev, newModel]);
+
+    setSavingCustomModel(false);
+    setSavedCustomModel(false);
+    setAddCustomModelOpen(false);
+    setCustomModelName("");
+    setCustomModelCode("");
+  };
+
+  const handleToggleModel = (modelId: string, enabled: boolean) => {
+    if (enabled) {
+      const currentToggledCount = providers.reduce((acc, p) => {
+        if (p.enabled) {
+          if (manageProvider && p.id === manageProvider.id) {
+            return acc + manageModels.reduce((sum, m) => sum + (m.enabled ? 1 : 0), 0);
+          } else {
+            return acc + p.models.reduce((sum, m) => sum + (m.enabled ? 1 : 0), 0);
+          }
+        }
+        return acc;
+      }, 0);
+
+      if (currentToggledCount >= 5) {
+        alert("You can have a max of 5 models toggled in total.");
+        return;
+      }
+    }
+
+    setManageModels((prev) =>
+      prev.map((m) => (m.id === modelId ? { ...m, enabled } : m))
+    );
+  };
+
   // Load prefs when dialog opens
   useEffect(() => {
     if (!open) return;
@@ -235,6 +672,18 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       if (t) setTemperature(parseFloat(t));
       setUserName(localStorage.getItem("qube-user-name") || "");
       setUserAbout(localStorage.getItem("qube-user-about") || "");
+
+      const storedProviders = localStorage.getItem("qube-providers");
+      if (storedProviders) {
+        try {
+          setProviders(JSON.parse(storedProviders));
+        } catch {
+          setProviders(DEFAULT_PROVIDERS);
+        }
+      } else {
+        setProviders(DEFAULT_PROVIDERS);
+        localStorage.setItem("qube-providers", JSON.stringify(DEFAULT_PROVIDERS));
+      }
     }
   }, [open]);
 
@@ -507,92 +956,85 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               transition={{ duration: 0.2 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-            <div className="flex-1 overflow-y-auto space-y-6 pr-1">
-              {/* Default model */}
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground">Default Model</label>
-                <p className="text-xs text-muted-foreground">Which model to use by default for new chats.</p>
-                <div className="grid grid-cols-1 gap-2 mt-2">
-                  {[
-                    { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash", desc: "Free — strong coding model from DeepSeek" },
-                    { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra", desc: "Free — NVIDIA's flagship reasoning model" },
-                    { id: "mimo-v2.5-free", name: "MiMo V2.5", desc: "Free — lightweight and fast" },
-                  ].map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => setDefaultModel(m.id)}
-                      className={cn(
-                        "flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all",
-                        defaultModel === m.id
-                          ? "border-primary/60 bg-primary/5 shadow-xs"
-                          : "border-border hover:border-border/80 hover:bg-muted/40"
-                      )}
+              <div className="flex-1 overflow-y-auto space-y-8 pr-1">
+                {/* Providers Section */}
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold text-foreground">Providers & Models</h3>
+                      <p className="text-xs text-muted-foreground">Manage your external AI providers and toggle up to 5 models in total.</p>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setSearchQuery("");
+                        setAddProviderOpen(true);
+                      }}
+                      className="rounded-full font-semibold px-4 h-8 flex items-center gap-1.5"
+                      size="sm"
                     >
-                      <div className={cn(
-                        "size-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-all",
-                        defaultModel === m.id ? "border-primary bg-primary" : "border-muted-foreground/30"
-                      )}>
-                        {defaultModel === m.id && <div className="size-1.5 rounded-full bg-white" />}
+                      <PlusIcon className="size-3.5" />
+                      Add Model
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-4 pt-2">
+                    {providers.filter((p) => p.enabled).map((p) => {
+                      const detectedIcon = PROVIDER_ID_TO_ICON[p.id] || p.id.charAt(0).toUpperCase() + p.id.slice(1);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setManageProvider(p);
+                            setManageModels([...p.models]);
+                          }}
+                          className="flex flex-col items-center justify-center size-20 rounded-3xl border border-border bg-muted/20 hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-xs text-center p-2 gap-1 group relative"
+                        >
+                          <div className="size-8 flex items-center justify-center shrink-0">
+                            {renderLobeIcon(detectedIcon, 24)}
+                          </div>
+                          <span className="text-[10px] font-semibold truncate w-full text-foreground/80 group-hover:text-foreground transition-colors">
+                            {p.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {providers.filter((p) => p.enabled).length === 0 && (
+                      <div className="w-full py-8 text-center text-xs text-muted-foreground/60 border border-dashed border-border/80 rounded-2xl bg-muted/5 flex flex-col items-center justify-center gap-2">
+                        <Settings2Icon className="size-5 text-muted-foreground/40" />
+                        No active providers configured. Click "Add Model" to get started.
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{m.name}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{m.desc}</p>
-                      </div>
-                    </button>
-                  ))}
+                    )}
+                  </div>
+                </div>
+
+                {/* Custom Instructions Section */}
+                <div className="border-t border-border/40 pt-6 space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold text-foreground">Custom Instructions</h3>
+                      <p className="text-xs text-muted-foreground">Provide system instructions that append to every conversation.</p>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setTempInstructions(customSystemPrompt);
+                        setCustomInstructionsOpen(true);
+                      }}
+                      variant="outline"
+                      className="rounded-full font-semibold px-4 h-8"
+                      size="sm"
+                    >
+                      Configure
+                    </Button>
+                  </div>
+                  {customSystemPrompt ? (
+                    <div className="text-xs text-muted-foreground bg-muted/15 rounded-xl border border-border/60 p-3 line-clamp-3 leading-relaxed">
+                      {customSystemPrompt}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground/60 italic">No custom system instructions configured.</p>
+                  )}
                 </div>
               </div>
-
-              {/* Temperature */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-semibold text-foreground">Temperature</label>
-                  <span className="text-sm font-mono font-bold bg-muted px-2 py-0.5 rounded-md">
-                    {temperature.toFixed(1)}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">Higher values = more creative, lower values = more focused.</p>
-                <div className="flex items-center gap-3 mt-2">
-                  <span className="text-xs text-muted-foreground w-10 text-right">Focus</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1.5"
-                    step="0.1"
-                    value={temperature}
-                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                    className="flex-1 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                  />
-                  <span className="text-xs text-muted-foreground w-14">Creative</span>
-                </div>
-              </div>
-
-              {/* Custom system instructions */}
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground">Custom System Instructions</label>
-                <p className="text-xs text-muted-foreground">Additional instructions appended to Qube's core agent prompt on every request.</p>
-                <textarea
-                  placeholder="E.g. Always respond in Italian. Prefer functional programming patterns. Never use semicolons in JS…"
-                  value={customSystemPrompt}
-                  onChange={(e) => setCustomSystemPrompt(e.target.value)}
-                  rows={5}
-                  className="w-full px-3.5 py-2.5 mt-1 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
-                />
-              </div>
-            </div>
-
-            {/* Save button */}
-            <div className="pt-4 border-t border-border/60 mt-4 flex justify-end shrink-0">
-              <Button
-                onClick={handleSavePreferences}
-                className={cn("font-semibold px-5 rounded-full transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
-              >
-                {savedPrefs
-                  ? <CheckIcon className="size-4" />
-                  : "Save Preferences"
-                }
-              </Button>
-            </div>
             </motion.div>
           </TabsContent>
 
@@ -633,6 +1075,392 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Add Provider Dialog */}
+      <Dialog open={addProviderOpen} onOpenChange={setAddProviderOpen}>
+        <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Add Provider</DialogTitle>
+            <DialogDescription>
+              Search and select an AI provider to configure credentials.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="relative">
+              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search providers..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            <div className="grid grid-cols-4 gap-3 max-h-[300px] overflow-y-auto pr-1 py-1">
+              {providers
+                .filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.id.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((p) => {
+                  const detectedIcon = PROVIDER_ID_TO_ICON[p.id] || p.id.charAt(0).toUpperCase() + p.id.slice(1);
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        setConfigureProvider(p);
+                        setConfigApiKey(p.apiKey || "");
+                        setConfigBaseUrl(p.baseURL || "");
+                        setConfigHasApiKey(p.hasApiKey !== undefined ? p.hasApiKey : true);
+                      }}
+                      className="flex flex-col items-center justify-center size-20 rounded-3xl border border-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
+                    >
+                      <div className="size-8 flex items-center justify-center shrink-0">
+                        {renderLobeIcon(detectedIcon, 24)}
+                      </div>
+                      <span className="text-[9px] font-semibold truncate w-full text-foreground/80 group-hover:text-foreground">
+                        {p.name}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Configure Provider Dialog */}
+      <Dialog open={configureProvider !== null} onOpenChange={(v) => { if (!v) setConfigureProvider(null); }}>
+        <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Configure {configureProvider?.name}</DialogTitle>
+            <DialogDescription>
+              Enter credentials and settings for this provider.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between py-2 border-b border-border/40">
+              <span className="text-sm font-semibold text-foreground">Require API Key</span>
+              <SwitchToggle
+                checked={configHasApiKey}
+                onCheckedChange={setConfigHasApiKey}
+              />
+            </div>
+
+            {configHasApiKey && (
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">API Key</label>
+                <input
+                  type="password"
+                  placeholder="Enter API Key..."
+                  value={configApiKey}
+                  onChange={(e) => setConfigApiKey(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground">Base URL</label>
+              <input
+                type="text"
+                placeholder={configureProvider?.id === "custom" ? "https://api.yourprovider.com/v1" : "Base URL..."}
+                value={configBaseUrl}
+                onChange={(e) => setConfigBaseUrl(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            {configError && (
+              <div className="text-xs text-red-500 bg-red-500/10 rounded-xl px-3 py-2 border border-red-500/20">
+                {configError}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2">
+            <ConfirmGroup
+              onCancel={() => setConfigureProvider(null)}
+              onConfirm={handleSaveConfigure}
+              saving={savingConfigure}
+              saved={savedConfigure}
+              confirmDisabled={configHasApiKey && !configApiKey.trim()}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Provider Dialog */}
+      <Dialog open={manageProvider !== null} onOpenChange={(v) => { if (!v) setManageProvider(null); }}>
+        <DialogContent className="sm:max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{manageProvider?.name} Settings</DialogTitle>
+            <DialogDescription>
+              Manage models for this provider. You can have a max of 5 models toggled in total.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between pb-2 border-b border-border/40">
+              <span className="text-sm font-semibold text-foreground">Models</span>
+              <Button
+                onClick={() => {
+                  setCustomModelName("");
+                  setCustomModelCode("");
+                  setAddCustomModelOpen(true);
+                }}
+                variant="outline"
+                className="rounded-full font-semibold px-3 h-7 text-xs flex items-center gap-1"
+                size="sm"
+              >
+                <PlusIcon className="size-3" />
+                Add Custom Model
+              </Button>
+            </div>
+
+            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+              {manageModels.map((m) => {
+                const provId = manageProvider?.id || "";
+                const iconName = m.icon || detectModelIcon(m.id, provId);
+                const isCustomModel = !manageProvider?.models.some((orig) => orig.id === m.id);
+
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-muted/10 hover:bg-muted/20 transition-all gap-4"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <button
+                        onClick={() => setBrowseIconModelId(m.id)}
+                        type="button"
+                        className="size-8 flex items-center justify-center rounded-xl bg-background border border-border/80 hover:bg-muted transition-colors shrink-0 cursor-pointer"
+                        title="Browse icon"
+                      >
+                        {renderLobeIcon(iconName, 18)}
+                      </button>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate text-foreground">{m.name}</p>
+                        <p className="text-xs font-mono text-muted-foreground truncate">{m.id}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      {isCustomModel && (
+                        <button
+                          onClick={() => {
+                            setManageModels((prev) => prev.filter((prevM) => prevM.id !== m.id));
+                          }}
+                          className="size-8 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
+                          title="Delete Custom Model"
+                        >
+                          <Trash2Icon className="size-4" />
+                        </button>
+                      )}
+                      <SwitchToggle
+                        checked={m.enabled}
+                        onCheckedChange={(checked) => handleToggleModel(m.id, checked)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {manageModels.length === 0 && (
+                <div className="py-8 text-center text-xs text-muted-foreground/60 italic">
+                  No models configured. Add a custom model above.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 flex items-center justify-between">
+            <Button
+              onClick={handleDeleteProvider}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
+            >
+              <Trash2Icon className="size-3.5" />
+              Delete
+            </Button>
+            <ConfirmGroup
+              onCancel={() => setManageProvider(null)}
+              onConfirm={handleSaveManage}
+              saving={savingManage}
+              saved={savedManage}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Browse Icons Dialog */}
+      <Dialog open={browseIconModelId !== null} onOpenChange={(v) => { if (!v) setBrowseIconModelId(null); }}>
+        <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Select Model Icon</DialogTitle>
+            <DialogDescription>
+              Choose a Lobe icon to represent this model.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-5 gap-3 py-4 max-h-[350px] overflow-y-auto pr-1">
+            {Object.keys(LOBE_ICONS_MAP).map((iconName) => (
+              <div
+                key={iconName}
+                onClick={() => {
+                  if (browseIconModelId) {
+                    setManageModels((prev) =>
+                      prev.map((m) => (m.id === browseIconModelId ? { ...m, icon: iconName } : m))
+                    );
+                    setBrowseIconModelId(null);
+                  }
+                }}
+                className="flex flex-col items-center justify-center size-14 rounded-2xl border border-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
+              >
+                {renderLobeIcon(iconName, 20)}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Custom Model Dialog */}
+      <Dialog open={addCustomModelOpen} onOpenChange={setAddCustomModelOpen}>
+        <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Add Custom Model</DialogTitle>
+            <DialogDescription>
+              Enter the details of the custom model code and name.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground">Model Name</label>
+              <input
+                type="text"
+                placeholder="My custom model..."
+                value={customModelName}
+                onChange={(e) => setCustomModelName(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground">Model Code (ID)</label>
+              <input
+                type="text"
+                placeholder="deepseek-r1:14b..."
+                value={customModelCode}
+                onChange={(e) => setCustomModelCode(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <ConfirmGroup
+              onCancel={() => setAddCustomModelOpen(false)}
+              onConfirm={handleSaveCustomModel}
+              saving={savingCustomModel}
+              saved={savedCustomModel}
+              confirmDisabled={!customModelName.trim() || !customModelCode.trim()}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Instructions Dialog */}
+      <Dialog open={customInstructionsOpen} onOpenChange={setCustomInstructionsOpen}>
+        <DialogContent className="sm:max-w-lg rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Custom System Instructions</DialogTitle>
+            <DialogDescription>
+              Appends extra system prompt details to every new chat request.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2">
+            <textarea
+              placeholder="E.g. Always respond in Italian. Prefer functional programming patterns. Never use semicolons in JS…"
+              value={tempInstructions}
+              onChange={(e) => setTempInstructions(e.target.value)}
+              rows={5}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
+            />
+          </div>
+
+          <DialogFooter className="pt-2">
+            <ConfirmGroup
+              onCancel={() => setCustomInstructionsOpen(false)}
+              onConfirm={handleSaveInstructions}
+              saving={savingInstructions}
+              saved={savedInstructions}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
+  );
+}
+
+function ConfirmGroup({
+  onCancel,
+  onConfirm,
+  saving,
+  saved,
+  confirmDisabled = false,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+  saving: boolean;
+  saved: boolean;
+  confirmDisabled?: boolean;
+}) {
+  return (
+    <div className="w-fit ml-auto flex items-center gap-2 rounded-full border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-1.5 py-1.5 shrink-0">
+      <button
+        onClick={onCancel}
+        type="button"
+        className="flex items-center justify-center size-8 rounded-full text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+        title="Cancel"
+      >
+        <XIcon className="size-4" />
+      </button>
+      <div className="relative">
+        <AnimatePresence mode="wait">
+          {saved ? (
+            <motion.div
+              key="saved"
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              className="flex items-center justify-center size-8 rounded-full bg-emerald-500 text-white"
+            >
+              <CheckIcon className="size-4" />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="save"
+              initial={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+            >
+              <Button
+                onClick={onConfirm}
+                disabled={saving || confirmDisabled}
+                className="rounded-full font-semibold h-8 px-4"
+                size="sm"
+              >
+                {saving ? (
+                  <Loader2Icon className="size-4 animate-spin" />
+                ) : (
+                  "Confirm"
+                )}
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
   );
 }

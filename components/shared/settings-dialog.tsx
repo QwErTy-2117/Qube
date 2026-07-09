@@ -1653,7 +1653,7 @@ function ConfirmGroup({
               <Button
                 onClick={onConfirm}
                 disabled={saving || confirmDisabled}
-                className="rounded-full font-semibold h-8 px-4 bg-emerald-500 hover:bg-emerald-600 text-white"
+                className="rounded-full font-semibold h-8 px-4"
                 size="sm"
               >
                 {saving ? (

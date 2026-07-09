@@ -336,9 +336,10 @@ async function fetchProviderModels(baseURL: string, apiKey: string): Promise<str
   }
   const body = await res.json();
   if (body?.data && Array.isArray(body.data)) {
-    return body.data
+    const ids: string[] = body.data
       .filter((m: any) => m.object === "model" || !m.object)
       .map((m: any) => m.id);
+    return [...new Set(ids)];
   }
   throw new Error("Unexpected response format from /v1/models");
 }

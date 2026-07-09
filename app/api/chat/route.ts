@@ -1,6 +1,6 @@
 import { createAgent } from "@/lib/agent/agent";
 import { extractAndStoreMemories, cleanupMemories } from "@/lib/agent/memory-agent";
-import { zen } from "@/lib/agent/zen";
+import { createModelClient } from "@/lib/agent/model-client";
 import { saveSession } from "@/lib/memory/session-store";
 import {
   getLastThreadId,
@@ -90,6 +90,7 @@ async function verifyCompletion(
   prevMessages: any[],
   agentText: string,
   streamEndedNaturally: boolean,
+  modelName: string,
 ): Promise<{ done: boolean; message: string }> {
   const contextLines = prevMessages.slice(-6).map(extractContext).filter(Boolean);
   const hasToolResults = prevMessages.some((m: any) => {
@@ -127,7 +128,7 @@ COMPLETE or CONTINUE: what's missing?`;
 
   try {
     const result = await generateText({
-      model: zen.chat("deepseek-v4-flash-free"),
+      model: createModelClient(modelName),
       maxRetries: 0,
       system: "COMPLETE if agent wrote the answer. CONTINUE: <what's missing> otherwise.",
       prompt,
@@ -161,8 +162,11 @@ export async function POST(req: Request) {
       const { readSession } = await import("@/lib/memory/session-store");
       const prevSession = await readSession(lastThreadId);
       if (prevSession?.transcript) {
-        extractAndStoreMemories(prevSession.transcript).catch(() => {});
-        cleanupMemories().catch(() => {});
+        try {
+          const memModel = createModelClient(modelName);
+          extractAndStoreMemories(prevSession.transcript, memModel).catch(() => {});
+          cleanupMemories(memModel).catch(() => {});
+        } catch {}
       }
     }
 
@@ -321,7 +325,7 @@ export async function POST(req: Request) {
 
             const textToVerify = textOutput || (assistantParts.length > 0 ? "[Tool calls made, no delivery text]" : "");
             try {
-              const verify = await verifyCompletion(originalRequest, currentUIMessages, textToVerify, streamEndedNaturally);
+              const verify = await verifyCompletion(originalRequest, currentUIMessages, textToVerify, streamEndedNaturally, modelName);
               if (!verify.done) {
                 if (generalAttempts < MAX_GENERAL) {
                   console.log(`[bgcheck] Attempt ${generalAttempts} incomplete (verify: ${verify.message}), retrying`);

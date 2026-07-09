@@ -725,6 +725,27 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     );
   };
 
+  const handleDeactivateModel = (modelId: string) => {
+    const updated = providers.map((p) => ({
+      ...p,
+      models: p.models.map((m) =>
+        m.id === modelId ? { ...m, enabled: false } : m
+      ),
+    }));
+    saveProviders(updated);
+
+    const defaultM = localStorage.getItem("qube-default-model");
+    if (defaultM === modelId) {
+      localStorage.removeItem("qube-default-model");
+      setDefaultModel("");
+    }
+  };
+
+  const handleSetDefaultModel = (modelId: string) => {
+    localStorage.setItem("qube-default-model", modelId);
+    setDefaultModel(modelId);
+  };
+
   // Load prefs when dialog opens
   useEffect(() => {
     if (!open) return;
@@ -1075,6 +1096,74 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                     )}
                   </div>
                 </div>
+
+                {/* Active Models Section */}
+                {(() => {
+                  const activeModels = providers.flatMap((p) =>
+                    p.enabled
+                      ? p.models
+                          .filter((m) => m.enabled)
+                          .map((m) => ({ ...m, provider: p }))
+                      : []
+                  );
+                  if (activeModels.length === 0) return null;
+                  return (
+                    <div className="border-t border-border/40 pt-6 space-y-4">
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-semibold text-foreground">Active Models</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Select a default model or deactivate models directly.
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        {activeModels.map((m) => {
+                          const provIcon = PROVIDER_ID_TO_ICON[m.provider.id] || m.provider.id.charAt(0).toUpperCase() + m.provider.id.slice(1);
+                          const iconName = m.icon || detectModelIcon(m.id, m.provider.id);
+                          const isDefault = m.id === defaultModel;
+                          return (
+                            <div
+                              key={m.id}
+                              className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10 hover:bg-muted/20 transition-all gap-3"
+                            >
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <button
+                                  onClick={() => handleSetDefaultModel(m.id)}
+                                  type="button"
+                                  title={isDefault ? "Default model" : "Set as default"}
+                                  className={`size-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer ${
+                                    isDefault
+                                      ? "border-emerald-500 bg-emerald-500"
+                                      : "border-muted-foreground/30 hover:border-emerald-400"
+                                  }`}
+                                >
+                                  {isDefault && <CheckIcon className="size-3 text-white" />}
+                                </button>
+                                <div className="size-7 flex items-center justify-center shrink-0">
+                                  {renderLobeIcon(iconName, 16)}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold truncate text-foreground">{m.name}</p>
+                                  <p className="text-xs text-muted-foreground/70 truncate flex items-center gap-1">
+                                    {renderLobeIcon(provIcon, 10)}
+                                    <span>{m.provider.name}</span>
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleDeactivateModel(m.id)}
+                                type="button"
+                                className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
+                                title="Deactivate model"
+                              >
+                                <Trash2Icon className="size-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Custom Instructions Section */}
                 <div className="border-t border-border/40 pt-6 space-y-4">
@@ -1551,7 +1640,7 @@ function ConfirmGroup({
               <Button
                 onClick={onConfirm}
                 disabled={saving || confirmDisabled}
-                className="rounded-full font-semibold h-8 px-4"
+                className="rounded-full font-semibold h-8 px-4 bg-emerald-500 hover:bg-emerald-600 text-white"
                 size="sm"
               >
                 {saving ? (

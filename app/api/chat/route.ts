@@ -218,6 +218,7 @@ export async function POST(req: Request) {
         let hasAnyToolResults = false;
         let lastWasRateLimit = false;
         let lastRateLimitDelayMs = 0;
+        let lastError: string | null = null;
         let generalAttempts = 0;
         let rateLimitAttempts = 0;
         const MAX_GENERAL = 10;
@@ -378,6 +379,7 @@ export async function POST(req: Request) {
               continue;
             }
             console.error(`[bgcheck] Attempt ${generalAttempts} error:`, e);
+            lastError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
             if (generalAttempts < MAX_GENERAL) {
               const delay = Math.min(1000 * Math.pow(2, generalAttempts - 1), 8000);
               console.log(`[bgcheck] Backoff ${delay}ms before retry`);
@@ -396,7 +398,10 @@ export async function POST(req: Request) {
           writer.write({ type: "text-end", id: "fallback" });
         } else if (loopExhausted && !hasAnyToolResults && !lastWasRateLimit) {
           writer.write({ type: "text-start", id: "fallback" });
-          writer.write({ type: "text-delta", id: "fallback", delta: "\n\n*(The AI service is temporarily unavailable. Please try again in a moment.)*" });
+          const fbMsg = lastError
+            ? `\n\n*(The AI service is temporarily unavailable. Please try again in a moment.)*\n\n**Debug:** ${lastError}`
+            : "\n\n*(The AI service is temporarily unavailable. Please try again in a moment.)*";
+          writer.write({ type: "text-delta", id: "fallback", delta: fbMsg });
           writer.write({ type: "text-end", id: "fallback" });
         }
       } catch (e) {

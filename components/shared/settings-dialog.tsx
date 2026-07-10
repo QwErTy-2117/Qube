@@ -517,6 +517,14 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     localStorage.setItem("qube-temperature", String(temperature));
     localStorage.setItem("qube-user-name", userName);
     localStorage.setItem("qube-user-about", userAbout);
+
+    // Sync changes to backend immediately
+    fetch("/api/providers/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providers, defaultModelId: defaultModel }),
+    }).catch((e) => console.error("[SettingsDialog] Failed to sync preferences:", e));
+
     setSavedPrefs(true);
     setTimeout(() => setSavedPrefs(false), 2000);
   };
@@ -744,6 +752,13 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const handleSetDefaultModel = (modelId: string) => {
     localStorage.setItem("qube-default-model", modelId);
     setDefaultModel(modelId);
+
+    // Sync change to backend immediately
+    fetch("/api/providers/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providers, defaultModelId: modelId }),
+    }).catch((e) => console.error("[SettingsDialog] Failed to sync default model:", e));
   };
 
   // Load prefs when dialog opens

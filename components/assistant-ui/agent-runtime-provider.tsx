@@ -26,7 +26,7 @@ import {
   ScheduleTaskToolUI,
   UpdateHeartbeatToolUI,
 } from "@/components/assistant-ui/tools";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "web_search", render: WebSearchToolUI });
@@ -72,6 +72,25 @@ function ToolUIRegistrar() {
 
 
 export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("qube-providers");
+      if (stored) {
+        try {
+          const providers = JSON.parse(stored);
+          const defaultModelId = localStorage.getItem("qube-default-model") || null;
+          fetch("/api/providers/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ providers, defaultModelId }),
+          }).catch((e) => console.error("[AgentRuntimeProvider] Auto-sync failed:", e));
+        } catch (e) {
+          console.error("[AgentRuntimeProvider] Auto-sync parse failed:", e);
+        }
+      }
+    }
+  }, []);
+
   const runtime = useChatRuntime({
     transport: new AssistantChatTransport({
       api: "/api/chat",

@@ -1,11 +1,11 @@
 {
   "name": "xulux-base-demo",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3010",
-    "build": "next build",
+    "dev": "next dev -p 3010 --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -28,6 +28,7 @@
     "cmdk": "^1.1.1",
     "docx": "^9.7.1",
     "geist": "^1.7.2",
+    "jsdom": "^26.1.0",
     "lucide-react": "^1.21.0",
     "motion": "^12.42.2",
     "next": "^16.2.9",

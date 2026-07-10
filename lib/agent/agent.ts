@@ -2,7 +2,6 @@ import { streamText, tool } from "ai";
 import { z } from "zod";
 import { createModelClient } from "./model-client";
 import { DDGS } from "@phukon/duckduckgo-search";
-import { JSDOM } from "jsdom";
 import { buildSystemPrompt } from "./system-prompt";
 import { readFile, writeFile, unlink, readdir, stat, mkdir } from "node:fs/promises";
 import { extname, join, dirname } from "node:path";
@@ -274,6 +273,7 @@ export async function createAgent(config: AgentConfig) {
           let truncated = false;
           if (isText) {
             if (selector) {
+              const { JSDOM } = await import("jsdom");
               const dom = new JSDOM(raw);
               const elements = dom.window.document.querySelectorAll(selector);
               content = Array.from(elements).map((el: Element) => el.textContent?.trim?.() || "").filter(Boolean).join("\n\n");

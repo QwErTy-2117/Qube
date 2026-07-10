@@ -15,7 +15,6 @@ import {
   resolveExternalPath,
 } from "@/lib/middleware/workspace";
 import { DDGS } from "@phukon/duckduckgo-search";
-import { JSDOM } from "jsdom";
 import { extname, join, dirname } from "node:path";
 import { getMemoryEntries } from "@/lib/memory/memory-store";
 
@@ -479,6 +478,7 @@ export async function executeTask(
           let truncated = false;
           if (isText) {
             if (selector) {
+              const { JSDOM } = await import("jsdom");
               const dom = new JSDOM(raw);
               const elements =
                 dom.window.document.querySelectorAll(selector);

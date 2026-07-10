@@ -32,11 +32,14 @@ impl Sidecar {
         // Use a user-writable temp directory so Next.js can write caches
         let app_dir = {
             let tmp = std::env::temp_dir().join("qube-sidecar");
-            if !tmp.join("server.js").exists() {
-                copy_dir_recursively(dist_dir, &tmp).map_err(|e| {
-                    format!("Failed to copy sidecar to temp dir: {}", e)
+            if tmp.exists() {
+                fs::remove_dir_all(&tmp).map_err(|e| {
+                    format!("Failed to clean sidecar temp dir: {}", e)
                 })?;
             }
+            copy_dir_recursively(dist_dir, &tmp).map_err(|e| {
+                format!("Failed to copy sidecar to temp dir: {}", e)
+            })?;
             tmp
         };
 

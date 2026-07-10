@@ -1,8 +1,9 @@
 import type { Browser, BrowserContext, Page } from "playwright";
 import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { getDataDir } from "@/lib/data-dir";
 
-const PROFILES_DIR = join(process.cwd(), ".memory", "browser-profiles");
+const PROFILES_DIR = join(getDataDir(), ".memory", "browser-profiles");
 
 const INTERACTIVE_ROLES = new Set([
   "button", "link", "textbox", "combobox", "checkbox",

@@ -2,8 +2,9 @@ import { appendFile, readFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { type TaskLogEntry } from "./types";
+import { getDataDir } from "@/lib/data-dir";
 
-const DATA_DIR = join(process.cwd(), ".memory");
+const DATA_DIR = join(getDataDir(), ".memory");
 const LOG_FILE = join(DATA_DIR, "task-log.jsonl");
 const MAX_LOG_ENTRIES = 1000;
 

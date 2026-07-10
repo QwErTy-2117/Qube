@@ -1,7 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { getDataDir } from "@/lib/data-dir";
 
-const TRACKER_FILE = join(process.cwd(), ".memory", "session-tracker.json");
+const TRACKER_FILE = join(getDataDir(), ".memory", "session-tracker.json");
 
 type SessionTracker = {
   lastThreadId: string | null;
@@ -17,7 +18,7 @@ async function readTracker(): Promise<SessionTracker> {
 }
 
 async function writeTracker(tracker: SessionTracker): Promise<void> {
-  const dir = join(process.cwd(), ".memory");
+  const dir = join(getDataDir(), ".memory");
   const { existsSync, mkdirSync } = await import("node:fs");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   await writeFile(TRACKER_FILE, JSON.stringify(tracker), "utf-8");

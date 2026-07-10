@@ -1,8 +1,9 @@
 import { readFile, writeFile, readdir, unlink } from "node:fs/promises";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { getDataDir } from "@/lib/data-dir";
 
-const SESSIONS_DIR = join(process.cwd(), ".memory", "sessions");
+const SESSIONS_DIR = join(getDataDir(), ".memory", "sessions");
 const MAX_TRANSCRIPT_SIZE = 1024 * 1024;
 
 export type SessionRecord = {

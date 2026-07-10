@@ -1,8 +1,9 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ProviderConfig } from "@/components/shared/settings-dialog";
+import { getDataDir } from "@/lib/data-dir";
 
-const PROVIDERS_FILE = join(process.cwd(), ".memory", "providers.json");
+const PROVIDERS_FILE = join(getDataDir(), ".memory", "providers.json");
 
 class ProviderStore {
   private providers = new Map<string, ProviderConfig>();
@@ -36,7 +37,7 @@ class ProviderStore {
 
     if (writeToDisk) {
       try {
-        const dir = join(process.cwd(), ".memory");
+        const dir = join(getDataDir(), ".memory");
         if (!existsSync(dir)) {
           mkdirSync(dir, { recursive: true });
         }

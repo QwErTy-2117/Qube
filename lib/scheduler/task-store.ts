@@ -8,8 +8,9 @@ import {
   DEFAULT_TASK_PERMISSIONS,
   getDefaultHeartbeatTask,
 } from "./types";
+import { getDataDir } from "@/lib/data-dir";
 
-const DATA_DIR = join(process.cwd(), ".memory");
+const DATA_DIR = join(getDataDir(), ".memory");
 const TASKS_FILE = join(DATA_DIR, "scheduled-tasks.json");
 
 let cachedTasks: ScheduledTask[] | null = null;

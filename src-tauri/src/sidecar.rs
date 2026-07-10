@@ -28,7 +28,7 @@ pub struct Sidecar {
 }
 
 impl Sidecar {
-    pub fn start(dist_dir: &std::path::Path) -> Result<Self, String> {
+    pub fn start(dist_dir: &std::path::Path, data_dir: &std::path::Path) -> Result<Self, String> {
         // Use a user-writable temp directory so Next.js can write caches
         let app_dir = {
             let tmp = std::env::temp_dir().join("qube-sidecar");
@@ -43,24 +43,36 @@ impl Sidecar {
             tmp
         };
 
-        let listener =
-            TcpListener::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind port: {}", e))?;
-        let port = listener
-            .local_addr()
-            .map_err(|e| format!("Failed to get port: {}", e))?
-            .port();
-        drop(listener);
+        // Use a fixed port so localStorage (origin-scoped) persists across restarts
+        let port: u16 = {
+            let preferred: u16 = 3010;
+            match TcpListener::bind(("127.0.0.1", preferred)) {
+                Ok(listener) => {
+                    drop(listener);
+                    preferred
+                }
+                Err(_) => {
+                    let listener = TcpListener::bind("127.0.0.1:0")
+                        .map_err(|e| format!("Failed to bind port: {}", e))?;
+                    listener
+                        .local_addr()
+                        .map_err(|e| format!("Failed to get port: {}", e))?
+                        .port()
+                }
+            }
+        };
 
         let mut child = Command::new("node")
             .arg("server.js")
             .env("PORT", port.to_string())
             .env("HOSTNAME", "127.0.0.1")
+            .env("QUBE_DATA_DIR", data_dir.to_string_lossy().as_ref())
             .current_dir(&app_dir)
             .spawn()
             .map_err(|e| format!("Failed to spawn Next.js server: {}", e))?;
 
         // Poll TCP until server accepts connections
-        let max_retries = 30;
+        let max_retries = 40;
         for i in 0..max_retries {
             if TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
                 // Extra small delay to let Next.js finish its first render

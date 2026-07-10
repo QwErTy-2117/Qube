@@ -42,7 +42,10 @@ pub fn run() {
         .setup(|app| {
             tray::build_tray(app.handle())?;
             if let Some(dist_dir) = find_dist_dir(app.handle()) {
-                match sidecar::Sidecar::start(&dist_dir) {
+                let data_dir = app.path().app_data_dir().unwrap_or_else(|_| {
+                    std::env::temp_dir().join("qube-data")
+                });
+                match sidecar::Sidecar::start(&dist_dir, &data_dir) {
                     Ok(s) => {
                         let state = app.state::<AppState>();
                         state.set_port(s.port);

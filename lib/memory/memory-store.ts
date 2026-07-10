@@ -1,8 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { getDataDir } from "@/lib/data-dir";
 
-const MEMORY_FILE = join(process.cwd(), ".memory", "semantic-memory.json");
+const MEMORY_FILE = join(getDataDir(), ".memory", "semantic-memory.json");
 const DECAY_FACTOR = 0.95;
 const RELEVANCE_CUTOFF = 0.4;
 
@@ -26,7 +27,7 @@ function defaultStore(): MemoryStore {
 }
 
 function ensureDir() {
-  const dir = join(process.cwd(), ".memory");
+  const dir = join(getDataDir(), ".memory");
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }

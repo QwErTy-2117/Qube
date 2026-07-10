@@ -1,23 +1,22 @@
-import { createAgent } from "@/lib/agent/agent";
-import { extractAndStoreMemories, cleanupMemories } from "@/lib/agent/memory-agent";
-import { createModelClient } from "@/lib/agent/model-client";
-import { saveSession } from "@/lib/memory/session-store";
-import {
-  getLastThreadId,
-  setLastThreadId,
-} from "@/lib/memory/session-tracker";
 import {
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateText,
 } from "ai";
+import { createModelClient } from "@/lib/agent/model-client";
 
 export const maxDuration = 120;
 
 process.on("unhandledRejection", (reason) => {
   console.error("[process-unhandledRejection]", reason instanceof Error ? `${reason.name}: ${reason.message}\n${reason.stack}` : String(reason));
 });
+
+const _dynamicCache = new Map<string, any>();
+async function dyn(mod: string) {
+  if (!_dynamicCache.has(mod)) _dynamicCache.set(mod, import(mod));
+  return _dynamicCache.get(mod);
+}
 
 function extractText(m: Record<string, unknown>): string {
   const parts = (m.parts as Array<Record<string, unknown>>) || [];
@@ -158,9 +157,12 @@ export async function POST(req: Request) {
     const modelName = config?.modelName;
     const currentThreadId = threadId || `thread_${Date.now()}`;
 
+    const { getLastThreadId, setLastThreadId } = await dyn("@/lib/memory/session-tracker");
+    const { saveSession, readSession } = await dyn("@/lib/memory/session-store");
+    const { extractAndStoreMemories, cleanupMemories } = await dyn("@/lib/agent/memory-agent");
+
     const lastThreadId = await getLastThreadId();
     if (lastThreadId && lastThreadId !== currentThreadId) {
-      const { readSession } = await import("@/lib/memory/session-store");
       const prevSession = await readSession(lastThreadId);
       if (prevSession?.transcript) {
         try {
@@ -219,6 +221,7 @@ export async function POST(req: Request) {
           try {
             const modelMessages = await convertToModelMessages(currentUIMessages);
 
+            const { createAgent } = await dyn("@/lib/agent/agent");
             const agent = await createAgent({
               messages: modelMessages,
               threadId: currentThreadId,

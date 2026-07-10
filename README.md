@@ -1,122 +1,112 @@
 # Qube
 
-Qube is an AI agent app. It's a desktop chat interface for an AI that can work with your files, run commands, search the web, and remember things between conversations.
+A desktop AI agent app — a chat interface for an AI that edits files, runs commands, searches the web, generates documents, and remembers context across conversations.
 
-Designed for non-power users who want the capabilities of a coding agent without the terminal setup.
+Built with Tauri + Next.js, designed to package as a single desktop binary.
 
-<p align="center"><img src="public/logo.png" alt="Qube screenshot" width="200"></p>
-
----
-
-## What it does
-
-Qube is more than a chatbot. The AI can:
-
-- **Read and edit files** in its workspace — you can ask it to write code, edit documents, or generate reports
-- **Run commands** — ask it to install packages, run scripts, or execute shell commands
-- **Search the web** — it can look things up and cite sources
-- **Create documents** — generate `.docx`, `.pptx`, `.xlsx` files and download them
-- **Remember you** — long-term memory persists across conversations so it learns your preferences and project context
-- **Keep history** — all your conversations are saved and organized by date
-- **Ask you for permission** — before running destructive commands or accessing files outside its workspace, it asks first
+<p align="center"><img src="public/logo.png" alt="Qube" width="200"></p>
 
 ---
 
-## Features
+## Capabilities
 
-### Chat & Conversations
-- Multi-thread conversations switchable from a sidebar
-- Conversations grouped by Today, Yesterday, Earlier
-- Edit your own messages after sending
-- Copy, reload, or export any assistant response as Markdown
-- Keyboard shortcuts and markdown rendering with syntax-highlighted code
+- **File operations** — read, write, edit files in a sandboxed workspace
+- **Command execution** — run shell commands with permission gating
+- **Web search** — search and fetch web content with CSS selector extraction
+- **Document generation** — create `.docx`, `.pptx`, `.xlsx` files
+- **Long-term memory** — persistent memory across conversations (preferences, projects, patterns, decisions)
+- **Session history** — all conversations saved and organized
+- **Permission system** — destructive commands and external file access require approval
+- **Scheduled tasks** — recurring agent tasks with heartbeat monitoring
+- **Browser automation** — Playwright-based web interaction tools
 
-### Rich Input
-- Slash commands (`/summarize`, `/translate`, `/search`, `/help`)
-- @ mentions for quick actions
-- Voice dictation (speak instead of type)
-- File attachments with image preview
-- Quote text from messages to ask follow-ups
+---
 
-### Model Selection
-Choose between three models from the dropdown:
-- **GLM 4.7** (355B) — the most capable, good for complex tasks
-- **GPT-OSS 120B** — fast and efficient for everyday use
-- **Gemma 4 31B** — lightweight, great for quick questions
+## Architecture
 
-Your preferred model and settings are saved automatically.
+```
+┌──────────────────────────────────────────────────┐
+│  Tauri Desktop Shell                             │
+│  ┌────────────────────────────────────────────┐  │
+│  │  Next.js (standalone)                      │  │
+│  │  ┌─────────┐ ┌──────────────────────────┐  │  │
+│  │  │ Chat UI │ │ AI Agent                  │  │  │
+│  │  │(assistant│ │ ├─ file/web/command tools│  │  │
+│  │  │  -ui)   │ │ ├─ memory extraction     │  │  │
+│  │  └─────────┘ │ ├─ permission middleware  │  │  │
+│  │              │ └─ session management     │  │  │
+│  │  ┌───────────┴──────────────────────────┐ │  │
+│  │  │  Provider API (OpenAI / Mistral)     │ │  │
+│  │  └──────────────────────────────────────┘ │  │
+│  └────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────┘
+```
 
-### Long-Term Memory
-Qube builds a memory of what matters to you:
-- **Preferences** — how you like things done
-- **Projects** — what you're working on
-- **Patterns** — recurring request types
-- **Decisions** — choices that affect future work
+The Next.js app is compiled to a standalone build and bundled as a Tauri sidecar. At runtime, the sidecar spawns a local server from a temp directory.
 
-Memories are automatically extracted between conversations. You can view, delete, or clear them from the Settings dialog.
+---
 
-### Safety
+## Tech stack
 
-Qube is sandboxed in its own workspace directory:
-- File operations outside the workspace require your explicit approval
-- Destructive commands (`rm -rf`, `sudo`, pipe-to-shell) are intercepted and ask permission
-- Permission requests time out after 5 minutes if unanswered
+| Layer | Technology |
+|---|---|
+| Desktop shell | Tauri 2 |
+| Framework | Next.js 16 (App Router, TypeScript) |
+| Chat UI | assistant-ui |
+| Streaming | Vercel AI SDK |
+| Styling | Tailwind CSS 4, shadcn/ui |
+| Rich editor | Lexical (slash commands, @ mentions) |
+| State | Zustand |
+| AI providers | OpenAI / Mistral (bring your own key) |
+| Browser automation | Playwright |
+| Documents | docx, pptxgenjs, xlsx |
+| Icons | lucide-react, Radix icons, LobeHub icons |
 
 ---
 
 ## Getting started
 
-### Requirements
-
-- Node.js 20 or newer
-- An [OpenCode Zen](https://opencode.ai/zen) API key
-
-### Setup
+### Development
 
 ```bash
+npm install
 cp .env.example .env.local
 ```
 
 Add your API key to `.env.local`:
 
 ```
-OPENCODE_API_KEY=your_key_here
+OPENAI_API_KEY=sk-...
+# or
+MISTRAL_API_KEY=...
 ```
 
-Then:
-
 ```bash
-npm install
 npm run dev
 ```
 
-Open [http://localhost:3010](http://localhost:3010) in your browser.
+Open [http://localhost:3010](http://localhost:3010).
 
-### Running without an API key
+### Desktop build
 
-The app works without a key — it returns a simulated response so you can explore the interface. To use the live AI, add your OpenCode Zen API key.
+```bash
+# Build the Next.js sidecar
+TAURI_BUILD=true node scripts/build-sidecar.js
+
+# Package the Tauri desktop app
+npm run tauri:build
+```
 
 ---
 
 ## Configuration
 
-| Environment variable | Default | Description |
+| Env variable | Default | Description |
 |---|---|---|
-| `OPENCODE_API_KEY` | — | API key for OpenCode Zen inference |
-| `WORKSPACE_PATH` | `./workspace` | Agent's working directory |
-| `PERMISSION_TIMEOUT_MS` | `300000` | How long permission prompts wait (ms) |
-| `MEMORY_MODEL` | `deepseek-v4-flash-free` | Model used for memory extraction |
-
----
-
-## Tech stack
-
-- **Next.js 16** with App Router and TypeScript
-- **assistant-ui** — chat UI primitives and runtime
-- **OpenCode Zen** — AI inference (free models)
-- **Tailwind CSS 4** — styling
-- **Lexical** — rich text composer with slash commands and mentions
-- **Zustand** — client state
+| `WORKSPACE_PATH` | `./workspace` | Agent's sandboxed working directory |
+| `WORKSPACE_DIR_NAME` | `workspace` | Subdirectory name for workspace |
+| `PERMISSION_TIMEOUT_MS` | `300000` | Permission prompt timeout (ms) |
+| `TAURI_BUILD` | — | Set to `true` for standalone/sidecar output |
 
 ---
 
@@ -125,34 +115,34 @@ The app works without a key — it returns a simulated response so you can explo
 ```
 Qube/
 ├── app/
-│   ├── api/chat/route.ts       # AI agent endpoint
-│   ├── api/files/              # Serves workspace files for download
-│   ├── api/settings/           # Session and memory management
-│   └── globals.css             # Styles and themes
+│   ├── api/
+│   │   ├── chat/route.ts           # AI agent endpoint
+│   │   ├── ask-user/               # Permission request flow
+│   │   ├── files/                  # Workspace file serving
+│   │   ├── permission/             # Permission approval
+│   │   ├── providers/sync/         # Provider key sync
+│   │   ├── scheduler/              # Scheduled task API
+│   │   └── settings/               # Session & memory management
+│   └── globals.css
 ├── components/
-│   ├── assistant-ui/           # Chat UI components
-│   ├── examples/base.tsx       # Main chat page
-│   └── shared/                 # Settings dialog, etc.
+│   ├── assistant-ui/               # Chat UI components
+│   ├── examples/base.tsx           # Main chat page
+│   └── shared/                     # Dialogs, settings
 ├── lib/
-│   ├── agent/                  # Agent logic, tools, system prompt
-│   ├── memory/                 # Long-term memory and session storage
-│   └── middleware/             # Permission and workspace safety
-├── workspace/                  # Agent's sandboxed working directory
+│   ├── agent/                      # Agent logic, tool definitions
+│   ├── memory/                     # Memory & session persistence
+│   ├── middleware/                  # Permission & workspace safety
+│   └── scheduler/                  # Task scheduling & execution
+├── scripts/
+│   └── build-sidecar.js            # Sidecar build orchestrator
+├── src-tauri/                      # Tauri backend (Rust)
+├── workspace/                      # Agent sandbox directory
 └── constants/
-    └── model.ts                # Default model selection
+    └── model.ts
 ```
-
----
-
-## Built with
-
-- [assistant-ui](https://www.assistant-ui.com/) — React components for AI chat interfaces
-- [OpenCode Zen](https://opencode.ai/zen) — AI gateway with free coding models
-- [shadcn/ui](https://ui.shadcn.com/) — UI component primitives
-- [Vercel AI SDK](https://sdk.vercel.ai/docs) — streaming and tool use
 
 ---
 
 ## License
 
-MIT
+Apache 2.0

@@ -1,21 +1,66 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import os from 'os';
 
 const rootDir = process.cwd();
 const sidecarDistDir = path.join(rootDir, 'sidecar-dist');
 const nextDir = path.join(rootDir, '.next');
 const standaloneDir = path.join(nextDir, 'standalone');
 
-console.log('Building Next.js standalone application...');
-// Run Next.js build with TAURI_BUILD=true
+// Platform diagnostics
+console.log('=== Build Environment ===');
+console.log(`Platform: ${os.platform()}`);
+console.log(`Release: ${os.release()}`);
+console.log(`Node.js: ${process.version}`);
+console.log(`Arch: ${os.arch()}`);
+console.log(`CWD: ${rootDir}`);
+console.log(`TAURI_BUILD: ${process.env.TAURI_BUILD || 'not set'}`);
+
+if (os.platform() === 'win32') {
+  console.log('=== Windows Junction Check ===');
+  const appData = 'C:\\Users\\runneradmin\\Application Data';
+  try {
+    const stat = fs.lstatSync(appData);
+    console.log(`Application Data exists: ${stat.isDirectory()}, isSymbolicLink: ${stat.isSymbolicLink()}`);
+  } catch (e) {
+    console.log(`Application Data check skipped: ${e.message}`);
+  }
+  // Check for problematic junctions in common paths
+  for (const p of ['C:\\Users', rootDir]) {
+    try {
+      const entries = fs.readdirSync(p, { withFileTypes: true });
+      const junctions = entries.filter(e => e.isSymbolicLink?.() || false);
+      if (junctions.length > 0) {
+        console.log(`Junctions in ${p}: ${junctions.map(e => e.name).join(', ')}`);
+      } else {
+        console.log(`No junctions in ${p}`);
+      }
+    } catch (e) {
+      console.log(`Could not scan ${p}: ${e.message}`);
+    }
+  }
+}
+
+console.log('=== Starting Next.js Build ===');
 try {
   execSync('npm run build', {
     stdio: 'inherit',
-    env: { ...process.env, TAURI_BUILD: 'true' }
+    env: {
+      ...process.env,
+      TAURI_BUILD: 'true',
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --stack-trace-limit=100`,
+      NEXT_TELEMETRY_DISABLED: '1',
+    },
   });
 } catch (error) {
-  console.error('Next.js build failed:', error);
+  console.error('\n=== NEXT.JS BUILD FAILED ===');
+  console.error(`Error name: ${error.name}`);
+  console.error(`Error message: ${error.message}`);
+  console.error(`Exit code: ${error.status}`);
+  if (error.stderr) console.error(`Stderr: ${error.stderr}`);
+  if (error.stdout) console.error(`Stdout: ${error.stdout}`);
+  if (error.stack) console.error(`Stack: ${error.stack}`);
   process.exit(1);
 }
 
@@ -30,10 +75,13 @@ try {
   process.exit(1);
 }
 
-// Helper to copy files/folders recursively
 function copySync(src, dest) {
   if (!fs.existsSync(src)) return;
-  const stat = fs.statSync(src);
+  const stat = fs.lstatSync(src);
+  if (stat.isSymbolicLink()) {
+    console.log(`  Skipping symlink: ${src}`);
+    return;
+  }
   if (stat.isDirectory()) {
     if (!fs.existsSync(dest)) {
       fs.mkdirSync(dest, { recursive: true });
@@ -48,30 +96,24 @@ function copySync(src, dest) {
 }
 
 try {
-  // Copy server.js and package.json
   console.log('Copying standalone files...');
   copySync(path.join(standaloneDir, 'server.js'), path.join(sidecarDistDir, 'server.js'));
   copySync(path.join(standaloneDir, 'package.json'), path.join(sidecarDistDir, 'package.json'));
 
-  // Copy standalone .next folder
   console.log('Copying standalone .next folder...');
   copySync(path.join(standaloneDir, '.next'), path.join(sidecarDistDir, '.next'));
 
-  // Remove nested node_modules inside .next if they exist
   const nestedNodeModules = path.join(sidecarDistDir, '.next', 'node_modules');
   if (fs.existsSync(nestedNodeModules)) {
     fs.rmSync(nestedNodeModules, { recursive: true, force: true });
   }
 
-  // Copy static assets
   console.log('Copying static assets...');
   copySync(path.join(nextDir, 'static'), path.join(sidecarDistDir, '.next', 'static'));
 
-  // Copy standalone node_modules
   console.log('Copying standalone node_modules...');
   copySync(path.join(standaloneDir, 'node_modules'), path.join(sidecarDistDir, 'node_modules'));
 
-  // Copy public folder if it exists
   const publicSrc = path.join(standaloneDir, 'public');
   if (fs.existsSync(publicSrc)) {
     console.log('Copying public directory...');

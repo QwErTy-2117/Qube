@@ -453,6 +453,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [userAbout, setUserAbout] = useState("");
   const [savedPrefs, setSavedPrefs] = useState(false);
 
+  // Advanced settings state
+  const [runOnStart, setRunOnStart] = useState(false);
+  const [keepAlive, setKeepAlive] = useState(false);
+  const [savedAdvanced, setSavedAdvanced] = useState(false);
+
   const fetchMemories = useCallback(async () => {
     setLoadingMemories(true);
     try {
@@ -771,6 +776,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       if (t) setTemperature(parseFloat(t));
       setUserName(localStorage.getItem("qube-user-name") || "");
       setUserAbout(localStorage.getItem("qube-user-about") || "");
+
+      setRunOnStart(localStorage.getItem("qube-run-on-start") === "true");
+      setKeepAlive(localStorage.getItem("qube-keep-alive") === "true");
 
       const storedProviders = localStorage.getItem("qube-providers");
       if (storedProviders) {
@@ -1219,6 +1227,43 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   ) : (
                     <p className="text-xs text-muted-foreground/60 italic">No custom system instructions configured.</p>
                   )}
+                </div>
+
+                {/* Startup & Background Section */}
+                <div className="border-t border-border/40 pt-6 space-y-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-foreground">Startup & Background</h3>
+                    <p className="text-xs text-muted-foreground">Control how Qube starts and stays active.</p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 divide-y divide-border/40">
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div className="space-y-0.5">
+                        <span className="text-sm font-medium text-foreground">Run on start</span>
+                        <p className="text-xs text-muted-foreground">Launch Qube automatically when you log in.</p>
+                      </div>
+                      <SwitchToggle checked={runOnStart} onCheckedChange={setRunOnStart} />
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div className="space-y-0.5">
+                        <span className="text-sm font-medium text-foreground">Keep server running</span>
+                        <p className="text-xs text-muted-foreground">Maintain the background server for scheduled tasks and heartbeat monitoring.</p>
+                      </div>
+                      <SwitchToggle checked={keepAlive} onCheckedChange={setKeepAlive} />
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <Button
+                      onClick={() => {
+                        localStorage.setItem("qube-run-on-start", String(runOnStart));
+                        localStorage.setItem("qube-keep-alive", String(keepAlive));
+                        setSavedAdvanced(true);
+                        setTimeout(() => setSavedAdvanced(false), 2000);
+                      }}
+                      className={cn("font-semibold px-5 rounded-full transition-all", savedAdvanced && "bg-emerald-600 hover:bg-emerald-700")}
+                    >
+                      {savedAdvanced ? <CheckIcon className="size-4" /> : "Save"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </motion.div>

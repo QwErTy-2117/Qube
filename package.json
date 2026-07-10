@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3010 --webpack",
-    "build": "next build --webpack",
+    "dev": "next dev -p 3010",
+    "build": "next build",
     "start": "next start",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

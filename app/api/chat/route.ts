@@ -151,6 +151,7 @@ COMPLETE or CONTINUE: what's missing?`;
 }
 
 export async function POST(req: Request) {
+  console.log("[chat] POST /api/chat start", { url: req.url });
   try {
     const body = await req.json();
     const { messages, threadId, config, customSystemPrompt, temperature, userName, userAbout } = body;

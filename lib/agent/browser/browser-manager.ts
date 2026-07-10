@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import type { Browser, BrowserContext, Page } from "playwright";
 import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -32,6 +32,7 @@ export class BrowserManager {
 
   private async ensureBrowser(): Promise<Browser> {
     if (!this.browser || !this.browser.isConnected()) {
+      const { chromium } = await import("playwright");
       this.browser = await chromium.launch({
         headless: true,
         args: [

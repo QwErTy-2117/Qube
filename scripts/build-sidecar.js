@@ -64,6 +64,46 @@ try {
   process.exit(1);
 }
 
+// Post-build: create aliases for Turbopack's auto-externalized modules
+function createExternalAliases() {
+  console.log('=== Creating External Module Aliases ===');
+  const externalsDir = path.join(standaloneDir, 'node_modules');
+  const hashedNames = new Set();
+  function walkDir(dir) {
+    if (!fs.existsSync(dir)) return;
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) walkDir(fullPath);
+        else if (entry.name.endsWith('.js')) {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          const match = content.match(/jsdom-[a-f0-9]{16}/g);
+          if (match) match.forEach(m => hashedNames.add(m));
+        }
+      }
+    } catch { /* skip unreadable */ }
+  }
+  walkDir(nextDir);
+  if (hashedNames.size === 0) {
+    console.log('No external module aliases needed.');
+    return;
+  }
+  for (const name of hashedNames) {
+    const modDir = path.join(externalsDir, name);
+    if (fs.existsSync(modDir)) {
+      console.log(`  Alias already exists: ${name}`);
+      continue;
+    }
+    const realPackage = name.replace(/-[a-f0-9]{16}$/, '');
+    console.log(`  Creating alias: ${name} -> ${realPackage}`);
+    fs.mkdirSync(modDir, { recursive: true });
+    fs.writeFileSync(path.join(modDir, 'package.json'), JSON.stringify({ name, main: 'index.js' }));
+    fs.writeFileSync(path.join(modDir, 'index.js'), `module.exports = require("${realPackage}");\n`);
+  }
+}
+createExternalAliases();
+
 console.log('Preparing sidecar-dist directory...');
 try {
   if (fs.existsSync(sidecarDistDir)) {

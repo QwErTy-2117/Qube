@@ -7,7 +7,6 @@ import { readFile, writeFile, unlink, readdir, stat, mkdir } from "node:fs/promi
 import { extname, join, dirname } from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { createRequire } from "node:module";
 import { withPermissionCheck } from "@/lib/middleware/permission-middleware";
 import { getWorkspacePath, resolvePathInWorkspace, relativePathInWorkspace, resolveExternalPath } from "@/lib/middleware/workspace";
 import { createPendingQuestion } from "./tools/ask-user-tool";
@@ -19,7 +18,6 @@ import { getTasks, getTask, createTask, updateTask, deleteTask, updateTaskRunTim
 import { executeTask } from "@/lib/scheduler/task-executor";
 
 const execAsync = promisify(exec);
-const _require = createRequire(import.meta.url);
 
 const DOWNLOADABLE_EXTS = new Set(['.pptx', '.docx', '.xlsx', '.pdf', '.csv', '.zip', '.png', '.jpg', '.jpeg', '.gif', '.svg']);
 
@@ -275,7 +273,7 @@ export async function createAgent(config: AgentConfig) {
           let truncated = false;
           if (isText) {
             if (selector) {
-              const { JSDOM } = _require("jsdom");
+              const { JSDOM } = await import("jsdom");
               const dom = new JSDOM(raw);
               const elements = dom.window.document.querySelectorAll(selector);
               content = Array.from(elements).map((el: Element) => el.textContent?.trim?.() || "").filter(Boolean).join("\n\n");

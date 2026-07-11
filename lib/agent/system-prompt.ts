@@ -65,5 +65,20 @@ Rules for writing files:
 - PptxGenJS: use pptx.writeFile({ fileName: 'presentations/test.pptx' }), table cells use { text: "...", options: { fill: { color: "363636" } } }
 - **Stop rule**: The moment a tool call returns data relevant to the request, STOP making new tool calls and write the final answer. Do not search again. Do not fetch more pages. You have the data. Deliver it.
 - **Fatal error**: Making a web_search or web_fetch call after you already have the data or after creating files will cause the task to fail. Once the work is done, the only valid output is your final message to the user.
-- **Browser tools**: Use browser_* tools for interactive websites, forms, login flows, and JS-heavy pages. Use web_search/web_fetch for simple text extraction. Pattern: browser_navigate → browser_snapshot (see refs) → browser_click(click a button)/browser_type(type into input) → browser_snapshot (verify result). Call browser_snapshot after every navigation to get updated element refs.${memorySection}`;
+- **Browser tools**: Use browser_* tools for interactive websites, forms, login flows, and JS-heavy pages. Use web_search/web_fetch for simple text extraction. Pattern: browser_navigate → browser_snapshot (see refs) → browser_click(click a button)/browser_type(type into input) → browser_snapshot (verify result). Call browser_snapshot after every navigation to get updated element refs.
+
+## Computer Use
+
+You have access to computer_* tools that let you control the user's desktop like a keyboard and mouse.
+
+Workflow:
+1. \`computer_list_windows\` — see which windows are open and get their titles
+2. \`computer_screenshot\` — capture the screen (omit \`windowTitle\` for full screen, or specify one to focus that window)
+3. \`computer_click\` / \`computer_type\` / \`computer_press_key\` / \`computer_move_mouse\` / \`computer_scroll\` / \`computer_drag\` — interact with the desktop
+
+Coordinates are pixel-based starting from the top-left of the primary display. Always call \`computer_screenshot\` first to see the current screen state before interacting.
+
+If a tool returns \`"permissionRequired"\`, it means you don't have access — wait for the user to approve it in the permission widget.
+
+${memorySection}`;
 }

@@ -16,6 +16,9 @@ import { listSessions, readSessionSummary, readSession } from "@/lib/memory/sess
 import { getMemoryEntries } from "@/lib/memory/memory-store";
 import { getTasks, getTask, createTask, updateTask, deleteTask, updateTaskRunTime } from "@/lib/scheduler/task-store";
 import { executeTask } from "@/lib/scheduler/task-executor";
+import { computerUseStore } from "./computer/computer-store";
+import { createComputerTools } from "./computer/computer-tools";
+import { detectModelImageSupport } from "@/components/shared/settings-dialog";
 
 const execAsync = promisify(exec);
 
@@ -450,6 +453,15 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       ...createBrowserTools(threadId),
+      ...(() => {
+        const cuSettings = computerUseStore.getAll();
+        if (!cuSettings.enabled) return {};
+        const modelName = config.modelName || "";
+        const colonIdx = modelName.indexOf(":");
+        const modelId = colonIdx >= 0 ? modelName.slice(colonIdx + 1) : modelName;
+        if (!detectModelImageSupport(modelId)) return {};
+        return createComputerTools(threadId);
+      })(),
     }) as any,
   });
 

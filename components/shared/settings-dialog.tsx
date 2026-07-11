@@ -857,6 +857,66 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     }
   }, [open]);
 
+  // Auto-save all settings when dialog closes
+  const handleOpenChange = (next: boolean) => {
+    if (!next && open) {
+      localStorage.setItem("qube-default-model", defaultModel);
+      localStorage.setItem("qube-custom-system-prompt", customSystemPrompt);
+      localStorage.setItem("qube-temperature", String(temperature));
+      localStorage.setItem("qube-user-name", userName);
+      localStorage.setItem("qube-user-about", userAbout);
+      localStorage.setItem("qube-run-on-start", String(runOnStart));
+      localStorage.setItem("qube-keep-alive", String(keepAlive));
+      saveSettingsToServer();
+      fetch("/api/providers/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providers, defaultModelId: defaultModel }),
+      }).catch(() => {});
+      window.dispatchEvent(new Event("qube-providers-changed"));
+    }
+    setOpen(next);
+  };
+
+  // Auto-save current tab's settings when switching tabs
+  const handleTabChange = (next: string) => {
+    if (next !== tabValue) {
+      if (tabValue === "preferences") {
+        localStorage.setItem("qube-user-name", userName);
+        localStorage.setItem("qube-user-about", userAbout);
+      } else if (tabValue === "advanced") {
+        localStorage.setItem("qube-run-on-start", String(runOnStart));
+        localStorage.setItem("qube-keep-alive", String(keepAlive));
+      }
+      saveSettingsToServer();
+    }
+    setTabValue(next);
+  };
+
+  // Auto-save custom instructions when its popup closes
+  const handleInstructionsOpenChange = (v: boolean) => {
+    if (!v && customInstructionsOpen) {
+      setCustomSystemPrompt(tempInstructions);
+      localStorage.setItem("qube-custom-system-prompt", tempInstructions);
+      fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: {
+            defaultModel,
+            customSystemPrompt: tempInstructions,
+            temperature,
+            userName,
+            userAbout,
+            runOnStart,
+            keepAlive,
+          },
+        }),
+      }).catch(() => {});
+    }
+    setCustomInstructionsOpen(v);
+  };
+
   // Load data when tab changes
   useEffect(() => {
     if (!open) return;
@@ -868,7 +928,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   return (
     <>
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
 
       <DialogContent
@@ -876,7 +936,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         className="sm:max-w-4xl max-w-4xl w-full p-0 flex flex-col rounded-3xl border border-border bg-background shadow-2xl overflow-hidden"
         style={{ height: "min(660px, 90vh)" }}
       >
-        <Tabs value={tabValue} onValueChange={setTabValue} className="flex flex-col flex-1 overflow-hidden">
+        <Tabs value={tabValue} onValueChange={handleTabChange} className="flex flex-col flex-1 overflow-hidden">
     <div className="flex justify-center px-6 pt-5 pb-0 relative">
       <DialogClose className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute end-6 top-1/2 -translate-y-1/2 rounded-full opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
         <XIcon className="size-4" />
@@ -1700,7 +1760,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={customInstructionsOpen} onOpenChange={setCustomInstructionsOpen}>
+      <Dialog open={customInstructionsOpen} onOpenChange={handleInstructionsOpenChange}>
         <DialogContent className="sm:max-w-lg rounded-3xl">
           <DialogHeader>
             <DialogTitle>Custom System Instructions</DialogTitle>

@@ -88,6 +88,26 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
           console.error("[AgentRuntimeProvider] Auto-sync parse failed:", e);
         }
       }
+
+      // Hydrate localStorage from server-side settings on cold start
+      const needsHydrate = !localStorage.getItem("qube-custom-system-prompt") &&
+        !localStorage.getItem("qube-user-name");
+      if (needsHydrate) {
+        fetch("/api/settings")
+          .then((r) => r.json())
+          .then((data) => {
+            const s = data.settings;
+            if (!s) return;
+            if (s.customSystemPrompt) localStorage.setItem("qube-custom-system-prompt", s.customSystemPrompt);
+            if (s.temperature !== undefined) localStorage.setItem("qube-temperature", String(s.temperature));
+            if (s.userName) localStorage.setItem("qube-user-name", s.userName);
+            if (s.userAbout) localStorage.setItem("qube-user-about", s.userAbout);
+            if (s.defaultModel) localStorage.setItem("qube-default-model", s.defaultModel);
+            if (s.runOnStart !== undefined) localStorage.setItem("qube-run-on-start", String(s.runOnStart));
+            if (s.keepAlive !== undefined) localStorage.setItem("qube-keep-alive", String(s.keepAlive));
+          })
+          .catch(() => {});
+      }
     }
   }, []);
 

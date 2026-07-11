@@ -523,12 +523,13 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     localStorage.setItem("qube-user-name", userName);
     localStorage.setItem("qube-user-about", userAbout);
 
-    // Sync changes to backend immediately
     fetch("/api/providers/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ providers, defaultModelId: defaultModel }),
     }).catch((e) => console.error("[SettingsDialog] Failed to sync preferences:", e));
+
+    saveSettingsToServer();
 
     setSavedPrefs(true);
     setTimeout(() => setSavedPrefs(false), 2000);
@@ -537,6 +538,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const handleSaveUserPreferences = () => {
     localStorage.setItem("qube-user-name", userName);
     localStorage.setItem("qube-user-about", userAbout);
+    saveSettingsToServer();
     setSavedPrefs(true);
     setTimeout(() => setSavedPrefs(false), 2000);
   };
@@ -556,6 +558,24 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [savedInstructions, setSavedInstructions] = useState(false);
+
+  const saveSettingsToServer = useCallback(() => {
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: {
+          defaultModel,
+          customSystemPrompt,
+          temperature,
+          userName,
+          userAbout,
+          runOnStart,
+          keepAlive,
+        },
+      }),
+    }).catch(() => {});
+  }, [defaultModel, customSystemPrompt, temperature, userName, userAbout, runOnStart, keepAlive]);
 
   const [savingConfigure, setSavingConfigure] = useState(false);
   const [savedConfigure, setSavedConfigure] = useState(false);
@@ -590,6 +610,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     await new Promise((r) => setTimeout(r, 600));
     setCustomSystemPrompt(tempInstructions);
     localStorage.setItem("qube-custom-system-prompt", tempInstructions);
+    saveSettingsToServer();
     setSavingInstructions(false);
     setSavedInstructions(false);
     setCustomInstructionsOpen(false);
@@ -770,15 +791,41 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!open) return;
     if (typeof window !== "undefined") {
-      setDefaultModel(localStorage.getItem("qube-default-model") || "");
-      setCustomSystemPrompt(localStorage.getItem("qube-custom-system-prompt") || "");
-      const t = localStorage.getItem("qube-temperature");
-      if (t) setTemperature(parseFloat(t));
-      setUserName(localStorage.getItem("qube-user-name") || "");
-      setUserAbout(localStorage.getItem("qube-user-about") || "");
+      const lsDefaultModel = localStorage.getItem("qube-default-model");
+      const lsCustomPrompt = localStorage.getItem("qube-custom-system-prompt");
+      const lsTemperature = localStorage.getItem("qube-temperature");
+      const lsUserName = localStorage.getItem("qube-user-name");
+      const lsUserAbout = localStorage.getItem("qube-user-about");
+      const lsRunOnStart = localStorage.getItem("qube-run-on-start");
+      const lsKeepAlive = localStorage.getItem("qube-keep-alive");
 
-      setRunOnStart(localStorage.getItem("qube-run-on-start") === "true");
-      setKeepAlive(localStorage.getItem("qube-keep-alive") === "true");
+      setDefaultModel(lsDefaultModel || "");
+      setCustomSystemPrompt(lsCustomPrompt || "");
+      if (lsTemperature) setTemperature(parseFloat(lsTemperature));
+      setUserName(lsUserName || "");
+      setUserAbout(lsUserAbout || "");
+      setRunOnStart(lsRunOnStart === "true");
+      setKeepAlive(lsKeepAlive === "true");
+
+      // Fetch server-side settings and merge for any keys missing from localStorage
+      (async () => {
+        try {
+          const res = await fetch("/api/settings");
+          if (res.ok) {
+            const data = await res.json();
+            const s = data.settings;
+            if (s) {
+              if (!lsDefaultModel && s.defaultModel) setDefaultModel(s.defaultModel);
+              if (!lsCustomPrompt && s.customSystemPrompt) setCustomSystemPrompt(s.customSystemPrompt);
+              if (!lsTemperature && s.temperature !== undefined) setTemperature(s.temperature);
+              if (!lsUserName && s.userName) setUserName(s.userName);
+              if (!lsUserAbout && s.userAbout) setUserAbout(s.userAbout);
+              if (!lsRunOnStart && s.runOnStart !== undefined) setRunOnStart(s.runOnStart);
+              if (!lsKeepAlive && s.keepAlive !== undefined) setKeepAlive(s.keepAlive);
+            }
+          }
+        } catch {}
+      })();
 
       const storedProviders = localStorage.getItem("qube-providers");
       if (storedProviders) {
@@ -798,6 +845,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 if (data.defaultModelId) setDefaultModel(data.defaultModelId);
                 localStorage.setItem("qube-providers", JSON.stringify(data.providers));
                 if (data.defaultModelId) localStorage.setItem("qube-default-model", data.defaultModelId);
+                window.dispatchEvent(new Event("qube-providers-changed"));
                 return;
               }
             }
@@ -1271,6 +1319,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                       onClick={() => {
                         localStorage.setItem("qube-run-on-start", String(runOnStart));
                         localStorage.setItem("qube-keep-alive", String(keepAlive));
+                        saveSettingsToServer();
                         setSavedAdvanced(true);
                         setTimeout(() => setSavedAdvanced(false), 2000);
                       }}

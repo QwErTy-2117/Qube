@@ -183,7 +183,25 @@ const ModelPicker: FC = () => {
       setModels([]);
     };
 
-    syncModels();
+    const syncModelsOrFetch = () => {
+      const stored = localStorage.getItem("qube-providers");
+      if (stored) {
+        syncModels();
+      } else {
+        fetch("/api/providers/sync")
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.providers && data.providers.length > 0) {
+              localStorage.setItem("qube-providers", JSON.stringify(data.providers));
+              if (data.defaultModelId) localStorage.setItem("qube-default-model", data.defaultModelId);
+              syncModels();
+            }
+          })
+          .catch(() => {});
+      }
+    };
+
+    syncModelsOrFetch();
     window.addEventListener("storage", syncModels);
     window.addEventListener("qube-providers-changed", syncModels);
     return () => {

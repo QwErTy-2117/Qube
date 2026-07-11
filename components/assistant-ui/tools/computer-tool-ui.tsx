@@ -5,9 +5,11 @@ import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 export const ComputerScreenshotToolUI: ToolCallMessagePartComponent = ({ args, result }) => {
   const windowTitle = (args as any)?.windowTitle;
   let imageSrc = "";
+  let errorMsg = "";
   try {
     const data = typeof result === "string" ? JSON.parse(result) : result;
     if (data?.base64) imageSrc = `data:image/png;base64,${data.base64}`;
+    if (data?.error) errorMsg = data.message || "Screenshot failed";
   } catch {}
 
   return (
@@ -18,9 +20,17 @@ export const ComputerScreenshotToolUI: ToolCallMessagePartComponent = ({ args, r
       </div>
       {imageSrc ? (
         <img src={imageSrc} alt="Screenshot" className="w-full h-auto" />
-      ) : (
+      ) : errorMsg ? (
+        <div className="px-3 py-4 text-xs text-red-500/80 text-center">
+          {errorMsg}
+        </div>
+      ) : result ? (
         <div className="px-3 py-4 text-xs text-muted-foreground/60 text-center">
-          Screenshot captured ({result ? "success" : "pending"})
+          Processing screenshot...
+        </div>
+      ) : (
+        <div className="px-3 py-4 text-xs text-muted-foreground/40 text-center">
+          Capturing screenshot...
         </div>
       )}
     </div>

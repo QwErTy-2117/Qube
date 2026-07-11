@@ -1654,7 +1654,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         }
         if (!v) setManageProvider(null);
       }}>
-        <DialogContent className="sm:max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-xl rounded-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{manageProvider?.name} Settings</DialogTitle>
             <DialogDescription>

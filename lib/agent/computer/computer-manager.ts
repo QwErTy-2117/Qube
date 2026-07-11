@@ -3,6 +3,18 @@ interface WindowInfo {
   pid: number;
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const result = await Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(msg)), ms);
+    }),
+  ]);
+  clearTimeout(timer);
+  return result;
+}
+
 class ComputerManager {
   private static instance: ComputerManager;
   private focusedWindow: string | null = null;
@@ -32,7 +44,11 @@ class ComputerManager {
     }
 
     const screenshot = (await import("screenshot-desktop")).default;
-    const pngBuffer = await screenshot({ format: "png" });
+    const pngBuffer = await withTimeout(
+      screenshot({ format: "png" }),
+      15000,
+      "Screenshot timed out after 15s",
+    );
     const { width, height } = this.getPngDimensions(pngBuffer);
     return { base64: pngBuffer.toString("base64"), width, height };
   }
@@ -111,7 +127,7 @@ class ComputerManager {
   async listWindows(): Promise<WindowInfo[]> {
     try {
       const { getWindows } = await import("@nut-tree-fork/nut-js");
-      const windows = await getWindows();
+      const windows = await withTimeout(getWindows(), 10000, "listWindows timed out");
       const titles = await Promise.all(windows.map((w) => w.title));
       return windows
         .filter((_, i) => titles[i] && titles[i].trim().length > 0)

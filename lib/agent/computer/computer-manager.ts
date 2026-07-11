@@ -21,11 +21,12 @@ class ComputerManager {
       try {
         const { getWindows } = await import("@nut-tree-fork/nut-js");
         const windows = await getWindows();
-        const target = windows.find((w) =>
-          w.title.toLowerCase().includes(windowTitle.toLowerCase()),
+        const titles = await Promise.all(windows.map((w) => w.title));
+        const idx = titles.findIndex((t) =>
+          t.toLowerCase().includes(windowTitle.toLowerCase()),
         );
-        if (target) {
-          await target.focus();
+        if (idx >= 0) {
+          await windows[idx].focus();
         }
       } catch {
         // Focus is best-effort
@@ -113,11 +114,12 @@ class ComputerManager {
     try {
       const { getWindows } = await import("@nut-tree-fork/nut-js");
       const windows = await getWindows();
+      const titles = await Promise.all(windows.map((w) => w.title));
       return windows
-        .filter((w) => w.title && w.title.trim().length > 0)
-        .map((w) => ({
-          title: w.title,
-          pid: w.pid ?? 0,
+        .filter((_, i) => titles[i] && titles[i].trim().length > 0)
+        .map((_w, i) => ({
+          title: titles[i],
+          pid: 0,
         }));
     } catch {
       return [];
@@ -128,12 +130,13 @@ class ComputerManager {
     try {
       const { getWindows } = await import("@nut-tree-fork/nut-js");
       const windows = await getWindows();
-      const target = windows.find((w) =>
-        w.title.toLowerCase().includes(titlePattern.toLowerCase()),
+      const titles = await Promise.all(windows.map((w) => w.title));
+      const idx = titles.findIndex((t) =>
+        t.toLowerCase().includes(titlePattern.toLowerCase()),
       );
-      if (target) {
-        await target.focus();
-        this.focusedWindow = target.title;
+      if (idx >= 0) {
+        await windows[idx].focus();
+        this.focusedWindow = titles[idx];
         return true;
       }
       return false;

@@ -58,13 +58,24 @@ class ComputerUseStore {
     }
   }
 
-  isTargetAllowed(windowTitle?: string): boolean {
+  isTargetAllowed(windowTitle?: string): { allowed: boolean; reason?: string; action?: string } {
     this.ensureInitialized();
-    if (!this.settings.enabled) return false;
-    if (!windowTitle) return this.settings.fullScreen;
-    return this.settings.allowedApps.some(
+    if (!this.settings.enabled) {
+      return { allowed: false, reason: "Computer use is disabled.", action: "enable_settings" };
+    }
+    if (!windowTitle) {
+      if (this.settings.fullScreen) return { allowed: true };
+      return { allowed: false, reason: "Full-screen access is not granted.", action: "request_permission" };
+    }
+    const matched = this.settings.allowedApps.find(
       (app) => app.enabled && windowTitle.toLowerCase().includes(app.titlePattern.toLowerCase()),
     );
+    if (matched) return { allowed: true };
+    return {
+      allowed: false,
+      reason: `Window "${windowTitle}" is not in the allowed apps list.`,
+      action: "request_permission",
+    };
   }
 }
 

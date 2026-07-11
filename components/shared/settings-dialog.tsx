@@ -331,33 +331,51 @@ export function detectModelImageSupport(modelId: string): boolean {
     lower.includes("vision") ||
     lower.includes("vqa") ||
     lower.includes("multimodal") ||
+    lower.includes("image") ||
     lower.includes("vl") ||
     lower.includes("pixtral") ||
-    (lower.startsWith("claude") && /3\.\d/.test(lower)) ||
-    (lower.includes("claude") && /3(\.\d)?|4/.test(lower)) ||
-    (lower.includes("gemini") && !lower.includes("gemma")) ||
-    lower.includes("gpt-4o") ||
-    lower.includes("gpt-4.5") ||
-    lower.includes("gpt-4-turbo") ||
-    lower.includes("o1") ||
-    lower.includes("llama-3.2") ||
-    lower.includes("qwen-vl") ||
-    lower.includes("qwen2-vl") ||
-    lower.includes("reka") ||
+    lower.includes("llava") ||
+    lower.includes("cogvlm") ||
+    lower.includes("cogview") ||
+    lower.includes("glm-4v") ||
+    lower.includes("minicpm") ||
+    lower.includes("deepseek-vl") ||
     lower.includes("idefics") ||
     lower.includes("florence") ||
     lower.includes("internvl") ||
+    lower.includes("internlm") ||
     lower.includes("paligemma") ||
+    lower.includes("moondream") ||
+    lower.includes("reka") ||
+    lower.includes("kosmos") ||
+    lower.includes("fuyu") ||
+    lower.includes("imp-v") ||
+    lower.includes("qwen-vl") ||
+    lower.includes("qwen2-vl") ||
+    (lower.includes("claude") && /3(\.\d)?|4|5/.test(lower)) ||
+    (lower.includes("gemini") && !lower.includes("gemma")) ||
+    lower.includes("gpt-4o") ||
+    lower.includes("gpt-4.1") ||
+    lower.includes("gpt-4.5") ||
+    lower.includes("gpt-4-turbo") ||
+    lower.includes("o1") ||
+    lower.includes("o3") ||
+    lower.includes("llama-3.2") ||
     lower.includes("phi-3-vision") ||
     lower.includes("phi-3.5-vision") ||
-    lower.includes("moondream")
+    lower.includes("phi-4")
   ) {
     return true;
   }
   return false;
 }
 
-async function fetchProviderModels(baseURL: string, apiKey: string): Promise<string[]> {
+interface FetchedModel {
+  id: string;
+  imageInput: boolean;
+}
+
+async function fetchProviderModels(baseURL: string, apiKey: string): Promise<FetchedModel[]> {
   const base = baseURL.replace(/\/+$/, "");
 
   const tryFetch = async (url: string): Promise<Response> => {
@@ -382,10 +400,20 @@ async function fetchProviderModels(baseURL: string, apiKey: string): Promise<str
   }
   const body = await res.json();
   if (body?.data && Array.isArray(body.data)) {
-    const ids: string[] = body.data
-      .filter((m: any) => m.object === "model" || !m.object)
-      .map((m: any) => m.id);
-    return [...new Set(ids)];
+    const seen = new Set<string>();
+    const models: FetchedModel[] = [];
+    for (const m of body.data) {
+      if (m.object === "model" || !m.object) {
+        if (seen.has(m.id)) continue;
+        seen.add(m.id);
+        let imageInput = false;
+        if (m.architecture?.modality === "text+image") {
+          imageInput = true;
+        }
+        models.push({ id: m.id, imageInput: imageInput || detectModelImageSupport(m.id) });
+      }
+    }
+    return models;
   }
   throw new Error(`Unexpected response format from ${url}`);
 }
@@ -635,12 +663,12 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       const provId = configureProvider.id;
       const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter"];
       const providerIcon = PROVIDER_ID_TO_ICON[provId] || provId.charAt(0).toUpperCase() + provId.slice(1);
-      const qualifiedModels = fetchedModels.map((id) => ({
-        id: `${provId}:${id}`,
-        name: id,
+      const qualifiedModels = fetchedModels.map((model) => ({
+        id: `${provId}:${model.id}`,
+        name: model.id,
         enabled: false,
-        icon: autoDetectIcons.includes(provId) ? detectModelIcon(id, provId) : providerIcon,
-        imageInput: detectModelImageSupport(id),
+        icon: autoDetectIcons.includes(provId) ? detectModelIcon(model.id, provId) : providerIcon,
+        imageInput: model.imageInput,
       }));
 
       await new Promise((r) => setTimeout(r, 400));

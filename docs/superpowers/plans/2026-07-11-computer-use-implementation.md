@@ -4,13 +4,15 @@
 
 **Goal:** Allow the Qube agent to control the user's desktop — take screenshots, move the mouse, click, type, press keys, scroll, and drag — gated by an explicit allow list configured in Advanced settings.
 
-**Architecture:** `@nut-tree/nut-js` provides cross-platform screen capture, mouse, keyboard, and window management. A singleton `ComputerManager` wraps it with per-thread state. Tools check against a `ComputerUseStore` (allowed apps list + full screen toggle). Missing targets trigger the existing permission-widget system. Only image-capable models can use computer tools.
+**Architecture:** `@nut-tree-fork/nut-js` provides cross-platform screen capture, mouse, keyboard, and window management. A singleton `ComputerManager` wraps it with per-thread state. Tools check against a `ComputerUseStore` (allowed apps list + full screen toggle). Missing targets trigger the existing permission-widget system. Only image-capable models can use computer tools.
 
-**Tech Stack:** `@nut-tree/nut-js` (mouse, keyboard, window management), `screenshot-desktop` (screen capture → PNG buffer directly), Zod (input validation), Radix Switch + Dialog (settings UI), existing permission middleware.
+**Tech Stack:** `@nut-tree-fork/nut-js` (mouse, keyboard, window management), `screenshot-desktop` (screen capture → PNG buffer), Zod (input validation), existing permission middleware.
+
+> **IMPORTANT:** The package is `@nut-tree-fork/nut-js` (NOT `@nut-tree/nut-js`, which is deprecated). All imports use `@nut-tree-fork/nut-js`.
 
 ---
 
-### Task 1: Install @nut-tree/nut-js + create computer-store.ts
+### Task 1: Install @nut-tree-fork/nut-js + create computer-store.ts
 
 **Files:**
 - Modify: `package.json`
@@ -20,7 +22,7 @@
 - [ ] **Step 1: Add dependencies to package.json**
 
 ```json
-"@nut-tree/nut-js": "^4.2.0",
+"@nut-tree-fork/nut-js": "^4.2.0",
 "screenshot-desktop": "^1.15.0",
 ```
 
@@ -51,7 +53,7 @@ Add `libxtst-dev` after `librsvg2-dev`.
 npm install
 ```
 
-Expected: `@nut-tree/nut-js` added to `package-lock.json`.
+Expected: `@nut-tree-fork/nut-js` added to `package-lock.json`.
 
 - [ ] **Step 4: Create lib/agent/computer/computer-store.ts**
 
@@ -133,7 +135,7 @@ export const computerUseStore = new ComputerUseStore();
 
 ```bash
 git add package.json package-lock.json lib/agent/computer/computer-store.ts .github/workflows/build.yml
-git commit -m "feat: add @nut-tree/nut-js dep and computer-use store"
+git commit -m "feat: add @nut-tree-fork/nut-js dep and computer-use store"
 ```
 
 ---
@@ -167,7 +169,7 @@ class ComputerManager {
   async screenshot(windowTitle?: string): Promise<{ base64: string; width: number; height: number }> {
     if (windowTitle) {
       try {
-        const { getWindows } = await import("@nut-tree/nut-js");
+        const { getWindows } = await import("@nut-tree-fork/nut-js");
         const windows = await getWindows();
         const target = windows.find((w) =>
           w.title.toLowerCase().includes(windowTitle.toLowerCase()),
@@ -197,19 +199,19 @@ class ComputerManager {
   }
 
   async click(x: number, y: number, button: "left" | "right" | "middle" = "left") {
-    const { mouse, Button } = await import("@nut-tree/nut-js");
+    const { mouse, Button } = await import("@nut-tree-fork/nut-js");
     await mouse.setPosition({ x, y });
     const btnMap = { left: Button.LEFT, right: Button.RIGHT, middle: Button.MIDDLE };
     await mouse.click(btnMap[button]);
   }
 
   async type(text: string) {
-    const { keyboard } = await import("@nut-tree/nut-js");
+    const { keyboard } = await import("@nut-tree-fork/nut-js");
     await keyboard.type(text);
   }
 
   async pressKey(keys: string) {
-    const { keyboard, Key } = await import("@nut-tree/nut-js");
+    const { keyboard, Key } = await import("@nut-tree-fork/nut-js");
     const parts = keys.toLowerCase().split("+").map((k) => k.trim());
     const keyMap: Record<string, any> = {
       "ctrl": Key.LeftControl,
@@ -236,12 +238,12 @@ class ComputerManager {
   }
 
   async moveMouse(x: number, y: number) {
-    const { mouse } = await import("@nut-tree/nut-js");
+    const { mouse } = await import("@nut-tree-fork/nut-js");
     await mouse.setPosition({ x, y });
   }
 
   async scroll(x: number, y: number, direction: "up" | "down" | "left" | "right", amount: number) {
-    const { mouse } = await import("@nut-tree/nut-js");
+    const { mouse } = await import("@nut-tree-fork/nut-js");
     await mouse.setPosition({ x, y });
     for (let i = 0; i < amount; i++) {
       if (direction === "up") await mouse.scrollUp(1);
@@ -252,7 +254,7 @@ class ComputerManager {
   }
 
   async drag(fromX: number, fromY: number, toX: number, toY: number) {
-    const { mouse, Button } = await import("@nut-tree/nut-js");
+    const { mouse, Button } = await import("@nut-tree-fork/nut-js");
     await mouse.setPosition({ x: fromX, y: fromY });
     await mouse.pressButton(Button.LEFT);
     await mouse.setPosition({ x: toX, y: toY });
@@ -261,7 +263,7 @@ class ComputerManager {
 
   async listWindows(): Promise<WindowInfo[]> {
     try {
-      const { getWindows } = await import("@nut-tree/nut-js");
+      const { getWindows } = await import("@nut-tree-fork/nut-js");
       const windows = await getWindows();
       return windows
         .filter((w) => w.title && w.title.trim().length > 0)
@@ -276,7 +278,7 @@ class ComputerManager {
 
   async focusWindow(titlePattern: string): Promise<boolean> {
     try {
-      const { getWindows } = await import("@nut-tree/nut-js");
+      const { getWindows } = await import("@nut-tree-fork/nut-js");
       const windows = await getWindows();
       const target = windows.find((w) =>
         w.title.toLowerCase().includes(titlePattern.toLowerCase()),
@@ -300,7 +302,7 @@ export const computerManager = ComputerManager.getInstance();
 
 ```bash
 git add lib/agent/computer/computer-manager.ts
-git commit -m "feat: create computer-manager wrapping @nut-tree/nut-js"
+git commit -m "feat: create computer-manager wrapping @nut-tree-fork/nut-js"
 ```
 
 ---

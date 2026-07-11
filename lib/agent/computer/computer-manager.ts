@@ -1,5 +1,3 @@
-import { computerUseStore } from "./computer-store";
-
 interface WindowInfo {
   title: string;
   pid: number;

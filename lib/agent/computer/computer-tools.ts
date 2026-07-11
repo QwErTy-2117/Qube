@@ -1,8 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { computerManager } from "./computer-manager";
-import { computerUseStore } from "./computer-store";
-
 const screenBoundsSchema = z.object({
   width: z.number().min(1).max(99999).default(1920),
   height: z.number().min(1).max(99999).default(1080),
@@ -14,20 +12,6 @@ const coordinateSchema = z.object({
 });
 
 export function createComputerTools(threadId: string) {
-  const checkPermission = (windowTitle?: string): string | null => {
-    const result = computerUseStore.isTargetAllowed(windowTitle);
-    if (!result.allowed) {
-      return JSON.stringify({
-        error: true,
-        type: "permission_required",
-        message: result.reason,
-        target: windowTitle || "unknown",
-        action: result.action || "request_permission",
-      });
-    }
-    return null;
-  };
-
   const handleError = (error: unknown): string => {
     const msg = error instanceof Error ? error.message : String(error);
     return JSON.stringify({ error: true, message: msg });
@@ -44,8 +28,6 @@ Use this to see what's on screen before taking actions. Always call this first.`
       }),
       execute: async ({ windowTitle }: { windowTitle?: string; width: number; height: number }) => {
         try {
-          const permError = checkPermission(windowTitle);
-          if (permError) return permError;
           const result = await computerManager.screenshot(windowTitle);
           return JSON.stringify(result);
         } catch (e) {
@@ -63,8 +45,6 @@ Use this to see what's on screen before taking actions. Always call this first.`
       }),
       execute: async ({ x, y, button }: { x: number; y: number; button: "left" | "right" | "middle" }) => {
         try {
-          const permError = checkPermission();
-          if (permError) return permError;
           await computerManager.click(x, y, button);
           return JSON.stringify({ success: true, x, y, button });
         } catch (e) {
@@ -81,8 +61,6 @@ Use this to see what's on screen before taking actions. Always call this first.`
       }),
       execute: async ({ text }: { text: string }) => {
         try {
-          const permError = checkPermission();
-          if (permError) return permError;
           const resolved = text.replace(/\\n/g, "\n");
           await computerManager.type(resolved);
           return JSON.stringify({ success: true, chars: resolved.length });
@@ -100,8 +78,6 @@ Use this to see what's on screen before taking actions. Always call this first.`
       }),
       execute: async ({ keys }: { keys: string }) => {
         try {
-          const permError = checkPermission();
-          if (permError) return permError;
           await computerManager.pressKey(keys);
           return JSON.stringify({ success: true, keys });
         } catch (e) {
@@ -118,8 +94,6 @@ Use this to see what's on screen before taking actions. Always call this first.`
       }),
       execute: async ({ x, y }: { x: number; y: number }) => {
         try {
-          const permError = checkPermission();
-          if (permError) return permError;
           await computerManager.moveMouse(x, y);
           return JSON.stringify({ success: true, x, y });
         } catch (e) {
@@ -138,8 +112,6 @@ Use this to see what's on screen before taking actions. Always call this first.`
       }),
       execute: async ({ x, y, direction, amount }: { x: number; y: number; direction: "up" | "down" | "left" | "right"; amount: number }) => {
         try {
-          const permError = checkPermission();
-          if (permError) return permError;
           await computerManager.scroll(x, y, direction, amount);
           return JSON.stringify({ success: true, x, y, direction, amount });
         } catch (e) {
@@ -159,8 +131,6 @@ Use this to see what's on screen before taking actions. Always call this first.`
       }),
       execute: async ({ startX, startY, endX, endY }: { startX: number; startY: number; endX: number; endY: number }) => {
         try {
-          const permError = checkPermission();
-          if (permError) return permError;
           await computerManager.drag(startX, startY, endX, endY);
           return JSON.stringify({ success: true, from: { x: startX, y: startY }, to: { x: endX, y: endY } });
         } catch (e) {

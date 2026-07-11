@@ -8,7 +8,7 @@ Allow the Qube agent to control the user's desktop — take screenshots, move th
 
 Targets all platforms Qube ships on (Linux x86_64/aarch64, macOS aarch64, Windows x64).
 
-## Cross-Platform Library: `@nut-tree/nut-js`
+## Cross-Platform Library: `@nut-tree-fork/nut-js`
 
 - **Screen capture** — full display or per-window
 - **Mouse control** — move, click (left/right/middle), drag, scroll
@@ -20,7 +20,7 @@ Targets all platforms Qube ships on (Linux x86_64/aarch64, macOS aarch64, Window
 
 ### 1. Computer Manager (`lib/agent/computer/computer-manager.ts`)
 
-Singleton wrapping `@nut-tree/nut-js` APIs. Per-thread state tracking which window the agent is currently focused on.
+Singleton wrapping `@nut-tree-fork/nut-js` APIs. Per-thread state tracking which window the agent is currently focused on.
 
 ```
 Methods:
@@ -161,9 +161,9 @@ If `hasImageSupport === false`, computer tools are not injected and the settings
 - `lib/middleware/permission-middleware.ts` — add `evaluateComputerUse()`
 - `components/shared/settings-dialog.tsx` — add Computer Use section in Advanced tab
 - `components/assistant-ui/agent-runtime-provider.tsx` — register tool UIs
-- `package.json` — add `@nut-tree/nut-js` dependency
+- `package.json` — add `@nut-tree-fork/nut-js` dependency
 
 ## Package Dependencies
 
-- `@nut-tree/nut-js` — cross-platform desktop automation
+- `@nut-tree-fork/nut-js` — cross-platform desktop automation
 - Linux build: `libxtst-dev` (for X11 input simulation) — should already be covered by the GitHub Actions `apt-get install` block

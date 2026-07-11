@@ -1400,9 +1400,19 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 {/* Computer Use Section — hidden when model lacks image support */}
                 {(() => {
                   const curModel = typeof window !== "undefined" ? localStorage.getItem("qube-default-model") || "" : "";
-                  const colonIdx = curModel.indexOf(":");
-                  const modelId = colonIdx >= 0 ? curModel.slice(colonIdx + 1) : curModel;
-                  if (!modelId || !detectModelImageSupport(modelId)) return null;
+                  if (!curModel) return null;
+                  const stored = typeof window !== "undefined" ? localStorage.getItem("qube-providers") : null;
+                  let imageSupported = false;
+                  if (stored) {
+                    try {
+                      const providers = JSON.parse(stored) as ProviderConfig[];
+                      for (const p of providers) {
+                        const m = p.models.find(m => m.id === curModel);
+                        if (m?.imageInput) { imageSupported = true; break; }
+                      }
+                    } catch {}
+                  }
+                  if (!imageSupported) return null;
                   return (
                     <div className="border-t border-border/40 pt-6 space-y-4">
                       <div className="flex items-start justify-between">

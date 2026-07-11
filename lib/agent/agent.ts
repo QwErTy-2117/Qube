@@ -18,7 +18,7 @@ import { getTasks, getTask, createTask, updateTask, deleteTask, updateTaskRunTim
 import { executeTask } from "@/lib/scheduler/task-executor";
 import { computerUseStore } from "./computer/computer-store";
 import { createComputerTools } from "./computer/computer-tools";
-import { detectModelImageSupport } from "@/components/shared/settings-dialog";
+import { providerStore } from "./provider-store";
 
 const execAsync = promisify(exec);
 
@@ -457,9 +457,9 @@ export async function createAgent(config: AgentConfig) {
         const cuSettings = computerUseStore.getAll();
         if (!cuSettings.enabled) return {};
         const modelName = config.modelName || "";
-        const colonIdx = modelName.indexOf(":");
-        const modelId = colonIdx >= 0 ? modelName.slice(colonIdx + 1) : modelName;
-        if (!detectModelImageSupport(modelId)) return {};
+        const provResult = providerStore.getProviderByModel(modelName);
+        const hasImage = provResult?.provider.models.find(m => m.id === modelName)?.imageInput ?? false;
+        if (!hasImage) return {};
         return createComputerTools(threadId);
       })(),
     }) as any,

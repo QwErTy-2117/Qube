@@ -23,6 +23,8 @@ import {
   BrowserNavigateToolUI,
   BrowserScreenshotToolUI,
   BrowserToolUI,
+  ComputerScreenshotToolUI,
+  ComputerToolUI,
   ScheduleTaskToolUI,
   UpdateHeartbeatToolUI,
 } from "@/components/assistant-ui/tools";
@@ -44,6 +46,15 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "ask_user", render: AskUserToolUI });
   useAssistantToolUI({ toolName: "schedule_task", render: ScheduleTaskToolUI });
   useAssistantToolUI({ toolName: "update_heartbeat", render: UpdateHeartbeatToolUI });
+
+  useAssistantToolUI({ toolName: "computer_screenshot", render: ComputerScreenshotToolUI });
+  useAssistantToolUI({ toolName: "computer_click", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "computer_type", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "computer_press_key", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "computer_move_mouse", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "computer_scroll", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "computer_drag", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "computer_list_windows", render: ComputerToolUI });
 
   useAssistantToolUI({ toolName: "browser_navigate", render: BrowserNavigateToolUI });
   useAssistantToolUI({ toolName: "browser_take_screenshot", render: BrowserScreenshotToolUI });

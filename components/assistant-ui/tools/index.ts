@@ -14,3 +14,4 @@ export { AskUserToolUI } from "./ask-user-tool-ui";
 export { BrowserNavigateToolUI, BrowserScreenshotToolUI, BrowserToolUI } from "./browser-tool-ui";
 export { ScheduleTaskToolUI } from "./schedule-task-tool-ui";
 export { UpdateHeartbeatToolUI } from "./update-heartbeat-tool-ui";
+export { ComputerScreenshotToolUI, ComputerToolUI } from "./computer-tool-ui";

@@ -27,6 +27,7 @@ import {
   Settings2Icon,
   Clock,
   SearchIcon,
+  ImageIcon,
   PlusIcon,
   Sparkles,
 } from "lucide-react";
@@ -1751,7 +1752,16 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={manageProvider !== null} onOpenChange={(v) => { if (!v) setManageProvider(null); }}>
+      <Dialog open={manageProvider !== null} onOpenChange={(v) => {
+        if (!v && manageProvider) {
+          const updated = providers.map((p) => {
+            if (p.id === manageProvider.id) return { ...p, models: manageModels };
+            return p;
+          });
+          saveProviders(updated);
+        }
+        if (!v) setManageProvider(null);
+      }}>
         <DialogContent className="sm:max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{manageProvider?.name} Settings</DialogTitle>
@@ -1816,6 +1826,23 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                           <Trash2Icon className="size-4" />
                         </button>
                       )}
+                      <button
+                        onClick={() => {
+                          setManageModels((prev) =>
+                            prev.map((model) =>
+                              model.id === m.id ? { ...model, imageInput: !model.imageInput } : model
+                            )
+                          );
+                        }}
+                        className={`size-8 flex items-center justify-center rounded-lg transition-colors shrink-0 cursor-pointer ${
+                          m.imageInput
+                            ? "text-sky-500 bg-sky-500/10 hover:bg-sky-500/20"
+                            : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/30"
+                        }`}
+                        title={m.imageInput ? "Image input enabled (click to disable)" : "Image input disabled (click to enable)"}
+                      >
+                        <ImageIcon className="size-4" />
+                      </button>
                       <SwitchToggle
                         checked={m.enabled}
                         onCheckedChange={(checked) => handleToggleModel(m.id, checked)}

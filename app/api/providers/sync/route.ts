@@ -21,3 +21,14 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, error: msg }, { status: 500 });
   }
 }
+
+export async function GET() {
+  try {
+    const providers = providerStore.getAllProviders();
+    const defaultModelId = providerStore.getDefaultModelId();
+    return Response.json({ providers, defaultModelId });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, error: msg }, { status: 500 });
+  }
+}

@@ -999,20 +999,23 @@ export function SchedulingTab() {
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  if (deleteConfirmId) handleDeleteTask(deleteConfirmId);
-                  setDeleteConfirmId(null);
-                }}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                <Trash2 className="size-4 mr-1" />
-                Delete
-              </Button>
+              <div className="flex items-center gap-2 ml-auto">
+                <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)} className="rounded-full h-8 px-4">
+                  Cancel
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (deleteConfirmId) handleDeleteTask(deleteConfirmId);
+                    setDeleteConfirmId(null);
+                  }}
+                  className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
+                >
+                  <Trash2 className="size-3.5" />
+                  Delete
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>

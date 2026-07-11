@@ -788,8 +788,23 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           setProviders(DEFAULT_PROVIDERS);
         }
       } else {
-        setProviders(DEFAULT_PROVIDERS);
-        localStorage.setItem("qube-providers", JSON.stringify(DEFAULT_PROVIDERS));
+        (async () => {
+          try {
+            const res = await fetch("/api/providers/sync");
+            if (res.ok) {
+              const data = await res.json();
+              if (data.providers && data.providers.length > 0) {
+                setProviders(data.providers);
+                if (data.defaultModelId) setDefaultModel(data.defaultModelId);
+                localStorage.setItem("qube-providers", JSON.stringify(data.providers));
+                if (data.defaultModelId) localStorage.setItem("qube-default-model", data.defaultModelId);
+                return;
+              }
+            }
+          } catch {}
+          setProviders(DEFAULT_PROVIDERS);
+          localStorage.setItem("qube-providers", JSON.stringify(DEFAULT_PROVIDERS));
+        })();
       }
     }
   }, [open]);

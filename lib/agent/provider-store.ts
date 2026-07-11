@@ -73,6 +73,11 @@ class ProviderStore {
     return this.defaultModelId;
   }
 
+  getAllProviders(): ProviderConfig[] {
+    this.ensureInitialized();
+    return Array.from(this.providers.values());
+  }
+
   hasProviders(): boolean {
     this.ensureInitialized();
     return this.providers.size > 0;

@@ -458,6 +458,14 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [keepAlive, setKeepAlive] = useState(false);
   const [savedAdvanced, setSavedAdvanced] = useState(false);
 
+  // Computer Use state
+  const [computerUseEnabled, setComputerUseEnabled] = useState(false);
+  const [computerUseFullScreen, setComputerUseFullScreen] = useState(false);
+  const [computerUseApps, setComputerUseApps] = useState<Array<{ id: string; titlePattern: string; enabled: boolean }>>([]);
+  const [runningApps, setRunningApps] = useState<Array<{ title: string; pid: number }>>([]);
+  const [addAppOpen, setAddAppOpen] = useState(false);
+  const [customAppTitle, setCustomAppTitle] = useState("");
+
   const fetchMemories = useCallback(async () => {
     setLoadingMemories(true);
     try {
@@ -806,6 +814,12 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       setUserAbout(lsUserAbout || "");
       setRunOnStart(lsRunOnStart === "true");
       setKeepAlive(lsKeepAlive === "true");
+      setComputerUseEnabled(localStorage.getItem("qube-computer-use-enabled") === "true");
+      setComputerUseFullScreen(localStorage.getItem("qube-computer-use-fullscreen") === "true");
+      const storedApps = localStorage.getItem("qube-computer-use-apps");
+      if (storedApps) {
+        try { setComputerUseApps(JSON.parse(storedApps)); } catch {}
+      }
 
       // Fetch server-side settings and merge for any keys missing from localStorage
       (async () => {
@@ -822,6 +836,26 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               if (!lsUserAbout && s.userAbout) setUserAbout(s.userAbout);
               if (!lsRunOnStart && s.runOnStart !== undefined) setRunOnStart(s.runOnStart);
               if (!lsKeepAlive && s.keepAlive !== undefined) setKeepAlive(s.keepAlive);
+            }
+          }
+        } catch {}
+
+        // Load computer use settings from server
+        try {
+          const res = await fetch("/api/computer/settings");
+          if (res.ok) {
+            const data = await res.json();
+            const cs = data.settings;
+            if (cs) {
+              if (!localStorage.getItem("qube-computer-use-enabled") && cs.enabled !== undefined) {
+                setComputerUseEnabled(cs.enabled);
+              }
+              if (!localStorage.getItem("qube-computer-use-fullscreen") && cs.fullScreen !== undefined) {
+                setComputerUseFullScreen(cs.fullScreen);
+              }
+              if (!localStorage.getItem("qube-computer-use-apps") && cs.allowedApps?.length) {
+                setComputerUseApps(cs.allowedApps);
+              }
             }
           }
         } catch {}
@@ -916,6 +950,17 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     }
     setCustomInstructionsOpen(v);
   };
+
+  const fetchRunningApps = useCallback(async () => {
+    try {
+      const res = await fetch("/api/computer/available-apps");
+      if (res.ok) {
+        const data = await res.json();
+        setRunningApps(data.windows || []);
+        setAddAppOpen(true);
+      }
+    } catch {}
+  }, []);
 
   // Load data when tab changes
   useEffect(() => {
@@ -1352,6 +1397,146 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   )}
                 </div>
 
+                {/* Computer Use Section — hidden when model lacks image support */}
+                {(() => {
+                  const curModel = typeof window !== "undefined" ? localStorage.getItem("qube-default-model") || "" : "";
+                  const colonIdx = curModel.indexOf(":");
+                  const modelId = colonIdx >= 0 ? curModel.slice(colonIdx + 1) : curModel;
+                  if (!modelId || !detectModelImageSupport(modelId)) return null;
+                  return (
+                    <div className="border-t border-border/40 pt-6 space-y-4">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <h3 className="text-sm font-semibold text-foreground">Computer Use</h3>
+                          <p className="text-xs text-muted-foreground">
+                            Let the agent control your keyboard and mouse to interact with applications.
+                          </p>
+                        </div>
+                        <SwitchToggle
+                          checked={computerUseEnabled}
+                          onCheckedChange={(v) => {
+                            setComputerUseEnabled(v);
+                            localStorage.setItem("qube-computer-use-enabled", String(v));
+                            fetch("/api/computer/settings", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ settings: { enabled: v } }),
+                            }).catch(() => {});
+                          }}
+                        />
+                      </div>
+
+                      {computerUseEnabled && (
+                        <div className="space-y-4 pl-1">
+                          <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-border/60 bg-muted/10">
+                            <div className="space-y-0.5">
+                              <span className="text-sm font-medium text-foreground">Full Screen</span>
+                              <p className="text-xs text-muted-foreground">
+                                Grant access to the entire screen without requiring permission prompts.
+                              </p>
+                            </div>
+                            <SwitchToggle
+                              checked={computerUseFullScreen}
+                              onCheckedChange={(v) => {
+                                setComputerUseFullScreen(v);
+                                localStorage.setItem("qube-computer-use-fullscreen", String(v));
+                                fetch("/api/computer/settings", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ settings: { fullScreen: v } }),
+                                }).catch(() => {});
+                              }}
+                            />
+                          </div>
+
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-foreground">Managed Apps</span>
+                              <Button
+                                onClick={fetchRunningApps}
+                                variant="outline"
+                                className="rounded-full font-semibold px-3 h-7 text-xs flex items-center gap-1"
+                                size="sm"
+                              >
+                                <PlusIcon className="size-3" />
+                                Add App
+                              </Button>
+                            </div>
+
+                            {computerUseApps.length === 0 ? (
+                              <p className="text-xs text-muted-foreground/60 italic px-1">
+                                No apps configured. Click "Add App" to allow the agent to control a specific application by its window title.
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {computerUseApps.map((app) => (
+                                  <div
+                                    key={app.id}
+                                    className="flex items-center justify-between px-4 py-2.5 rounded-xl border border-border/60 bg-muted/10"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-medium text-foreground truncate">{app.titlePattern}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <SwitchToggle
+                                        checked={app.enabled}
+                                        onCheckedChange={(checked) => {
+                                          const updated = computerUseApps.map((a) =>
+                                            a.id === app.id ? { ...a, enabled: checked } : a,
+                                          );
+                                          setComputerUseApps(updated);
+                                          localStorage.setItem("qube-computer-use-apps", JSON.stringify(updated));
+                                          fetch("/api/computer/settings", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({
+                                              settings: {
+                                                allowedApps: updated.map((a) => ({
+                                                  id: a.id,
+                                                  titlePattern: a.titlePattern,
+                                                  enabled: a.enabled,
+                                                })),
+                                              },
+                                            }),
+                                          }).catch(() => {});
+                                        }}
+                                      />
+                                      <button
+                                        onClick={() => {
+                                          const updated = computerUseApps.filter((a) => a.id !== app.id);
+                                          setComputerUseApps(updated);
+                                          localStorage.setItem("qube-computer-use-apps", JSON.stringify(updated));
+                                          fetch("/api/computer/settings", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({
+                                              settings: {
+                                                allowedApps: updated.map((a) => ({
+                                                  id: a.id,
+                                                  titlePattern: a.titlePattern,
+                                                  enabled: a.enabled,
+                                                })),
+                                              },
+                                            }),
+                                          }).catch(() => {});
+                                        }}
+                                        className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors cursor-pointer"
+                                        title="Remove app"
+                                      >
+                                        <Trash2Icon className="size-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Startup & Background Section */}
                 <div className="border-t border-border/40 pt-6 space-y-4">
                   <div className="space-y-1">
@@ -1786,6 +1971,113 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               saving={savingInstructions}
               saved={savedInstructions}
             />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add App Dialog */}
+      <Dialog open={addAppOpen} onOpenChange={setAddAppOpen}>
+        <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Add Application</DialogTitle>
+            <DialogDescription>
+              Select a running application or type a window title pattern to allow the agent to control it.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground">Custom Title Pattern</label>
+              <input
+                type="text"
+                placeholder="e.g. Firefox, Terminal, Visual Studio Code..."
+                value={customAppTitle}
+                onChange={(e) => setCustomAppTitle(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            <div className="border-t border-border/40 pt-3">
+              <p className="text-xs text-muted-foreground font-medium mb-2">Running Applications</p>
+              <div className="max-h-[250px] overflow-y-auto space-y-1 pr-1">
+                {runningApps.length === 0 ? (
+                  <p className="text-xs text-muted-foreground/60 italic py-4 text-center">
+                    No running windows detected.
+                  </p>
+                ) : (
+                  runningApps.map((w, i) => (
+                    <button
+                      key={`${w.title}-${i}`}
+                      type="button"
+                      onClick={() => {
+                        const id = `app_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                        const newApp = { id, titlePattern: w.title, enabled: true };
+                        const updated = [...computerUseApps, newApp];
+                        setComputerUseApps(updated);
+                        localStorage.setItem("qube-computer-use-apps", JSON.stringify(updated));
+                        fetch("/api/computer/settings", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            settings: {
+                              allowedApps: updated.map((a) => ({
+                                id: a.id,
+                                titlePattern: a.titlePattern,
+                                enabled: a.enabled,
+                              })),
+                            },
+                          }),
+                        }).catch(() => {});
+                        setAddAppOpen(false);
+                        setCustomAppTitle("");
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-muted/30 transition-colors border border-transparent hover:border-border/60"
+                    >
+                      <p className="font-medium truncate">{w.title}</p>
+                      <p className="text-[10px] text-muted-foreground/60">PID: {w.pid}</p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <div className="flex items-center gap-2 w-full justify-end">
+              <Button variant="outline" onClick={() => { setAddAppOpen(false); setCustomAppTitle(""); }} className="rounded-full h-8 px-4">
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!customAppTitle.trim()) return;
+                  const id = `app_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                  const newApp = { id, titlePattern: customAppTitle.trim(), enabled: true };
+                  const updated = [...computerUseApps, newApp];
+                  setComputerUseApps(updated);
+                  localStorage.setItem("qube-computer-use-apps", JSON.stringify(updated));
+                  fetch("/api/computer/settings", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      settings: {
+                        allowedApps: updated.map((a) => ({
+                          id: a.id,
+                          titlePattern: a.titlePattern,
+                          enabled: a.enabled,
+                        })),
+                      },
+                    }),
+                  }).catch(() => {});
+                  setAddAppOpen(false);
+                  setCustomAppTitle("");
+                }}
+                disabled={!customAppTitle.trim()}
+                className="rounded-full font-semibold h-8 px-4"
+                size="sm"
+              >
+                Add
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

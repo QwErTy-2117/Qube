@@ -17,7 +17,7 @@ import { getMemoryEntries } from "@/lib/memory/memory-store";
 import { getTasks, getTask, createTask, updateTask, deleteTask, updateTaskRunTime } from "@/lib/scheduler/task-store";
 import { executeTask } from "@/lib/scheduler/task-executor";
 import { computerUseStore } from "./computer/computer-store";
-import { createComputerTools } from "./computer/computer-tools";
+import { getComputerTools } from "./computer/computer-mcp";
 import { providerStore } from "./provider-store";
 import { detectModelImageSupport } from "@/lib/agent/vision-support";
 
@@ -108,7 +108,7 @@ export async function createAgent(config: AgentConfig) {
   const cuEnabled = computerUseStore.getAll().enabled;
   const hasVision = hasVisionCapability(config.modelName || "");
   const computerUseNote = cuEnabled && !hasVision
-    ? "\n\n## Computer Use Notice\n\nComputer Use is enabled but your model does not support image input. You cannot use computer_* tools. If the user asks about desktop automation, tell them to switch to a vision-capable model."
+    ? "\n\n## Computer Use Notice\n\nComputer Use is enabled but your model does not support image input. You cannot use the computer control tools. If the user asks about desktop automation, tell them to switch to a vision-capable model."
     : "";
 
   const systemPrompt = config.systemPrompt || (
@@ -129,6 +129,15 @@ export async function createAgent(config: AgentConfig) {
       }
     };
   };
+
+  let computerTools: Record<string, any> = {};
+  try {
+    if (computerUseStore.getAll().enabled && hasVisionCapability(config.modelName || "")) {
+      computerTools = await getComputerTools();
+    }
+  } catch (e) {
+    console.error("[agent] Failed to init computer tools:", e);
+  }
 
   const result = streamText({
     model: createModelClient(config.modelName || ""),
@@ -478,11 +487,7 @@ export async function createAgent(config: AgentConfig) {
       }),
 
       ...createBrowserTools(threadId),
-      ...(() => {
-        if (!computerUseStore.getAll().enabled) return {};
-        if (!hasVisionCapability(config.modelName || "")) return {};
-        return createComputerTools(threadId);
-      })(),
+      ...computerTools,
     }) as any,
   });
 

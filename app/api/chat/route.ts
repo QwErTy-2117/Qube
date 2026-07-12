@@ -64,7 +64,7 @@ function stripOldScreenshots(messages: any[], keepCount: number = 2): any[] {
   const screenshotMsgIndices: number[] = [];
   for (let i = 0; i < messages.length; i++) {
     const parts = (messages[i].parts || []) as any[];
-    if (parts.some((p: any) => p.type === "tool-result" && p.toolName === "computer_screenshot")) {
+    if (parts.some((p: any) => p.type === "tool-result" && (p.toolName === "get_app_state" || p.toolName === "computer_screenshot"))) {
       screenshotMsgIndices.push(i);
     }
   }
@@ -75,7 +75,7 @@ function stripOldScreenshots(messages: any[], keepCount: number = 2): any[] {
     return {
       ...m,
       parts: (m.parts || []).map((p: any) => {
-        if (p.type === "tool-result" && p.toolName === "computer_screenshot") {
+        if (p.type === "tool-result" && (p.toolName === "get_app_state" || p.toolName === "computer_screenshot")) {
           return { ...p, result: JSON.stringify({ placeholder: true, message: "Older screenshot removed to save context" }) };
         }
         return p;
@@ -170,8 +170,8 @@ async function verifyCompletion(
   });
 
   const computerNote = canUseComputer
-    ? "Model has vision — computer_* tools are available."
-    : "Model LACKS vision — computer_* tools are NOT available. Do NOT expect the agent to use them.";
+    ? "Model has vision — computer control tools are available."
+    : "Model LACKS vision — computer control tools are NOT available. Do NOT expect the agent to use them.";
 
   const prompt = `Request: "${request}"
 Context: ${contextLines.join(" | ")}

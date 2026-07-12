@@ -23,7 +23,8 @@ import {
   BrowserNavigateToolUI,
   BrowserScreenshotToolUI,
   BrowserToolUI,
-  ComputerScreenshotToolUI,
+  AppStateToolUI,
+  ListAppsToolUI,
   ComputerToolUI,
   ScheduleTaskToolUI,
   UpdateHeartbeatToolUI,
@@ -47,14 +48,15 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "schedule_task", render: ScheduleTaskToolUI });
   useAssistantToolUI({ toolName: "update_heartbeat", render: UpdateHeartbeatToolUI });
 
-  useAssistantToolUI({ toolName: "computer_screenshot", render: ComputerScreenshotToolUI });
-  useAssistantToolUI({ toolName: "computer_click", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_type", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_press_key", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_move_mouse", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_scroll", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_drag", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_list_windows", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "get_app_state", render: AppStateToolUI });
+  useAssistantToolUI({ toolName: "list_apps", render: ListAppsToolUI });
+  useAssistantToolUI({ toolName: "click", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "type_text", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "press_key", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "scroll", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "drag", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "set_value", render: ComputerToolUI });
+  useAssistantToolUI({ toolName: "perform_secondary_action", render: ComputerToolUI });
 
   useAssistantToolUI({ toolName: "browser_navigate", render: BrowserNavigateToolUI });
   useAssistantToolUI({ toolName: "browser_take_screenshot", render: BrowserScreenshotToolUI });

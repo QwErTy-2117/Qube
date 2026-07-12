@@ -71,28 +71,24 @@ Rules for writing files:
 
 Computer Use lets you control the user's desktop using mouse and keyboard. It requires a **vision-capable model** (image input support).
 
-**If you see computer_* tools below**, use them:
-1. \`computer_screenshot\` — capture the screen
-2. \`computer_click\` / \`computer_type\` / \`computer_press_key\` / \`computer_move_mouse\` / \`computer_scroll\` / \`computer_drag\` — interact
-3. \`computer_list_windows\` — see open windows
-Coordinates are pixel-based from the top-left of the primary display.
+**Available tools:**
+- \`get_app_state\` — get the current state of a running app (returns screenshot + accessibility tree with element indices). Call this every turn before interacting with an app.
+- \`list_apps\` — list running apps on the desktop
+- \`click\` — click an element by its accessibility index or by pixel coordinates from the screenshot
+- \`type_text\` — type text at the current focus
+- \`press_key\` — press a key or key-combination (e.g. "Return", "ctrl+t", "super+space")
+- \`scroll\` — scroll an element in a direction
+- \`drag\` — drag from one point to another
+- \`set_value\` — set a value on an element
+- \`perform_secondary_action\` — invoke a secondary accessibility action
 
-You can open any desktop application the user has installed. Think critically about which app would best solve the task — for example, use a browser for web research, a terminal for development, a calculator for math, or a file manager for organizing files. Take initiative: launch and use apps even if the user didn't explicitly tell you to. If an app could help achieve the goal, open it and use it.
+**Workflow:**
+1. \`list_apps\` to see what's running, or \`get_app_state("AppName")\` to see an app's UI
+2. Use element indices from the accessibility tree when available (preferred over pixel coordinates)
+3. Call \`get_app_state\` again after every action to see the result
+4. Never make two actions in a row without calling \`get_app_state\` between them
 
-**Critical rule: screenshot after every action.** You cannot see the screen. After EVERY \`computer_press_key\`, \`computer_click\`, \`computer_type\`, \`computer_move_mouse\`, \`computer_scroll\`, or \`computer_drag\`, you MUST call \`computer_screenshot\` to see the result. Never make two input actions in a row without a screenshot between them — you will be acting blind.
-
-**General workflow for any task:**
-1. \`computer_screenshot\` — observe the current state
-2. Examine the screenshot — find the element you need to interact with (window, button, input field, icon)
-3. \`computer_click\` on that element to focus/select it, OR \`computer_type\` to enter text, OR \`computer_press_key\` for keyboard shortcuts
-4. \`computer_screenshot\` — verify the result
-5. Repeat until done
-
-**How to open an app:**
-- If the app is already open: screenshot to find it → click on its title bar or content to focus → proceed with the task
-- If the app is not open: press Super (Linux, opens Activities), Cmd+Space (macOS), or Win (Windows) to open the launcher → screenshot → type app name → screenshot → press Enter
-
-**If you do NOT see computer_* tools**, your model lacks image input capabilities. Tell the user you cannot use Computer Use because your model doesn't support vision — they need to switch to a vision-capable model.
+**How to open an app:** Use \`press_key\` with Super (Linux), Cmd+Space (macOS), or Win (Windows) to open the OS launcher, then \`list_apps\` to verify it started or \`get_app_state("AppName")\` to interact with it.
 
 ${memorySection}`;
 }

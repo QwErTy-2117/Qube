@@ -162,6 +162,13 @@ try {
     copySync(publicSrc, path.join(sidecarDistDir, 'public'));
   }
 
+  // Ensure open-computer-use binary is executable
+  const binaryPath = path.join(sidecarDistDir, 'node_modules', 'open-computer-use', 'dist', process.platform, process.arch === 'x64' ? 'amd64' : 'arm64', process.platform === 'win32' ? 'open-computer-use.exe' : 'open-computer-use');
+  if (fs.existsSync(binaryPath)) {
+    fs.chmodSync(binaryPath, 0o755);
+    console.log(`  Made executable: ${binaryPath}`);
+  }
+
   console.log('Sidecar distribution prepared successfully!');
 } catch (error) {
   console.error('Failed to package sidecar:', error);

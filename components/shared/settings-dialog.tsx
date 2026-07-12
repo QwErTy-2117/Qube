@@ -479,6 +479,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   // MCP form state
   const [mcpEditingId, setMcpEditingId] = useState<string | null>(null);
   const [mcpFormView, setMcpFormView] = useState(false);
+  const [mcpSaved, setMcpSaved] = useState(false);
+  const [mcpDeleteConfirm, setMcpDeleteConfirm] = useState<string | null>(null);
   const [mcpFormName, setMcpFormName] = useState("");
   const [mcpFormCommand, setMcpFormCommand] = useState("");
   const [mcpFormArgs, setMcpFormArgs] = useState("");
@@ -1412,59 +1414,28 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         Add custom MCP servers to give the agent access to additional tools and data sources.
                       </p>
                     </div>
-                    <Button
-                      onClick={() => setMcpManagerOpen(true)}
-                      variant="outline"
-                      className="rounded-full font-semibold px-4 h-8 flex items-center gap-1.5"
-                      size="sm"
-                    >
-                      <PlusIcon className="size-3.5" />
-                      {mcpServers.length > 0 ? `Manage (${mcpServers.length})` : "Add Server"}
-                    </Button>
-                  </div>
-                  {mcpServers.length > 0 && (
-                    <div className="space-y-2">
-                      {mcpServers.map((srv) => (
-                        <div
-                          key={srv.id}
-                          className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10 gap-3"
+                    <div className="flex items-center gap-2">
+                      {mcpServers.length > 0 && (
+                        <Button
+                          onClick={() => setMcpManagerOpen(true)}
+                          variant="outline"
+                          className="rounded-full h-7 w-7 p-0 flex items-center justify-center text-xs font-bold"
+                          size="sm"
                         >
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold truncate text-foreground">{srv.name}</p>
-                            <p className="text-xs text-muted-foreground/70 truncate font-mono">{srv.command} {srv.args.join(" ")}</p>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={() => {
-                                setMcpEditingId(srv.id);
-                                setMcpFormName(srv.name);
-                                setMcpFormCommand(srv.command);
-                                setMcpFormArgs(srv.args.join(" "));
-                                setMcpFormEnv(Object.entries(srv.env).map(([k, v]) => `${k}=${v}`).join("\n"));
-                                setMcpManagerOpen(true);
-                                setMcpFormView(true);
-                              }}
-                              type="button"
-                              className="size-7 flex items-center justify-center rounded-lg hover:bg-blue-500/10 text-muted-foreground hover:text-blue-500 transition-colors cursor-pointer"
-                              title="Edit server"
-                            >
-                              <PencilIcon className="size-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setMcpServers((prev) => prev.filter((s) => s.id !== srv.id));
-                              }}
-                              type="button"
-                              className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors cursor-pointer"
-                              title="Remove server"
-                            >
-                              <Trash2Icon className="size-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                          {mcpServers.length}
+                        </Button>
+                      )}
+                      <Button
+                        onClick={() => setMcpManagerOpen(true)}
+                        variant="outline"
+                        className="rounded-full font-semibold px-4 h-8 flex items-center gap-1.5"
+                        size="sm"
+                      >
+                        <PlusIcon className="size-3.5" />
+                        Add Server
+                      </Button>
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Custom Instructions Section */}
@@ -1988,7 +1959,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </DialogHeader>
 
           {mcpFormView ? (
-            <div className="space-y-4 py-2">
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.15 }}
+              className="space-y-4 py-2">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-foreground">Name</label>
                 <input
@@ -2029,58 +2004,106 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none"
                 />
               </div>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => setMcpFormView(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  className="rounded-full font-semibold"
-                  onClick={() => {
-                    const args = mcpFormArgs.trim() ? mcpFormArgs.trim().split(/\s+/) : [];
-                    const env: Record<string, string> = {};
-                    for (const line of mcpFormEnv.split("\n")) {
-                      const trimmed = line.trim();
-                      if (!trimmed) continue;
-                      const eqIdx = trimmed.indexOf("=");
-                      if (eqIdx > 0) {
-                        env[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
-                      }
-                    }
-                    if (mcpEditingId) {
-                      setMcpServers((prev) => prev.map((s) => s.id === mcpEditingId ? {
-                        ...s,
-                        name: mcpFormName.trim(),
-                        command: mcpFormCommand.trim(),
-                        args,
-                        env,
-                      } : s));
-                    } else {
-                      setMcpServers((prev) => [...prev, {
-                        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-                        name: mcpFormName.trim(),
-                        command: mcpFormCommand.trim(),
-                        args,
-                        env,
-                      }]);
-                    }
-                    setMcpEditingId(null);
-                    setMcpFormName("");
-                    setMcpFormCommand("");
-                    setMcpFormArgs("");
-                    setMcpFormEnv("");
-                    setMcpFormView(false);
-                  }}
-                >
-                  {mcpEditingId ? "Save" : "Add Server"}
-                </Button>
+              <div className="pt-4 flex items-center justify-between">
+                {mcpEditingId ? (
+                  <Button
+                    onClick={() => setMcpDeleteConfirm(mcpEditingId)}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
+                  >
+                    <Trash2Icon className="size-3.5" />
+                    Delete
+                  </Button>
+                ) : <div />}
+                <div className="w-fit flex items-center gap-2 rounded-full border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-1.5 py-1.5 shrink-0">
+                  <button
+                    onClick={() => {
+                      setMcpEditingId(null);
+                      setMcpFormView(false);
+                    }}
+                    type="button"
+                    className="flex items-center justify-center size-8 rounded-full text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+                    title="Cancel"
+                  >
+                    <XIcon className="size-4" />
+                  </button>
+                  <div className="relative">
+                    <AnimatePresence mode="wait">
+                      {mcpSaved ? (
+                        <motion.div
+                          key="saved"
+                          initial={{ scale: 0.8, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0.8, opacity: 0 }}
+                          className="flex items-center justify-center size-8 rounded-full bg-emerald-500 text-white"
+                        >
+                          <CheckIcon className="size-4" />
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="save"
+                          initial={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0.8, opacity: 0 }}
+                        >
+                          <Button
+                            className="rounded-full font-semibold h-8 px-4"
+                            size="sm"
+                            onClick={() => {
+                              const args = mcpFormArgs.trim() ? mcpFormArgs.trim().split(/\s+/) : [];
+                              const env: Record<string, string> = {};
+                              for (const line of mcpFormEnv.split("\n")) {
+                                const trimmed = line.trim();
+                                if (!trimmed) continue;
+                                const eqIdx = trimmed.indexOf("=");
+                                if (eqIdx > 0) {
+                                  env[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
+                                }
+                              }
+                              if (mcpEditingId) {
+                                setMcpServers((prev) => prev.map((s) => s.id === mcpEditingId ? {
+                                  ...s,
+                                  name: mcpFormName.trim(),
+                                  command: mcpFormCommand.trim(),
+                                  args,
+                                  env,
+                                } : s));
+                              } else {
+                                setMcpServers((prev) => [...prev, {
+                                  id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                                  name: mcpFormName.trim(),
+                                  command: mcpFormCommand.trim(),
+                                  args,
+                                  env,
+                                }]);
+                              }
+                              setMcpSaved(true);
+                              setTimeout(() => {
+                                setMcpSaved(false);
+                                setMcpEditingId(null);
+                                setMcpFormName("");
+                                setMcpFormCommand("");
+                                setMcpFormArgs("");
+                                setMcpFormEnv("");
+                                setMcpFormView(false);
+                              }, 800);
+                            }}
+                          >
+                            {mcpEditingId ? "Save" : "Add Server"}
+                          </Button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
               </div>
-            </div>
+            </motion.div>
           ) : (
-            <div className="space-y-3 py-2">
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.15 }}
+              className="space-y-3 py-2">
               {mcpServers.length === 0 ? (
                 <div className="p-4 rounded-xl border border-dashed border-border/50 text-center text-xs text-muted-foreground/70">
                   No custom MCP servers configured.
@@ -2113,7 +2136,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                           <PencilIcon className="size-3.5" />
                         </button>
                         <button
-                          onClick={() => setMcpServers((prev) => prev.filter((s) => s.id !== srv.id))}
+                          onClick={() => setMcpDeleteConfirm(srv.id)}
                           type="button"
                           className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors cursor-pointer"
                           title="Remove server"
@@ -2142,8 +2165,42 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   Add New Server
                 </Button>
               </div>
-            </div>
+            </motion.div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={mcpDeleteConfirm !== null} onOpenChange={(v) => { if (!v) setMcpDeleteConfirm(null); }}>
+        <DialogContent className="sm:max-w-sm rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Delete MCP Server</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove this MCP server?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <div className="flex items-center gap-2 ml-auto">
+              <Button variant="outline" size="sm" onClick={() => setMcpDeleteConfirm(null)} className="rounded-full h-8 px-4">
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (mcpDeleteConfirm) {
+                    setMcpServers((prev) => prev.filter((s) => s.id !== mcpDeleteConfirm));
+                    setMcpEditingId(null);
+                    setMcpFormView(false);
+                  }
+                  setMcpDeleteConfirm(null);
+                }}
+                className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
+              >
+                <Trash2Icon className="size-3.5" />
+                Delete
+              </Button>
+            </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

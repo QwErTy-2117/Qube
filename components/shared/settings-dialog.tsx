@@ -1948,14 +1948,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             </DialogDescription>
           </DialogHeader>
 
-          <AnimatePresence mode="wait">
           {mcpFormView ? (
-            <motion.div
-              key="form"
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15 }}
-              className="space-y-4 py-2">
+            <div className="space-y-4 py-2">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-foreground">Name</label>
                 <input
@@ -2089,14 +2083,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   </div>
                 </div>
               </div>
-            </motion.div>
+            </div>
           ) : (
-            <motion.div
-              key="list"
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15 }}
-              className="space-y-3 py-2">
+            <div className="space-y-3 py-2">
               {mcpServers.length === 0 ? (
                 <div className="p-4 rounded-xl border border-dashed border-border/50 text-center text-xs text-muted-foreground/70">
                   No custom MCP servers configured.
@@ -2158,9 +2147,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   Add New Server
                 </Button>
               </div>
-            </motion.div>
+            </div>
           )}
-          </AnimatePresence>
         </DialogContent>
       </Dialog>
 

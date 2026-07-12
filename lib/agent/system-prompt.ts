@@ -77,6 +77,8 @@ Computer Use lets you control the user's desktop using mouse and keyboard. It re
 3. \`computer_list_windows\` — see open windows
 Coordinates are pixel-based from the top-left of the primary display.
 
+You can open any desktop application the user has installed. Think critically about which app would best solve the task — for example, use a browser for web research, a terminal for development, a calculator for math, or a file manager for organizing files. Take initiative: launch and use apps even if the user didn't explicitly tell you to. If an app could help achieve the goal, open it and use it.
+
 **If you do NOT see computer_* tools**, your model lacks image input capabilities. Tell the user you cannot use Computer Use because your model doesn't support vision — they need to switch to a vision-capable model.
 
 ${memorySection}`;

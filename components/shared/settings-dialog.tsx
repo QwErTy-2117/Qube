@@ -1397,47 +1397,29 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   )}
                 </div>
 
-                {/* Computer Use Section — hidden when model lacks image support */}
-                {(() => {
-                  const curModel = typeof window !== "undefined" ? localStorage.getItem("qube-default-model") || "" : "";
-                  if (!curModel) return null;
-                  const stored = typeof window !== "undefined" ? localStorage.getItem("qube-providers") : null;
-                  let imageSupported = false;
-                  if (stored) {
-                    try {
-                      const providers = JSON.parse(stored) as ProviderConfig[];
-                      for (const p of providers) {
-                        const m = p.models.find(m => m.id === curModel);
-                        if (m?.imageInput) { imageSupported = true; break; }
-                      }
-                    } catch {}
-                  }
-                  if (!imageSupported) return null;
-                  return (
-                    <div className="border-t border-border/40 pt-6 space-y-4">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <h3 className="text-sm font-semibold text-foreground">Computer Use</h3>
-                          <p className="text-xs text-muted-foreground">
-                            Let the agent control your keyboard and mouse to interact with applications.
-                          </p>
-                        </div>
-                        <SwitchToggle
-                          checked={computerUseEnabled}
-                          onCheckedChange={(v) => {
-                            setComputerUseEnabled(v);
-                            localStorage.setItem("qube-computer-use-enabled", String(v));
-                            fetch("/api/computer/settings", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ settings: { enabled: v } }),
-                            }).catch(() => {});
-                          }}
-                        />
-                      </div>
+                {/* Computer Use Section */}
+                <div className="border-t border-border/40 pt-6 space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold text-foreground">Computer Use</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Let the agent control your keyboard and mouse to interact with applications.
+                      </p>
                     </div>
-                  );
-                })()}
+                    <SwitchToggle
+                      checked={computerUseEnabled}
+                      onCheckedChange={(v) => {
+                        setComputerUseEnabled(v);
+                        localStorage.setItem("qube-computer-use-enabled", String(v));
+                        fetch("/api/computer/settings", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ settings: { enabled: v } }),
+                        }).catch(() => {});
+                      }}
+                    />
+                  </div>
+                </div>
 
                 {/* Startup & Background Section */}
                 <div className="border-t border-border/40 pt-6 space-y-4">

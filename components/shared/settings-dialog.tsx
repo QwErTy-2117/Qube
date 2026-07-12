@@ -30,6 +30,7 @@ import {
   EyeIcon,
   RefreshCwIcon,
   PlusIcon,
+  PencilIcon,
   Sparkles,
 } from "lucide-react";
 import {
@@ -476,6 +477,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   }, [mcpServers, mcpLoaded]);
 
   // MCP form state
+  const [mcpEditingId, setMcpEditingId] = useState<string | null>(null);
   const [mcpFormView, setMcpFormView] = useState(false);
   const [mcpFormName, setMcpFormName] = useState("");
   const [mcpFormCommand, setMcpFormCommand] = useState("");
@@ -1431,16 +1433,34 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                             <p className="text-sm font-semibold truncate text-foreground">{srv.name}</p>
                             <p className="text-xs text-muted-foreground/70 truncate font-mono">{srv.command} {srv.args.join(" ")}</p>
                           </div>
-                          <button
-                            onClick={() => {
-                              setMcpServers((prev) => prev.filter((s) => s.id !== srv.id));
-                            }}
-                            type="button"
-                            className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
-                            title="Remove server"
-                          >
-                            <Trash2Icon className="size-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => {
+                                setMcpEditingId(srv.id);
+                                setMcpFormName(srv.name);
+                                setMcpFormCommand(srv.command);
+                                setMcpFormArgs(srv.args.join(" "));
+                                setMcpFormEnv(Object.entries(srv.env).map(([k, v]) => `${k}=${v}`).join("\n"));
+                                setMcpManagerOpen(true);
+                                setMcpFormView(true);
+                              }}
+                              type="button"
+                              className="size-7 flex items-center justify-center rounded-lg hover:bg-blue-500/10 text-muted-foreground hover:text-blue-500 transition-colors cursor-pointer"
+                              title="Edit server"
+                            >
+                              <PencilIcon className="size-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setMcpServers((prev) => prev.filter((s) => s.id !== srv.id));
+                              }}
+                              type="button"
+                              className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors cursor-pointer"
+                              title="Remove server"
+                            >
+                              <Trash2Icon className="size-3.5" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2030,14 +2050,24 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         env[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
                       }
                     }
-                    const newServer: McpServerConfig = {
-                      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-                      name: mcpFormName.trim(),
-                      command: mcpFormCommand.trim(),
-                      args,
-                      env,
-                    };
-                    setMcpServers((prev) => [...prev, newServer]);
+                    if (mcpEditingId) {
+                      setMcpServers((prev) => prev.map((s) => s.id === mcpEditingId ? {
+                        ...s,
+                        name: mcpFormName.trim(),
+                        command: mcpFormCommand.trim(),
+                        args,
+                        env,
+                      } : s));
+                    } else {
+                      setMcpServers((prev) => [...prev, {
+                        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                        name: mcpFormName.trim(),
+                        command: mcpFormCommand.trim(),
+                        args,
+                        env,
+                      }]);
+                    }
+                    setMcpEditingId(null);
                     setMcpFormName("");
                     setMcpFormCommand("");
                     setMcpFormArgs("");
@@ -2045,7 +2075,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                     setMcpFormView(false);
                   }}
                 >
-                  Add Server
+                  {mcpEditingId ? "Save" : "Add Server"}
                 </Button>
               </div>
             </div>
@@ -2066,14 +2096,31 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                           <p className="text-xs text-muted-foreground/50 truncate mt-0.5">{Object.keys(srv.env).length} env var(s)</p>
                         )}
                       </div>
-                      <button
-                        onClick={() => setMcpServers((prev) => prev.filter((s) => s.id !== srv.id))}
-                        type="button"
-                        className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
-                        title="Remove server"
-                      >
-                        <Trash2Icon className="size-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => {
+                            setMcpEditingId(srv.id);
+                            setMcpFormName(srv.name);
+                            setMcpFormCommand(srv.command);
+                            setMcpFormArgs(srv.args.join(" "));
+                            setMcpFormEnv(Object.entries(srv.env).map(([k, v]) => `${k}=${v}`).join("\n"));
+                            setMcpFormView(true);
+                          }}
+                          type="button"
+                          className="size-7 flex items-center justify-center rounded-lg hover:bg-blue-500/10 text-muted-foreground hover:text-blue-500 transition-colors cursor-pointer"
+                          title="Edit server"
+                        >
+                          <PencilIcon className="size-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setMcpServers((prev) => prev.filter((s) => s.id !== srv.id))}
+                          type="button"
+                          className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors cursor-pointer"
+                          title="Remove server"
+                        >
+                          <Trash2Icon className="size-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2081,6 +2128,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               <div className="flex justify-end pt-2">
                 <Button
                   onClick={() => {
+                    setMcpEditingId(null);
                     setMcpFormName("");
                     setMcpFormCommand("");
                     setMcpFormArgs("");

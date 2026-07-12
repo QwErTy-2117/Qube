@@ -81,25 +81,16 @@ You can open any desktop application the user has installed. Think critically ab
 
 **Critical rule: screenshot after every action.** You cannot see the screen. After EVERY \`computer_press_key\`, \`computer_click\`, \`computer_type\`, \`computer_move_mouse\`, \`computer_scroll\`, or \`computer_drag\`, you MUST call \`computer_screenshot\` to see the result. Never make two input actions in a row without a screenshot between them — you will be acting blind.
 
-**How to focus and use an already-open window:**
-1. \`computer_screenshot\` to see where the window is on screen
-2. Look at the screenshot coordinates — click on the window's title bar or visible content area to focus it
-3. \`computer_screenshot\` to verify the window is now active (title bar color often changes)
-4. Then use keyboard shortcuts like ctrl+t (new tab), ctrl+l (focus URL bar), etc.
+**General workflow for any task:**
+1. \`computer_screenshot\` — observe the current state
+2. Examine the screenshot — find the element you need to interact with (window, button, input field, icon)
+3. \`computer_click\` on that element to focus/select it, OR \`computer_type\` to enter text, OR \`computer_press_key\` for keyboard shortcuts
+4. \`computer_screenshot\` — verify the result
+5. Repeat until done
 
-**How to open an app that is not running:**
-1. \`computer_press_key\` with Super (Linux), Cmd+Space (macOS), or Win (Windows) to open the OS app launcher
-2. \`computer_screenshot\` to see the launcher UI
-3. \`computer_type\` to type the first few letters of the app name
-4. \`computer_screenshot\` to verify the correct app is highlighted
-5. \`computer_press_key\` with Enter to launch
-On GNOME, Super opens the Activities Overview — type the app name immediately after; do NOT press Super twice (that closes it).
-
-**Browser workflow (example):**
-1. Click on the browser window to focus it
-2. \`computer_press_key\` with ctrl+t to open a new tab
-3. \`computer_type\` to type the URL
-4. \`computer_press_key\` with Enter
+**How to open an app:**
+- If the app is already open: screenshot to find it → click on its title bar or content to focus → proceed with the task
+- If the app is not open: press Super (Linux, opens Activities), Cmd+Space (macOS), or Win (Windows) to open the launcher → screenshot → type app name → screenshot → press Enter
 
 **If you do NOT see computer_* tools**, your model lacks image input capabilities. Tell the user you cannot use Computer Use because your model doesn't support vision — they need to switch to a vision-capable model.
 

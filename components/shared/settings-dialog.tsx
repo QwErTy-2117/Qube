@@ -449,6 +449,38 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   // Computer Use state
   const [computerUseEnabled, setComputerUseEnabled] = useState(false);
 
+  // MCP Servers state
+  interface McpServerConfig {
+    id: string;
+    name: string;
+    command: string;
+    args: string[];
+    env: Record<string, string>;
+  }
+  const [mcpManagerOpen, setMcpManagerOpen] = useState(false);
+  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
+  const [mcpLoaded, setMcpLoaded] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("qube-custom-mcp-servers");
+      if (stored) setMcpServers(JSON.parse(stored));
+    } catch { /* ignore */ }
+    setMcpLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (mcpLoaded) {
+      localStorage.setItem("qube-custom-mcp-servers", JSON.stringify(mcpServers));
+    }
+  }, [mcpServers, mcpLoaded]);
+
+  // MCP form state
+  const [mcpFormView, setMcpFormView] = useState(false);
+  const [mcpFormName, setMcpFormName] = useState("");
+  const [mcpFormCommand, setMcpFormCommand] = useState("");
+  const [mcpFormArgs, setMcpFormArgs] = useState("");
+  const [mcpFormEnv, setMcpFormEnv] = useState("");
 
   const fetchMemories = useCallback(async () => {
     setLoadingMemories(true);
@@ -1293,7 +1325,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                       : []
                   );
                   return (
-                    <div className="border-t border-border/40 pt-6 space-y-4">
+                    <div className="pt-4 space-y-4">
                       <div className="space-y-1">
                         <h3 className="text-sm font-semibold text-foreground">Active Models</h3>
                         <p className="text-xs text-muted-foreground">
@@ -1368,6 +1400,52 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                     </div>
                   );
                 })()}
+
+                {/* MCP Servers Section */}
+                <div className="border-t border-border/40 pt-6 space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold text-foreground">MCP Servers</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Add custom MCP servers to give the agent access to additional tools and data sources.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => setMcpManagerOpen(true)}
+                      variant="outline"
+                      className="rounded-full font-semibold px-4 h-8 flex items-center gap-1.5"
+                      size="sm"
+                    >
+                      <PlusIcon className="size-3.5" />
+                      {mcpServers.length > 0 ? `Manage (${mcpServers.length})` : "Add Server"}
+                    </Button>
+                  </div>
+                  {mcpServers.length > 0 && (
+                    <div className="space-y-2">
+                      {mcpServers.map((srv) => (
+                        <div
+                          key={srv.id}
+                          className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10 gap-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold truncate text-foreground">{srv.name}</p>
+                            <p className="text-xs text-muted-foreground/70 truncate font-mono">{srv.command} {srv.args.join(" ")}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setMcpServers((prev) => prev.filter((s) => s.id !== srv.id));
+                            }}
+                            type="button"
+                            className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
+                            title="Remove server"
+                          >
+                            <Trash2Icon className="size-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 {/* Custom Instructions Section */}
                 <div className="border-t border-border/40 pt-6 space-y-4">
@@ -1875,6 +1953,149 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               saved={savedInstructions}
             />
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={mcpManagerOpen} onOpenChange={(v) => {
+        if (!v) { setMcpFormView(false); setMcpManagerOpen(false); }
+      }}>
+        <DialogContent className="sm:max-w-lg rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>MCP Servers</DialogTitle>
+            <DialogDescription>
+              Add or remove custom MCP servers to extend the agent's capabilities.
+            </DialogDescription>
+          </DialogHeader>
+
+          {mcpFormView ? (
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Name</label>
+                <input
+                  type="text"
+                  placeholder="My Database"
+                  value={mcpFormName}
+                  onChange={(e) => setMcpFormName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Command</label>
+                <input
+                  type="text"
+                  placeholder="npx"
+                  value={mcpFormCommand}
+                  onChange={(e) => setMcpFormCommand(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Arguments</label>
+                <input
+                  type="text"
+                  placeholder="-y @modelcontextprotocol/server-filesystem /path"
+                  value={mcpFormArgs}
+                  onChange={(e) => setMcpFormArgs(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Environment Variables</label>
+                <textarea
+                  placeholder="KEY=VALUE (one per line)"
+                  value={mcpFormEnv}
+                  onChange={(e) => setMcpFormEnv(e.target.value)}
+                  rows={3}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => setMcpFormView(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="rounded-full font-semibold"
+                  onClick={() => {
+                    const args = mcpFormArgs.trim() ? mcpFormArgs.trim().split(/\s+/) : [];
+                    const env: Record<string, string> = {};
+                    for (const line of mcpFormEnv.split("\n")) {
+                      const trimmed = line.trim();
+                      if (!trimmed) continue;
+                      const eqIdx = trimmed.indexOf("=");
+                      if (eqIdx > 0) {
+                        env[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
+                      }
+                    }
+                    const newServer: McpServerConfig = {
+                      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                      name: mcpFormName.trim(),
+                      command: mcpFormCommand.trim(),
+                      args,
+                      env,
+                    };
+                    setMcpServers((prev) => [...prev, newServer]);
+                    setMcpFormName("");
+                    setMcpFormCommand("");
+                    setMcpFormArgs("");
+                    setMcpFormEnv("");
+                    setMcpFormView(false);
+                  }}
+                >
+                  Add Server
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 py-2">
+              {mcpServers.length === 0 ? (
+                <div className="p-4 rounded-xl border border-dashed border-border/50 text-center text-xs text-muted-foreground/70">
+                  No custom MCP servers configured.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                  {mcpServers.map((srv) => (
+                    <div key={srv.id} className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10 gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold truncate text-foreground">{srv.name}</p>
+                        <p className="text-xs text-muted-foreground/70 truncate font-mono">{srv.command} {srv.args.join(" ")}</p>
+                        {Object.keys(srv.env).length > 0 && (
+                          <p className="text-xs text-muted-foreground/50 truncate mt-0.5">{Object.keys(srv.env).length} env var(s)</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setMcpServers((prev) => prev.filter((s) => s.id !== srv.id))}
+                        type="button"
+                        className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
+                        title="Remove server"
+                      >
+                        <Trash2Icon className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end pt-2">
+                <Button
+                  onClick={() => {
+                    setMcpFormName("");
+                    setMcpFormCommand("");
+                    setMcpFormArgs("");
+                    setMcpFormEnv("");
+                    setMcpFormView(true);
+                  }}
+                  className="rounded-full font-semibold"
+                  size="sm"
+                >
+                  <PlusIcon className="size-3.5 mr-1.5" />
+                  Add New Server
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

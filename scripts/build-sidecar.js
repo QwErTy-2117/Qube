@@ -78,7 +78,7 @@ function createExternalAliases() {
         if (entry.isDirectory()) walkDir(fullPath);
         else if (entry.name.endsWith('.js')) {
           const content = fs.readFileSync(fullPath, 'utf-8');
-          const match = content.match(/jsdom-[a-f0-9]{16}/g);
+          const match = content.match(/[a-z0-9_@/-]+-[a-f0-9]{16}/gi);
           if (match) match.forEach(m => hashedNames.add(m));
         }
       }

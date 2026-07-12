@@ -79,6 +79,12 @@ Coordinates are pixel-based from the top-left of the primary display.
 
 You can open any desktop application the user has installed. Think critically about which app would best solve the task — for example, use a browser for web research, a terminal for development, a calculator for math, or a file manager for organizing files. Take initiative: launch and use apps even if the user didn't explicitly tell you to. If an app could help achieve the goal, open it and use it.
 
+**How to open apps:**
+1. Use \`computer_press_key\` to open the OS app launcher (Cmd+Space on macOS, Win key or Win+S on Windows, Super key on Linux)
+2. Then use \`computer_type\` to type the app name
+3. Then use \`computer_press_key\` with Enter to launch
+Do NOT rely only on already-open windows — proactively open the app you need.
+
 **If you do NOT see computer_* tools**, your model lacks image input capabilities. Tell the user you cannot use Computer Use because your model doesn't support vision — they need to switch to a vision-capable model.
 
 ${memorySection}`;

@@ -1,3 +1,5 @@
+import sharp from "sharp";
+
 interface WindowInfo {
   title: string;
   pid: number;
@@ -15,15 +17,24 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Pro
   return result;
 }
 
+const SCREENSHOT_MAX_WIDTH = 960;
+const SCREENSHOT_QUALITY = 50;
+
 class ComputerManager {
   private static instance: ComputerManager;
   private focusedWindow: string | null = null;
+  private scaleX: number = 1;
+  private scaleY: number = 1;
 
   static getInstance(): ComputerManager {
     if (!ComputerManager.instance) {
       ComputerManager.instance = new ComputerManager();
     }
     return ComputerManager.instance;
+  }
+
+  scaleToScreen(x: number, y: number): { x: number; y: number } {
+    return { x: Math.round(x * this.scaleX), y: Math.round(y * this.scaleY) };
   }
 
   async screenshot(windowTitle?: string): Promise<{ base64: string; width: number; height: number }> {
@@ -51,12 +62,26 @@ class ComputerManager {
       "Screenshot timed out after 15s",
     );
     const pngBuffer = await capture.toPng();
-    return { base64: pngBuffer.toString("base64"), width: capture.width, height: capture.height };
+    const img = sharp(pngBuffer);
+    const meta = await img.metadata();
+    const origW = meta.width || capture.width;
+    const origH = meta.height || capture.height;
+    const scale = origW > SCREENSHOT_MAX_WIDTH ? SCREENSHOT_MAX_WIDTH / origW : 1;
+    const resizedW = Math.round(origW * scale);
+    const resizedH = Math.round(origH * scale);
+    this.scaleX = origW / resizedW;
+    this.scaleY = origH / resizedH;
+    const resized = await img
+      .resize(resizedW, resizedH, { fit: "fill" })
+      .jpeg({ quality: SCREENSHOT_QUALITY })
+      .toBuffer();
+    return { base64: resized.toString("base64"), width: resizedW, height: resizedH };
   }
 
   async click(x: number, y: number, button: "left" | "right" | "middle" = "left") {
     const { mouse, Button } = await import("@nut-tree-fork/nut-js");
-    await mouse.setPosition({ x, y });
+    const { x: sx, y: sy } = this.scaleToScreen(x, y);
+    await mouse.setPosition({ x: sx, y: sy });
     const btnMap = { left: Button.LEFT, right: Button.RIGHT, middle: Button.MIDDLE };
     await mouse.click(btnMap[button]);
   }
@@ -95,12 +120,14 @@ class ComputerManager {
 
   async moveMouse(x: number, y: number) {
     const { mouse } = await import("@nut-tree-fork/nut-js");
-    await mouse.setPosition({ x, y });
+    const { x: sx, y: sy } = this.scaleToScreen(x, y);
+    await mouse.setPosition({ x: sx, y: sy });
   }
 
   async scroll(x: number, y: number, direction: "up" | "down" | "left" | "right", amount: number) {
     const { mouse } = await import("@nut-tree-fork/nut-js");
-    await mouse.setPosition({ x, y });
+    const { x: sx, y: sy } = this.scaleToScreen(x, y);
+    await mouse.setPosition({ x: sx, y: sy });
     for (let i = 0; i < amount; i++) {
       if (direction === "up") await mouse.scrollUp(1);
       else if (direction === "down") await mouse.scrollDown(1);
@@ -111,9 +138,11 @@ class ComputerManager {
 
   async drag(fromX: number, fromY: number, toX: number, toY: number) {
     const { mouse, Button } = await import("@nut-tree-fork/nut-js");
-    await mouse.setPosition({ x: fromX, y: fromY });
+    const from = this.scaleToScreen(fromX, fromY);
+    const to = this.scaleToScreen(toX, toY);
+    await mouse.setPosition({ x: from.x, y: from.y });
     await mouse.pressButton(Button.LEFT);
-    await mouse.setPosition({ x: toX, y: toY });
+    await mouse.setPosition({ x: to.x, y: to.y });
     await mouse.releaseButton(Button.LEFT);
   }
 

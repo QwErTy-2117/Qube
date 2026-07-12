@@ -60,6 +60,30 @@ function extractText(m: Record<string, unknown>): string {
   return "";
 }
 
+function stripOldScreenshots(messages: any[], keepCount: number = 2): any[] {
+  const screenshotMsgIndices: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const parts = (messages[i].parts || []) as any[];
+    if (parts.some((p: any) => p.type === "tool-result" && p.toolName === "computer_screenshot")) {
+      screenshotMsgIndices.push(i);
+    }
+  }
+  if (screenshotMsgIndices.length <= keepCount) return messages;
+  const toStrip = new Set(screenshotMsgIndices.slice(0, -keepCount));
+  return messages.map((m, i) => {
+    if (!toStrip.has(i)) return m;
+    return {
+      ...m,
+      parts: (m.parts || []).map((p: any) => {
+        if (p.type === "tool-result" && p.toolName === "computer_screenshot") {
+          return { ...p, result: JSON.stringify({ placeholder: true, message: "Older screenshot removed to save context" }) };
+        }
+        return p;
+      }),
+    };
+  });
+}
+
 function extractUserRequest(messages: any[]): string {
   let last = "Complete the user's request.";
   for (const m of messages) {
@@ -253,6 +277,7 @@ export async function POST(req: Request) {
             lastWasRateLimit = false;
           }
           try {
+            currentUIMessages = stripOldScreenshots(currentUIMessages, 2);
             const modelMessages = await convertToModelMessages(currentUIMessages);
 
             const { createAgent } = await loadAgent();

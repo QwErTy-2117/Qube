@@ -2149,8 +2149,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={mcpDeleteConfirm !== null} onOpenChange={(v) => { if (!v) setMcpDeleteConfirm(null); }}>
         <DialogContent className="sm:max-w-sm rounded-3xl">
@@ -2185,9 +2183,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
 
     </>
   );

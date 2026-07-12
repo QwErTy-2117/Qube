@@ -2186,6 +2186,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
+      </DialogContent>
+    </Dialog>
+
     </>
   );
 }

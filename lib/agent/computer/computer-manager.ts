@@ -43,6 +43,17 @@ class ComputerManager {
       }
     }
 
+    if (process.platform === "linux") {
+      try {
+        const { execSync } = await import("node:child_process");
+        execSync("which xrandr", { stdio: "ignore" });
+      } catch {
+        throw new Error(
+          "xrandr is required for screenshots on Linux. Install it with: sudo apt-get install x11-xserver-utils",
+        );
+      }
+    }
+
     const screenshot = (await import("screenshot-desktop")).default;
     const pngBuffer = await withTimeout(
       screenshot({ format: "png" }),

@@ -27,7 +27,7 @@ export function createBrowserTools(threadId: string) {
 
   return {
     browser_navigate: tool({
-      description: "Navigate to a URL. Returns the page title and accessibility snapshot.",
+      description: "Navigate to a URL in the automated headless Playwright browser (NOT the user's desktop browser). Returns the page title and accessibility snapshot.",
       inputSchema: z.object({
         label: z.string().optional(),
         url: z.string().describe("The URL to navigate to"),

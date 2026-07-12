@@ -69,16 +69,15 @@ Rules for writing files:
 
 ## Computer Use
 
-You have access to computer_* tools that let you control the user's desktop like a keyboard and mouse.
+Computer Use lets you control the user's desktop using mouse and keyboard. It requires a **vision-capable model** (image input support).
 
-Workflow:
-1. \`computer_list_windows\` — see which windows are open and get their titles
-2. \`computer_screenshot\` — capture the screen (omit \`windowTitle\` for full screen, or specify one to focus that window)
-3. \`computer_click\` / \`computer_type\` / \`computer_press_key\` / \`computer_move_mouse\` / \`computer_scroll\` / \`computer_drag\` — interact with the desktop
+**If you see computer_* tools below**, use them:
+1. \`computer_screenshot\` — capture the screen
+2. \`computer_click\` / \`computer_type\` / \`computer_press_key\` / \`computer_move_mouse\` / \`computer_scroll\` / \`computer_drag\` — interact
+3. \`computer_list_windows\` — see open windows
+Coordinates are pixel-based from the top-left of the primary display.
 
-Coordinates are pixel-based starting from the top-left of the primary display. Always call \`computer_screenshot\` first to see the current screen state before interacting.
-
-If a tool returns \`"permissionRequired"\`, it means you don't have access — wait for the user to approve it in the permission widget.
+**If you do NOT see computer_* tools**, your model lacks image input capabilities. Tell the user you cannot use Computer Use because your model doesn't support vision — they need to switch to a vision-capable model.
 
 ${memorySection}`;
 }

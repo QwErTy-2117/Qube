@@ -43,37 +43,15 @@ class ComputerManager {
       }
     }
 
-    if (process.platform === "linux") {
-      const { execSync } = await import("node:child_process");
-      try {
-        execSync("which xrandr", { stdio: "ignore" });
-      } catch {
-        try {
-          execSync("sudo apt-get install -y x11-xserver-utils", { stdio: "ignore", timeout: 120000 });
-        } catch {
-          throw new Error(
-            "xrandr was not found and automatic install failed. Run: sudo apt-get install x11-xserver-utils",
-          );
-        }
-      }
-    }
-
-    const screenshot = (await import("screenshot-desktop")).default;
-    const pngBuffer = await withTimeout(
-      screenshot({ format: "png" }),
+    const { Monitor } = await import("node-screenshots");
+    const monitors = Monitor.all();
+    const capture = await withTimeout(
+      monitors[0].captureImage(),
       15000,
       "Screenshot timed out after 15s",
     );
-    const { width, height } = this.getPngDimensions(pngBuffer);
-    return { base64: pngBuffer.toString("base64"), width, height };
-  }
-
-  private getPngDimensions(buf: Buffer): { width: number; height: number } {
-    if (buf.length < 24) return { width: 0, height: 0 };
-    return {
-      width: buf.readUInt32BE(16),
-      height: buf.readUInt32BE(20),
-    };
+    const pngBuffer = await capture.toPng();
+    return { base64: pngBuffer.toString("base64"), width: capture.width, height: capture.height };
   }
 
   async click(x: number, y: number, button: "left" | "right" | "middle" = "left") {

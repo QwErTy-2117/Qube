@@ -27,7 +27,8 @@ import {
   Settings2Icon,
   Clock,
   SearchIcon,
-  ImageIcon,
+  EyeIcon,
+  RefreshCwIcon,
   PlusIcon,
   Sparkles,
 } from "lucide-react";
@@ -325,50 +326,7 @@ export function detectModelIcon(modelId: string, providerId: string): string {
   return "OpenAI";
 }
 
-export function detectModelImageSupport(modelId: string): boolean {
-  const lower = modelId.toLowerCase();
-  if (
-    lower.includes("vision") ||
-    lower.includes("vqa") ||
-    lower.includes("multimodal") ||
-    lower.includes("image") ||
-    lower.includes("vl") ||
-    lower.includes("pixtral") ||
-    lower.includes("llava") ||
-    lower.includes("cogvlm") ||
-    lower.includes("cogview") ||
-    lower.includes("glm-4v") ||
-    lower.includes("minicpm") ||
-    lower.includes("deepseek-vl") ||
-    lower.includes("idefics") ||
-    lower.includes("florence") ||
-    lower.includes("internvl") ||
-    lower.includes("internlm") ||
-    lower.includes("paligemma") ||
-    lower.includes("moondream") ||
-    lower.includes("reka") ||
-    lower.includes("kosmos") ||
-    lower.includes("fuyu") ||
-    lower.includes("imp-v") ||
-    lower.includes("qwen-vl") ||
-    lower.includes("qwen2-vl") ||
-    (lower.includes("claude") && /3(\.\d)?|4|5/.test(lower)) ||
-    (lower.includes("gemini") && !lower.includes("gemma")) ||
-    lower.includes("gpt-4o") ||
-    lower.includes("gpt-4.1") ||
-    lower.includes("gpt-4.5") ||
-    lower.includes("gpt-4-turbo") ||
-    lower.includes("o1") ||
-    lower.includes("o3") ||
-    lower.includes("llama-3.2") ||
-    lower.includes("phi-3-vision") ||
-    lower.includes("phi-3.5-vision") ||
-    lower.includes("phi-4")
-  ) {
-    return true;
-  }
-  return false;
-}
+import { detectModelImageSupport } from "@/lib/agent/vision-support";
 
 interface FetchedModel {
   id: string;
@@ -406,11 +364,12 @@ async function fetchProviderModels(baseURL: string, apiKey: string): Promise<Fet
       if (m.object === "model" || !m.object) {
         if (seen.has(m.id)) continue;
         seen.add(m.id);
-        let imageInput = false;
-        if (m.architecture?.modality === "text+image") {
-          imageInput = true;
-        }
-        models.push({ id: m.id, imageInput: imageInput || detectModelImageSupport(m.id) });
+        const imageInput =
+          m.architecture?.modality === "text+image" ||
+          m.capabilities?.vision === true ||
+          m.capabilities?.image_input === true ||
+          detectModelImageSupport(m.id);
+        models.push({ id: m.id, imageInput });
       }
     }
     return models;
@@ -526,7 +485,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       const res = await fetch("/api/settings/memory", { method: "DELETE" });
       const data = await res.json();
       if (data.entries !== undefined) setMemories([]);
-      setOpen(false);
     } catch { /* ignore */ }
   };
 
@@ -545,7 +503,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       const res = await fetch("/api/settings/sessions", { method: "DELETE" });
       const data = await res.json();
       if (data.sessions !== undefined) setSessions([]);
-      setOpen(false);
     } catch { /* ignore */ }
   };
 
@@ -623,6 +580,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   const [savingCustomModel, setSavingCustomModel] = useState(false);
   const [savedCustomModel, setSavedCustomModel] = useState(false);
+
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  const [refreshedModels, setRefreshedModels] = useState(false);
 
   const saveProviders = (updated: ProviderConfig[]) => {
     setProviders(updated);
@@ -768,6 +728,32 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     setCustomModelCode("");
   };
 
+  const handleRefreshModels = async () => {
+    if (!manageProvider) return;
+    setRefreshingModels(true);
+    try {
+      const fetchedModels = await fetchProviderModels(manageProvider.baseURL || "", manageProvider.apiKey || "");
+      const provId = manageProvider.id;
+      const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter"];
+      const providerIcon = PROVIDER_ID_TO_ICON[provId] || provId.charAt(0).toUpperCase() + provId.slice(1);
+      const qualified = fetchedModels.map((model) => {
+        const existing = manageModels.find((m) => m.id === `${provId}:${model.id}`);
+        return {
+          id: `${provId}:${model.id}`,
+          name: model.id,
+          enabled: existing ? existing.enabled : false,
+          icon: autoDetectIcons.includes(provId) ? detectModelIcon(model.id, provId) : providerIcon,
+          imageInput: model.imageInput,
+        };
+      });
+      setManageModels(qualified);
+      setRefreshedModels(true);
+      await new Promise((r) => setTimeout(r, 1500));
+      setRefreshedModels(false);
+    } catch {}
+    setRefreshingModels(false);
+  };
+
   const handleToggleModel = (modelId: string, enabled: boolean) => {
     if (enabled) {
       const currentToggledCount = providers.reduce((acc, p) => {
@@ -905,6 +891,14 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   // Auto-save all settings when dialog closes
   const handleOpenChange = (next: boolean) => {
+    const childDialogOpen = clearConfirm !== null
+      || addProviderOpen
+      || configureProvider !== null
+      || manageProvider !== null
+      || customInstructionsOpen;
+
+    if (!next && childDialogOpen) return;
+
     if (!next && open) {
       localStorage.setItem("qube-default-model", defaultModel);
       localStorage.setItem("qube-custom-system-prompt", customSystemPrompt);
@@ -1298,7 +1292,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                           .map((m) => ({ ...m, provider: p }))
                       : []
                   );
-                  if (activeModels.length === 0) return null;
                   return (
                     <div className="border-t border-border/40 pt-6 space-y-4">
                       <div className="space-y-1">
@@ -1307,65 +1300,71 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                           Select a default model or deactivate models directly.
                         </p>
                       </div>
-                      <div className="space-y-2">
-                        {activeModels.map((m) => {
-                          const provIcon = PROVIDER_ID_TO_ICON[m.provider.id] || m.provider.id.charAt(0).toUpperCase() + m.provider.id.slice(1);
-                          const iconName = m.icon || detectModelIcon(m.id, m.provider.id);
-                          const isDefault = m.id === defaultModel;
-                          return (
-                            <div
-                              key={m.id}
-                              className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10 hover:bg-muted/20 transition-all gap-3"
-                            >
-                              <div className="flex items-center gap-3 min-w-0 flex-1">
-                                <button
-                                  onClick={() => handleSetDefaultModel(m.id)}
-                                  type="button"
-                                  title={isDefault ? "Default model" : "Set as default"}
-                                  className={`size-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer overflow-hidden ${
-                                    isDefault
-                                      ? "border-emerald-500 bg-emerald-500"
-                                      : "border-muted-foreground/30 hover:border-emerald-400"
-                                  }`}
-                                >
-                                  <AnimatePresence mode="wait">
-                                    {isDefault && (
-                                      <motion.div
-                                        key="check"
-                                        initial={{ scale: 2.5, rotate: -20, opacity: 0 }}
-                                        animate={{ scale: 1, rotate: 0, opacity: 1 }}
-                                        exit={{ scale: 0, rotate: 20, opacity: 0 }}
-                                        transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                                        className="flex items-center justify-center"
-                                      >
-                                        <CheckIcon className="size-3 text-white" />
-                                      </motion.div>
-                                    )}
-                                  </AnimatePresence>
-                                </button>
-                                <div className="size-7 flex items-center justify-center shrink-0">
-                                  {renderLobeIcon(iconName, 16)}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-sm font-semibold truncate text-foreground">{m.name}</p>
-                                  <p className="text-xs text-muted-foreground/70 truncate flex items-center gap-1">
-                                    {renderLobeIcon(provIcon, 10)}
-                                    <span>{m.provider.name}</span>
-                                  </p>
-                                </div>
-                              </div>
-                              <button
-                                onClick={() => handleDeactivateModel(m.id)}
-                                type="button"
-                                className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
-                                title="Deactivate model"
+                      {activeModels.length === 0 ? (
+                        <div className="p-4 rounded-xl border border-dashed border-border/50 text-center text-xs text-muted-foreground/70">
+                          No active models. Enable one by clicking on a provider icon above.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {activeModels.map((m) => {
+                            const provIcon = PROVIDER_ID_TO_ICON[m.provider.id] || m.provider.id.charAt(0).toUpperCase() + m.provider.id.slice(1);
+                            const iconName = m.icon || detectModelIcon(m.id, m.provider.id);
+                            const isDefault = m.id === defaultModel;
+                            return (
+                              <div
+                                key={m.id}
+                                className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10 hover:bg-muted/20 transition-all gap-3"
                               >
-                                <Trash2Icon className="size-3.5" />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                  <button
+                                    onClick={() => handleSetDefaultModel(m.id)}
+                                    type="button"
+                                    title={isDefault ? "Default model" : "Set as default"}
+                                    className={`size-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer overflow-hidden ${
+                                      isDefault
+                                        ? "border-emerald-500 bg-emerald-500"
+                                        : "border-muted-foreground/30 hover:border-emerald-400"
+                                    }`}
+                                  >
+                                    <AnimatePresence mode="wait">
+                                      {isDefault && (
+                                        <motion.div
+                                          key="check"
+                                          initial={{ scale: 2.5, rotate: -20, opacity: 0 }}
+                                          animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                                          exit={{ scale: 0, rotate: 20, opacity: 0 }}
+                                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                                          className="flex items-center justify-center"
+                                        >
+                                          <CheckIcon className="size-3 text-white" />
+                                        </motion.div>
+                                      )}
+                                    </AnimatePresence>
+                                  </button>
+                                  <div className="size-7 flex items-center justify-center shrink-0">
+                                    {renderLobeIcon(iconName, 16)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold truncate text-foreground">{m.name}</p>
+                                    <p className="text-xs text-muted-foreground/70 truncate flex items-center gap-1">
+                                      {renderLobeIcon(provIcon, 10)}
+                                      <span>{m.provider.name}</span>
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => handleDeactivateModel(m.id)}
+                                  type="button"
+                                  className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
+                                  title="Deactivate model"
+                                >
+                                  <Trash2Icon className="size-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -1486,8 +1485,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             <SchedulingTab />
             </TabsContent>
         </Tabs>
-      </DialogContent>
-    </Dialog>
 
       <Dialog open={!!clearConfirm} onOpenChange={(v) => { if (!v) setClearConfirm(null); }}>
         <DialogContent className="sm:max-w-sm rounded-3xl">
@@ -1665,19 +1662,30 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           <div className="space-y-4 py-2">
             <div className="flex items-center justify-between pb-2 border-b border-border/40">
               <span className="text-sm font-semibold text-foreground">Models</span>
-              <Button
-                onClick={() => {
-                  setCustomModelName("");
-                  setCustomModelCode("");
-                  setAddCustomModelOpen(true);
-                }}
-                variant="outline"
-                className="rounded-full font-semibold px-3 h-7 text-xs flex items-center gap-1"
-                size="sm"
-              >
-                <PlusIcon className="size-3" />
-                Add Custom Model
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleRefreshModels}
+                  variant="outline"
+                  className="rounded-full h-7 w-7 p-0 flex items-center justify-center"
+                  size="sm"
+                  disabled={refreshingModels || refreshedModels}
+                >
+                  <RefreshCwIcon className={`size-3 ${refreshingModels ? "animate-spin" : ""}`} />
+                </Button>
+                <Button
+                  onClick={() => {
+                    setCustomModelName("");
+                    setCustomModelCode("");
+                    setAddCustomModelOpen(true);
+                  }}
+                  variant="outline"
+                  className="rounded-full font-semibold px-3 h-7 text-xs flex items-center gap-1"
+                  size="sm"
+                >
+                  <PlusIcon className="size-3" />
+                  Add Custom Model
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
@@ -1718,23 +1726,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                           <Trash2Icon className="size-4" />
                         </button>
                       )}
-                      <button
-                        onClick={() => {
-                          setManageModels((prev) =>
-                            prev.map((model) =>
-                              model.id === m.id ? { ...model, imageInput: !model.imageInput } : model
-                            )
-                          );
-                        }}
-                        className={`size-8 flex items-center justify-center rounded-lg transition-colors shrink-0 cursor-pointer ${
-                          m.imageInput
-                            ? "text-sky-500 bg-sky-500/10 hover:bg-sky-500/20"
-                            : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/30"
-                        }`}
-                        title={m.imageInput ? "Image input enabled (click to disable)" : "Image input disabled (click to enable)"}
-                      >
-                        <ImageIcon className="size-4" />
-                      </button>
+                      {m.imageInput ? <EyeIcon className="size-3.5 text-muted-foreground/50 shrink-0" /> : null}
                       <SwitchToggle
                         checked={m.enabled}
                         onCheckedChange={(checked) => handleToggleModel(m.id, checked)}
@@ -1903,6 +1895,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      </DialogContent>
+    </Dialog>
 
     </>
   );

@@ -19,7 +19,25 @@ import { executeTask } from "@/lib/scheduler/task-executor";
 import { computerUseStore } from "./computer/computer-store";
 import { createComputerTools } from "./computer/computer-tools";
 import { providerStore } from "./provider-store";
-import { detectModelImageSupport } from "@/components/shared/settings-dialog";
+import { detectModelImageSupport } from "@/lib/agent/vision-support";
+
+export function hasVisionCapability(modelName: string): boolean {
+  let provResult = providerStore.getProviderByModel(modelName);
+  if (!provResult) {
+    const defaultModel = providerStore.getDefaultModelId();
+    if (defaultModel && defaultModel !== modelName) {
+      provResult = providerStore.getProviderByModel(defaultModel);
+    }
+  }
+  const qualifiedId = provResult ? `${provResult.provider.id}:${provResult.modelId}` : modelName;
+  let hasImage = provResult?.provider.models.find(m =>
+    m.id === qualifiedId
+  )?.imageInput ?? false;
+  if (!hasImage) {
+    hasImage = detectModelImageSupport(provResult?.modelId || qualifiedId);
+  }
+  return hasImage;
+}
 
 const execAsync = promisify(exec);
 
@@ -87,10 +105,16 @@ export async function createAgent(config: AgentConfig) {
     userInfoSection = `\n\n## User Context\n\n${parts.join("\n")}`;
   }
 
+  const cuEnabled = computerUseStore.getAll().enabled;
+  const hasVision = hasVisionCapability(config.modelName || "");
+  const computerUseNote = cuEnabled && !hasVision
+    ? "\n\n## Computer Use Notice\n\nComputer Use is enabled but your model does not support image input. You cannot use computer_* tools. If the user asks about desktop automation, tell them to switch to a vision-capable model."
+    : "";
+
   const systemPrompt = config.systemPrompt || (
     config.customSystemPrompt
-      ? `${basePrompt}${userInfoSection}\n\n## Custom System Instructions\n\n${config.customSystemPrompt}`
-      : `${basePrompt}${userInfoSection}`
+      ? `${basePrompt}${userInfoSection}${computerUseNote}\n\n## Custom System Instructions\n\n${config.customSystemPrompt}`
+      : `${basePrompt}${userInfoSection}${computerUseNote}`
   );
 
   const ep = (name: string, fn: (...args: any[]) => Promise<string>) => {
@@ -455,24 +479,8 @@ export async function createAgent(config: AgentConfig) {
 
       ...createBrowserTools(threadId),
       ...(() => {
-        const cuSettings = computerUseStore.getAll();
-        if (!cuSettings.enabled) return {};
-        const modelName = config.modelName || "";
-        let provResult = providerStore.getProviderByModel(modelName);
-        if (!provResult) {
-          const defaultModel = providerStore.getDefaultModelId();
-          if (defaultModel && defaultModel !== modelName) {
-            provResult = providerStore.getProviderByModel(defaultModel);
-          }
-        }
-        const qualifiedId = provResult ? `${provResult.provider.id}:${provResult.modelId}` : modelName;
-        let hasImage = provResult?.provider.models.find(m =>
-          m.id === qualifiedId
-        )?.imageInput ?? false;
-        if (!hasImage) {
-          hasImage = detectModelImageSupport(provResult?.modelId || qualifiedId);
-        }
-        if (!hasImage) return {};
+        if (!computerUseStore.getAll().enabled) return {};
+        if (!hasVisionCapability(config.modelName || "")) return {};
         return createComputerTools(threadId);
       })(),
     }) as any,

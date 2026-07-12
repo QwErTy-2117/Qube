@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: process.env.TAURI_BUILD === "true" ? "standalone" : undefined,
-  serverExternalPackages: [],
+  serverExternalPackages: ["node-screenshots"],
 };
 
 export default nextConfig;

@@ -5,6 +5,7 @@ import {
   generateText,
 } from "ai";
 import { createModelClient } from "@/lib/agent/model-client";
+import { hasVisionCapability } from "@/lib/agent/agent";
 
 export const maxDuration = 120;
 
@@ -110,6 +111,12 @@ async function verifyCompletion(
   });
   const hasDeliveryText = agentText.length > 50 && !agentText.startsWith("[Tool calls made,");
 
+  const canUseComputer = hasVisionCapability(modelName);
+  const hasComputerToolCalls = prevMessages.some((m: any) => {
+    const parts = (m.parts || []) as any[];
+    return parts.some((p: any) => p.type === "tool-call" && p.toolName?.startsWith("computer_"));
+  });
+
   // Hardcoded guard: agent made tool calls but never addressed the user
   if (hasToolResults && !hasDeliveryText) {
     const hasFileOutput = prevMessages.some((m: any) => {
@@ -130,11 +137,16 @@ async function verifyCompletion(
     return toolNames.includes("web_search") || toolNames.includes("web_fetch");
   });
 
+  const computerNote = canUseComputer
+    ? "Model has vision — computer_* tools are available."
+    : "Model LACKS vision — computer_* tools are NOT available. Do NOT expect the agent to use them.";
+
   const prompt = `Request: "${request}"
 Context: ${contextLines.join(" | ")}
 Agent text: "${(agentText || "(no text yet)").slice(0, 500)}"
 Has tool results: ${hasToolResults}
 Delivered: ${hasDeliveryText}
+${computerNote}
 COMPLETE or CONTINUE: what's missing?`;
 
   try {

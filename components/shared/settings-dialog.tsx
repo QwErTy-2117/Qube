@@ -1415,16 +1415,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {mcpServers.length > 0 && (
-                        <Button
-                          onClick={() => setMcpManagerOpen(true)}
-                          variant="outline"
-                          className="rounded-full h-7 w-7 p-0 flex items-center justify-center text-xs font-bold"
-                          size="sm"
-                        >
-                          {mcpServers.length}
-                        </Button>
-                      )}
                       <Button
                         onClick={() => setMcpManagerOpen(true)}
                         variant="outline"
@@ -1432,7 +1422,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         size="sm"
                       >
                         <PlusIcon className="size-3.5" />
-                        Add Server
+                        {mcpServers.length > 0 ? "Manage" : "Add Server"}
                       </Button>
                     </div>
                   </div>
@@ -1958,8 +1948,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             </DialogDescription>
           </DialogHeader>
 
+          <AnimatePresence mode="wait">
           {mcpFormView ? (
             <motion.div
+              key="form"
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.15 }}
@@ -2100,6 +2092,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             </motion.div>
           ) : (
             <motion.div
+              key="list"
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.15 }}
@@ -2167,6 +2160,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               </div>
             </motion.div>
           )}
+          </AnimatePresence>
         </DialogContent>
       </Dialog>
 

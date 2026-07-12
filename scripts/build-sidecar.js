@@ -119,7 +119,9 @@ function copySync(src, dest) {
   if (!fs.existsSync(src)) return;
   const stat = fs.lstatSync(src);
   if (stat.isSymbolicLink()) {
-    console.log(`  Skipping symlink: ${src}`);
+    const resolved = fs.realpathSync(src);
+    console.log(`  Following symlink: ${src} -> ${resolved}`);
+    copySync(resolved, dest);
     return;
   }
   if (stat.isDirectory()) {

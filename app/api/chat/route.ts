@@ -112,9 +112,15 @@ async function verifyCompletion(
   const hasDeliveryText = agentText.length > 50 && !agentText.startsWith("[Tool calls made,");
 
   const canUseComputer = hasVisionCapability(modelName);
-  const hasComputerToolCalls = prevMessages.some((m: any) => {
+
+  // Check for tool errors (broken tools, permission denied, etc.)
+  const hasToolErrors = prevMessages.some((m: any) => {
     const parts = (m.parts || []) as any[];
-    return parts.some((p: any) => p.type === "tool-call" && p.toolName?.startsWith("computer_"));
+    return parts.some((p: any) => p.type === "tool-result" && (
+      p.isError || (typeof p.result === "string" && (
+        p.result.includes('"error":true') || p.result.includes('"error": true')
+      ))
+    ));
   });
 
   // Hardcoded guard: agent made tool calls but never addressed the user
@@ -125,6 +131,8 @@ async function verifyCompletion(
         typeof p.result === "string" && (p.result.includes("written") || p.result.includes("exitCode"))
       ));
     });
+    // If all tool calls failed with errors, the agent explaining that is valid delivery
+    if (hasToolErrors) return { done: true, message: "" };
     const reason = hasFileOutput
       ? "The file was created but you did not tell the user. Write your final response now. Do NOT make any more tool calls."
       : "You have data but did not deliver the answer. Write your final response now.";
@@ -146,8 +154,9 @@ Context: ${contextLines.join(" | ")}
 Agent text: "${(agentText || "(no text yet)").slice(0, 500)}"
 Has tool results: ${hasToolResults}
 Delivered: ${hasDeliveryText}
+Tool errors: ${hasToolErrors ? "YES — the agent encountered tool failures" : "none"}
 ${computerNote}
-COMPLETE or CONTINUE: what's missing?`;
+COMPLETE if agent answered OR explained why it cannot proceed. CONTINUE: <what's missing> otherwise.`;
 
   try {
     const result = await generateText({

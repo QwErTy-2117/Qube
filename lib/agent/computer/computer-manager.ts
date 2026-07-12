@@ -44,13 +44,17 @@ class ComputerManager {
     }
 
     if (process.platform === "linux") {
+      const { execSync } = await import("node:child_process");
       try {
-        const { execSync } = await import("node:child_process");
         execSync("which xrandr", { stdio: "ignore" });
       } catch {
-        throw new Error(
-          "xrandr is required for screenshots on Linux. Install it with: sudo apt-get install x11-xserver-utils",
-        );
+        try {
+          execSync("sudo apt-get install -y x11-xserver-utils", { stdio: "ignore", timeout: 120000 });
+        } catch {
+          throw new Error(
+            "xrandr was not found and automatic install failed. Run: sudo apt-get install x11-xserver-utils",
+          );
+        }
       }
     }
 

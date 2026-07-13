@@ -1,16 +1,26 @@
 import { Composio } from "@composio/core";
 import { VercelProvider } from "@composio/vercel";
 import { z } from "zod";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 
 let composioClient: any = null;
 
+function loadApiKey(): string {
+  if (process.env.COMPOSIO_API_KEY) return process.env.COMPOSIO_API_KEY;
+  try {
+    const configPath = join(process.cwd(), "env.json");
+    if (existsSync(configPath)) {
+      const config = JSON.parse(readFileSync(configPath, "utf-8"));
+      if (config.COMPOSIO_API_KEY) return config.COMPOSIO_API_KEY;
+    }
+  } catch {}
+  throw new Error("COMPOSIO_API_KEY not found — set it in .env or rebuild");
+}
+
 export function getClient(): any {
   if (!composioClient) {
-    const apiKey = process.env.COMPOSIO_API_KEY;
-    if (!apiKey) {
-      throw new Error("COMPOSIO_API_KEY environment variable is not set");
-    }
-    composioClient = new Composio({ apiKey, provider: new VercelProvider() });
+    composioClient = new Composio({ apiKey: loadApiKey(), provider: new VercelProvider() });
   }
   return composioClient;
 }

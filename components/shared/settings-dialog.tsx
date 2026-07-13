@@ -1535,7 +1535,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" className="rounded-full">Cancel</Button>
+              <Button variant="outline" className="rounded-full h-8">Cancel</Button>
             </DialogClose>
             <Button
               variant="outline"

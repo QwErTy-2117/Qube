@@ -32,6 +32,7 @@ import {
   PlusIcon,
   PencilIcon,
   Sparkles,
+  LayoutGridIcon,
 } from "lucide-react";
 import {
   Tabs,
@@ -44,6 +45,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "motion/react";
 import { SchedulingTab } from "./scheduling-tab";
+import { ConnectorsTab } from "./connectors-tab";
 import { Switch } from "radix-ui";
 
 import OpenAI from "@lobehub/icons/es/OpenAI";
@@ -1027,6 +1029,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           <BrainIcon className="size-4" />
           Memories
         </TabsTrigger>
+        <TabsTrigger value="connectors">
+          <LayoutGridIcon className="size-4" />
+          Connectors
+        </TabsTrigger>
         <TabsTrigger value="scheduling">
           <Clock className="size-4" />
           Scheduling
@@ -1251,6 +1257,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               </div>
             </div>
             </motion.div>
+          </TabsContent>
+
+          {/* Connectors Tab */}
+          <TabsContent value="connectors" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
+            <ConnectorsTab />
           </TabsContent>
 
           {/* Advanced Tab */}

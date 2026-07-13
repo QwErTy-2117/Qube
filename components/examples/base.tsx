@@ -99,6 +99,7 @@ import { useState, useEffect, type FC, type ReactNode } from "react";
 import { ModelSelector } from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from "@/components/shared/settings-dialog";
+import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
 
 const Sidebar: FC = () => {
   return (
@@ -828,10 +829,29 @@ const TOOL_GROUP_TITLES: Record<string, string> = {
   read_session: "Reading the tea leaves",
   read_memory: "Scratching the brain",
   ask_user: "Poking the human",
+
+  composio_search_tools: "Searching your apps",
+  composio_multi_execute_tool: "Using your connected apps",
 };
 
+const COMPOSIO_TOOL_PREFIXES = [
+  "linear", "jira", "trello", "airtable", "notion", "slack",
+  "github", "gmail", "googlecalendar", "googledrive",
+  "hubspot", "asana", "dropbox", "composio",
+];
+
+function composioToolPrefix(toolName: string): string | null {
+  const lower = toolName.toLowerCase();
+  for (const prefix of COMPOSIO_TOOL_PREFIXES) {
+    if (lower.startsWith(prefix)) return prefix;
+  }
+  return null;
+}
+
 function getToolLabel(part: ToolCallMessagePart): string {
-  return (part.args as any)?.label || TOOL_GROUP_TITLES[part.toolName] || part.toolName;
+  const label = (part.args as any)?.label;
+  if (label) return label;
+  return TOOL_GROUP_TITLES[part.toolName] || part.toolName;
 }
 
 function ToolGroupWithTitle({
@@ -978,6 +998,10 @@ const AssistantMessage: FC = () => {
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
+                const isComposioTool = composioToolPrefix(part.toolName) !== null;
+                if (isComposioTool && !part.toolUI) {
+                  return <ToolFallback {...part} />;
+                }
                 return (
                   <ToolGroupRoot variant="ghost" defaultOpen={false}>
                     <ToolGroupTrigger
@@ -1191,6 +1215,7 @@ export const Base: FC = () => {
           </div>
         </div>
       </div>
+      <ConnectorConnectDialog />
     </div>
   );
 };

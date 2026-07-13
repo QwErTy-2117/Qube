@@ -7,9 +7,6 @@ let mcpClient: MCPClient | null = null;
 let initPromise: Promise<MCPClient> | null = null;
 
 function resolveBinaryPath(): string {
-  const packageRoot = path.dirname(
-    require.resolve("open-computer-use/package.json"),
-  );
   const platformKey = `${process.platform}-${process.arch}`;
   const platformMap: Record<string, string[]> = {
     "darwin-arm64": ["dist", "Open Computer Use.app", "Contents", "MacOS", "OpenComputerUse"],
@@ -21,6 +18,20 @@ function resolveBinaryPath(): string {
   };
   const parts = platformMap[platformKey];
   if (!parts) throw new Error(`Unsupported platform: ${platformKey}`);
+
+  // Try require.resolve first
+  try {
+    const packageRoot = path.dirname(
+      require.resolve("open-computer-use/package.json"),
+    );
+    const binaryPath = path.join(packageRoot, ...parts);
+    if (fs.existsSync(binaryPath)) {
+      return binaryPath;
+    }
+  } catch {}
+
+  // Fallback to process.cwd()
+  const packageRoot = path.join(process.cwd(), "node_modules", "open-computer-use");
   return path.join(packageRoot, ...parts);
 }
 

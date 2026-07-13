@@ -20,6 +20,7 @@ import { computerUseStore } from "./computer/computer-store";
 import { getComputerTools } from "./computer/computer-mcp";
 import { providerStore } from "./provider-store";
 import { detectModelImageSupport } from "@/lib/agent/vision-support";
+import { getConnectorTools } from "@/lib/connectors/composio";
 
 export function hasVisionCapability(modelName: string): boolean {
   let provResult = providerStore.getProviderByModel(modelName);
@@ -137,6 +138,13 @@ export async function createAgent(config: AgentConfig) {
     }
   } catch (e) {
     console.error("[agent] Failed to init computer tools:", e);
+  }
+
+  let composioTools: Record<string, any> = {};
+  try {
+    composioTools = await getConnectorTools();
+  } catch (e) {
+    console.error("[agent] Failed to init Composio tools:", e);
   }
 
   const result = streamText({
@@ -488,6 +496,7 @@ export async function createAgent(config: AgentConfig) {
 
       ...createBrowserTools(threadId),
       ...computerTools,
+      ...composioTools,
     }) as any,
   });
 

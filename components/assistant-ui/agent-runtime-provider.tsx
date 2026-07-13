@@ -136,6 +136,7 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
         const temperature = temperatureRaw ? parseFloat(temperatureRaw) : undefined;
         const userName = localStorage.getItem("qube-user-name") || undefined;
         const userAbout = localStorage.getItem("qube-user-about") || undefined;
+
         return {
           ...(customSystemPrompt ? { customSystemPrompt } : {}),
           ...(temperature !== undefined && !isNaN(temperature) ? { temperature } : {}),

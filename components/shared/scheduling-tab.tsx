@@ -684,7 +684,7 @@ function TaskFormDialog({
                 >
                   <Button
                     onClick={handleSave}
-                    disabled={saving || !name.trim()}
+                    disabled={saving || !name.trim() || !instructions.trim()}
                     className="rounded-full font-semibold"
                   >
                     {saving ? (

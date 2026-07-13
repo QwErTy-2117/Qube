@@ -1148,7 +1148,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                       {memories.map((entry) => (
                         <div
                           key={entry.id}
-                          className="group flex items-start gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors"
+                          className="flex items-start gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors"
                         >
                           <div className="flex-1 min-w-0 space-y-1.5">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -1157,18 +1157,17 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                             <p className="text-sm text-foreground leading-relaxed">{entry.content}</p>
                             <RelevanceBar relevance={entry.relevance} />
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
+                          <button
                             disabled={deletingMemoryId === entry.id}
                             onClick={() => handleDeleteMemory(entry.id)}
-                            className="size-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/60 hover:text-red-500 rounded-lg mt-0.5"
+                            className="size-7 flex items-center justify-center rounded-lg transition-colors text-muted-foreground/60 hover:text-red-500 disabled:opacity-50"
+                            title="Delete"
                           >
                             {deletingMemoryId === entry.id
                               ? <Loader2Icon className="size-3.5 animate-spin" />
                               : <Trash2Icon className="size-3.5" />
                             }
-                          </Button>
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -1216,7 +1215,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         return (
                           <div
                             key={session.id}
-                            className="group flex items-start gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors"
+                            className="flex items-start gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors"
                           >
                             <div className="flex-1 min-w-0 space-y-1">
                               <h4 className="text-sm font-semibold text-foreground truncate">
@@ -1232,18 +1231,17 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                                 {dateStr}
                               </div>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
+                            <button
                               disabled={deletingSessionId === session.id}
                               onClick={() => handleDeleteSession(session.id)}
-                              className="size-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/60 hover:text-red-500 rounded-lg mt-0.5"
+                              className="size-7 flex items-center justify-center rounded-lg transition-colors text-muted-foreground/60 hover:text-red-500 disabled:opacity-50"
+                              title="Delete"
                             >
                               {deletingSessionId === session.id
                                 ? <Loader2Icon className="size-3.5 animate-spin" />
                                 : <Trash2Icon className="size-3.5" />
                               }
-                            </Button>
+                            </button>
                           </div>
                         );
                       })}
@@ -1391,7 +1389,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                                 <button
                                   onClick={() => handleDeactivateModel(m.id)}
                                   type="button"
-                                  className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
+                                  className="size-7 flex items-center justify-center rounded-lg transition-colors text-muted-foreground hover:text-red-500 shrink-0 cursor-pointer"
                                   title="Deactivate model"
                                 >
                                   <Trash2Icon className="size-3.5" />
@@ -2112,7 +2110,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                             setMcpFormView(true);
                           }}
                           type="button"
-                          className="size-7 flex items-center justify-center rounded-lg hover:bg-blue-500/10 text-muted-foreground hover:text-blue-500 transition-colors cursor-pointer"
+                          className="size-7 flex items-center justify-center rounded-lg transition-colors text-muted-foreground hover:text-blue-500 cursor-pointer"
                           title="Edit server"
                         >
                           <PencilIcon className="size-3.5" />
@@ -2120,7 +2118,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         <button
                           onClick={() => setMcpDeleteConfirm(srv.id)}
                           type="button"
-                          className="size-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors cursor-pointer"
+                          className="size-7 flex items-center justify-center rounded-lg transition-colors text-muted-foreground hover:text-red-500 cursor-pointer"
                           title="Remove server"
                         >
                           <Trash2Icon className="size-3.5" />

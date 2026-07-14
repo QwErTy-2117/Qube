@@ -1,6 +1,6 @@
 {
   "name": "xulux-base-demo",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,8 +18,6 @@
     "@assistant-ui/react-ai-sdk": "^1.3.37",
     "@assistant-ui/react-lexical": "^0.2.3",
     "@assistant-ui/react-markdown": "^0.14.4",
-    "@composio/core": "^0.13.1",
-    "@composio/vercel": "^0.11.0",
     "@lobehub/icons": "^5.10.0",
     "@phukon/duckduckgo-search": "^1.2.0",
     "@radix-ui/react-icons": "^1.3.2",
@@ -30,6 +28,7 @@
     "cmdk": "^1.1.1",
     "docx": "^9.7.1",
     "geist": "^1.7.2",
+    "googleapis": "^173.0.0",
     "jsdom": "^26.1.0",
     "lucide-react": "^1.21.0",
     "motion": "^12.42.2",

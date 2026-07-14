@@ -1,240 +1,150 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { motion } from "motion/react";
-import { renderConnectorIcon } from "@/lib/connectors/icons";
-import { SearchIcon, Loader2Icon, XIcon, LinkIcon, UnplugIcon } from "lucide-react";
+import { SiGoogle } from "react-icons/si";
+import { Loader2Icon, LinkIcon, UnplugIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-const KNOWN_ICON_IDS = new Set([
-  "linear","atlassian","trello","airtable","notion",
-  "slack","github","google","hubspot","asana","dropbox",
-]);
-
-interface DisplayConnector {
-  id: string;
-  name: string;
-  description: string;
-  brandColor: string;
-  icon: string;
-  hasIcon: boolean;
-  appUrl: string;
-  connected: boolean;
-}
+const GOOGLE_CONNECTOR = {
+  id: "google",
+  name: "Google",
+  description: "Gmail, Calendar, and Drive",
+  brandColor: "#4285F4",
+  icon: "google",
+};
 
 export function ConnectorsTab() {
-  const [query, setQuery] = useState("");
-  const [connectors, setConnectors] = useState<DisplayConnector[]>([]);
-  const [connectingId, setConnectingId] = useState<string | null>(null);
-  const [disconnectTarget, setDisconnectTarget] = useState<DisplayConnector | null>(null);
+  const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
+  const [showDisconnect, setShowDisconnect] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/connectors/list");
+      const res = await fetch("/api/connectors/google/status");
       const data = await res.json();
-      setConnectors(data.connectors || []);
+      setConnected(data.connected);
     } catch {}
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchData().finally(() => setLoading(false));
-  }, [fetchData]);
+    fetchStatus();
+  }, [fetchStatus]);
 
   useEffect(() => {
     if (!statusMsg) return;
-    const t = setTimeout(() => setStatusMsg(null), 4000);
+    const t = setTimeout(() => setStatusMsg(null), 3000);
     return () => clearTimeout(t);
   }, [statusMsg]);
 
-  const handleConnect = useCallback(async (connectorId: string) => {
-    setConnectingId(connectorId);
-    setStatusMsg(null);
+  const handleConnect = useCallback(async () => {
+    if (connecting) return;
+    setConnecting(true);
     try {
-      const res = await fetch("/api/connectors/link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ connectorId }),
-      });
+      const res = await fetch("/api/connectors/google/link", { method: "POST" });
       const data = await res.json();
-      if (!res.ok) {
-        setStatusMsg(data.error || "Failed to connect");
-        setConnectingId(null);
+      if (!data.url) throw new Error("No auth URL returned");
+
+      const popup = window.open(data.url, "google-auth", "width=600,height=700");
+      if (!popup) {
+        setStatusMsg("Pop-up blocked. Allow pop-ups and try again.");
+        setConnecting(false);
         return;
       }
-      if (data.redirectUrl) {
-        const w = Math.min(600, screen.width);
-        const h = Math.min(700, screen.height);
-        const left = (screen.width - w) / 2;
-        const top = (screen.height - h) / 2;
-        window.open(
-          data.redirectUrl,
-          `connect-${connectorId}`,
-          `width=${w},height=${h},left=${left},top=${top},popup=1`,
-        );
 
-        const pollInterval = setInterval(async () => {
-          try {
-            const res = await fetch("/api/connectors/list");
-            const data = await res.json();
-            const match = (data.connectors || []).find((c: any) => c.id === connectorId);
-            if (match?.connected) {
-              clearInterval(pollInterval);
-              setConnectors(data.connectors);
-              setConnectingId((prev) => (prev === connectorId ? null : prev));
-              setStatusMsg("Connected!");
-            }
-          } catch {}
-        }, 2000);
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await fetch("/api/connectors/google/status");
+          const statusData = await statusRes.json();
+          if (statusData.connected) {
+            clearInterval(pollInterval);
+            setConnected(true);
+            setConnecting(false);
+            setStatusMsg("Google connected!");
+            if (!popup.closed) popup.close();
+          }
+        } catch {}
+      }, 2000);
 
-        setTimeout(() => {
-          clearInterval(pollInterval);
-          setConnectingId((prev) => (prev === connectorId ? null : prev));
-        }, 120_000);
-      }
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        setConnecting(false);
+      }, 120_000);
     } catch {
       setStatusMsg("Connection failed");
-      setConnectingId(null);
+      setConnecting(false);
     }
-  }, [fetchData]);
+  }, [connecting]);
 
-  const handleDisconnect = useCallback(async (connectorId: string) => {
-    setDisconnectTarget(null);
-    setConnectingId(connectorId);
+  const handleDisconnect = useCallback(async () => {
+    setShowDisconnect(false);
     try {
-      await fetch("/api/connectors/disconnect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ connectorId }),
-      });
-      await fetchData();
+      await fetch("/api/connectors/google/disconnect", { method: "POST" });
+      setConnected(false);
       setStatusMsg("Disconnected");
     } catch {}
-    setConnectingId(null);
-  }, [fetchData]);
-
-  const filtered = query.trim()
-    ? connectors.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()))
-    : connectors;
-
-  if (loading && connectors.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <Loader2Icon className="size-5 animate-spin text-muted-foreground/40" />
-      </div>
-    );
-  }
+  }, []);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, filter: "blur(4px)" }}
-      animate={{ opacity: 1, filter: "blur(0px)" }}
-      transition={{ duration: 0.2 }}
-      className="flex-1 flex flex-col overflow-hidden"
-    >
-      <div className="flex-1 overflow-y-auto pr-1">
-        <div className="space-y-1 mb-4">
-          <h3 className="text-base font-semibold tracking-tight">Connectors</h3>
-          <p className="text-xs text-muted-foreground">
-            Connect Qube to external services via Composio.
-          </p>
-        </div>
-
-        <div className="relative mb-4">
-          <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50 pointer-events-none" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search connectors..."
-            className="w-full h-8 rounded-lg border border-border bg-background pl-8 pr-3 text-xs outline-none focus:border-ring transition-colors placeholder:text-muted-foreground/40"
-          />
-        </div>
-
-        {statusMsg && (
-          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg border border-border bg-muted/20 text-xs text-foreground/80">
-            <span className="flex-1">{statusMsg}</span>
-            <button onClick={() => setStatusMsg(null)} className="shrink-0">
-              <XIcon className="size-3 text-muted-foreground/50 hover:text-foreground transition-colors" />
-            </button>
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-3 pt-1">
-          {filtered.map((connector) => {
-            const isConnected = connector.connected;
-            const isConnecting = connectingId === connector.id;
-
-            return (
-              <div
-                key={connector.id}
-                onClick={() => {
-                  if (isConnecting) return;
-                  if (isConnected) {
-                    setDisconnectTarget(connector);
-                  } else {
-                    handleConnect(connector.id);
-                  }
-                }}
-                className={cn(
-                  "flex flex-col items-center justify-center size-[72px] rounded-2xl border transition-all text-center p-1.5 gap-1 relative select-none",
-                  !isConnected && "cursor-pointer hover:scale-105 active:scale-95 bg-background hover:bg-muted/30",
-                  isConnected && "cursor-pointer hover:scale-105 active:scale-95 border-emerald-500/40 hover:border-red-500/50",
-                )}
-              >
-                {isConnecting && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-2xl z-10">
-                    <Loader2Icon className="size-5 animate-spin text-muted-foreground/60" />
-                  </div>
-                )}
-
-                <div
-                  className="size-9 flex items-center justify-center shrink-0"
-                  style={{ color: connector.brandColor || undefined }}
-                >
-                  {KNOWN_ICON_IDS.has(connector.id)
-                    ? renderConnectorIcon(connector.id, 24)
-                    : connector.icon?.startsWith("http")
-                      ? <img src={connector.icon} alt="" className="size-6 object-contain" />
-                      : <LinkIcon className="size-5 text-muted-foreground/50" />}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {filtered.length === 0 && (
-          <p className="text-xs text-muted-foreground/50 text-center py-8">
-            No connectors match "{query}"
-          </p>
-        )}
-      </div>
-
-      <Dialog open={!!disconnectTarget} onOpenChange={(v) => { if (!v) setDisconnectTarget(null); }}>
-        <DialogContent className="sm:max-w-sm rounded-3xl">
+    <div className="flex flex-col gap-4">
+      <Dialog open={showDisconnect} onOpenChange={setShowDisconnect}>
+        <DialogContent className="rounded-3xl max-w-sm">
           <DialogHeader>
-            <DialogTitle>Disconnect {disconnectTarget?.name}</DialogTitle>
+            <DialogTitle>Disconnect Google?</DialogTitle>
             <DialogDescription>
-              Are you sure you want to disconnect {disconnectTarget?.name}? The agent will no longer have access to this service.
+              This will revoke access to Gmail, Calendar, and Drive. You can reconnect later.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="flex gap-2">
             <DialogClose asChild>
-              <Button variant="outline" className="rounded-full h-8">Cancel</Button>
+              <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button
-              variant="outline"
-              onClick={() => disconnectTarget && handleDisconnect(disconnectTarget.id)}
-              className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
-            >
-              <UnplugIcon className="size-3.5" />
+            <Button variant="destructive" onClick={handleDisconnect}>
+              <UnplugIcon className="h-4 w-4 mr-2" />
               Disconnect
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </motion.div>
+
+      <div className="flex flex-wrap gap-4">
+        <button
+          onClick={() => connected ? setShowDisconnect(true) : handleConnect()}
+          disabled={connecting}
+          className={cn(
+            "group relative flex flex-col items-center justify-center gap-2 w-28 h-28 rounded-2xl border-2 transition-all duration-200",
+            connected
+              ? "border-green-500 hover:border-red-500 bg-green-50 dark:bg-green-950/20"
+              : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 bg-white dark:bg-gray-900",
+            connecting && "opacity-70 pointer-events-none",
+          )}
+        >
+          {connecting ? (
+            <Loader2Icon className="h-8 w-8 animate-spin text-gray-400" />
+          ) : (
+            <SiGoogle
+              className={cn(
+                "h-8 w-8 transition-colors",
+                connected ? "text-green-600 group-hover:text-red-500" : "text-gray-500 dark:text-gray-400",
+              )}
+            />
+          )}
+        </button>
+      </div>
+
+      {statusMsg && (
+        <div className="text-sm text-center text-gray-600 dark:text-gray-400">{statusMsg}</div>
+      )}
+
+      {!loading && !connected && (
+        <div className="text-sm text-center text-gray-500 dark:text-gray-400 py-8">
+          Connect Google to access Gmail, Calendar, and Drive through the agent.
+        </div>
+      )}
+    </div>
   );
 }

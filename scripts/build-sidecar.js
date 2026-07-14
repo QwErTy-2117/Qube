@@ -169,23 +169,26 @@ try {
     console.log(`  Made executable: ${binaryPath}`);
   }
 
-  // Embed COMPOSIO_API_KEY into a runtime config file
+  // Embed Google OAuth credentials into a runtime config file
   console.log('Embedding runtime config...');
   const envPath = path.join(rootDir, '.env');
-  let composioApiKey = process.env.COMPOSIO_API_KEY;
-  if (!composioApiKey && fs.existsSync(envPath)) {
+  let googleClientId = process.env.GOOGLE_CLIENT_ID;
+  let googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if ((!googleClientId || !googleClientSecret) && fs.existsSync(envPath)) {
     const envContent = fs.readFileSync(envPath, 'utf-8');
-    const match = envContent.match(/^COMPOSIO_API_KEY=(.+)$/m);
-    if (match) composioApiKey = match[1].trim();
+    const idMatch = envContent.match(/^GOOGLE_CLIENT_ID=(.+)$/m);
+    const secretMatch = envContent.match(/^GOOGLE_CLIENT_SECRET=(.+)$/m);
+    if (idMatch) googleClientId = idMatch[1].trim();
+    if (secretMatch) googleClientSecret = secretMatch[1].trim();
   }
-  if (composioApiKey) {
+  if (googleClientId && googleClientSecret) {
     fs.writeFileSync(
       path.join(sidecarDistDir, 'env.json'),
-      JSON.stringify({ COMPOSIO_API_KEY: composioApiKey }),
+      JSON.stringify({ GOOGLE_CLIENT_ID: googleClientId, GOOGLE_CLIENT_SECRET: googleClientSecret }),
     );
-    console.log('  COMPOSIO_API_KEY embedded in env.json');
+    console.log('  Google OAuth credentials embedded in env.json');
   } else {
-    console.warn('  WARNING: COMPOSIO_API_KEY not found — connectors will not work');
+    console.warn('  WARNING: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not found — Google connector will not work');
   }
 
   console.log('Sidecar distribution prepared successfully!');

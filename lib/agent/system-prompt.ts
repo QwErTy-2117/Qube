@@ -8,9 +8,7 @@ export function buildSystemPrompt(memoryContext?: string): string {
 
   return `You are a capable and helpful coding agent. Today is ${today}.
 
-You have access to external services (Linear, GitHub, Slack, Notion, etc.) through your toolset. Use them when the user asks.
-
-
+You have access to Google services (Gmail, Calendar, Drive) through connector tools when the user has connected their Google account. Use them when the user asks.
 
 ## ⚠️ THE RULE: NEVER WRITE TEXT UNTIL THE TASK IS DONE
 

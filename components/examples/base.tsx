@@ -99,7 +99,7 @@ import { useState, useEffect, type FC, type ReactNode } from "react";
 import { ModelSelector } from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from "@/components/shared/settings-dialog";
-import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
+
 
 const Sidebar: FC = () => {
   return (
@@ -830,23 +830,12 @@ const TOOL_GROUP_TITLES: Record<string, string> = {
   read_memory: "Scratching the brain",
   ask_user: "Poking the human",
 
-  composio_search_tools: "Searching your apps",
-  composio_multi_execute_tool: "Using your connected apps",
+  search_emails: "Searching emails",
+  send_email: "Sending email",
+  list_calendar_events: "Checking calendar",
+  create_calendar_event: "Creating event",
+  search_drive: "Searching Drive",
 };
-
-const COMPOSIO_TOOL_PREFIXES = [
-  "linear", "jira", "trello", "airtable", "notion", "slack",
-  "github", "gmail", "googlecalendar", "googledrive",
-  "hubspot", "asana", "dropbox", "composio",
-];
-
-function composioToolPrefix(toolName: string): string | null {
-  const lower = toolName.toLowerCase();
-  for (const prefix of COMPOSIO_TOOL_PREFIXES) {
-    if (lower.startsWith(prefix)) return prefix;
-  }
-  return null;
-}
 
 function getToolLabel(part: ToolCallMessagePart): string {
   const label = (part.args as any)?.label;
@@ -998,8 +987,8 @@ const AssistantMessage: FC = () => {
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
-                const isComposioTool = composioToolPrefix(part.toolName) !== null;
-                if (isComposioTool && !part.toolUI) {
+                const isGoogleTool = ["search_emails", "send_email", "list_calendar_events", "create_calendar_event", "search_drive"].includes(part.toolName);
+                if (isGoogleTool) {
                   return <ToolFallback {...part} />;
                 }
                 return (
@@ -1215,7 +1204,6 @@ export const Base: FC = () => {
           </div>
         </div>
       </div>
-      <ConnectorConnectDialog />
     </div>
   );
 };

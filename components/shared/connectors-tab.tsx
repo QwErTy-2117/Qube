@@ -25,8 +25,8 @@ interface DisplayConnector {
 }
 
 function getInstanceId(): string {
-  if (typeof window === "undefined") return "qube-user";
-  return localStorage.getItem("qube-instance-id") || "qube-user";
+  if (typeof window === "undefined") return "qube-default-user";
+  return localStorage.getItem("qube-instance-id") || "qube-default-user";
 }
 
 export function ConnectorsTab() {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClient } from "@/lib/connectors/composio";
+import { getClient, DEFAULT_USER_ID } from "@/lib/connectors/composio";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const instanceId = searchParams.get("instanceId") || "qube-user";
+    const instanceId = searchParams.get("instanceId") || DEFAULT_USER_ID;
     const client = getClient();
     const accounts = await client.connectedAccounts.list({
       userIds: [instanceId],

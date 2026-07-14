@@ -4,6 +4,8 @@ import { z } from "zod";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
+export const DEFAULT_USER_ID = "qube-default-user";
+
 let composioClient: any = null;
 
 function loadApiKey(): string {
@@ -195,7 +197,7 @@ export async function getSessionForUser(userId: string) {
 
 export async function getConnectorTools(userId?: string) {
   const client = getClient();
-  const uid = userId || "qube-default-user";
+  const uid = userId || DEFAULT_USER_ID;
   const toolkits = Object.values(COMPOSIO_TOOLKIT_MAP).flat();
   const session = await client.sessions.create(uid, {
     toolkits,

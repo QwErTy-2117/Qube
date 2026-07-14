@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { initiateConnection } from "@/lib/connectors/composio";
+import { initiateConnection, DEFAULT_USER_ID } from "@/lib/connectors/composio";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const instanceId = searchParams.get("instanceId") || "qube-user";
+    const instanceId = searchParams.get("instanceId") || DEFAULT_USER_ID;
     const origin = req.headers.get("origin") || "http://localhost:3000";
     const callbackUrl = `${origin}/connectors/callback`;
 

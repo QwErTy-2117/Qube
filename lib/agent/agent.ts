@@ -20,7 +20,7 @@ import { computerUseStore } from "./computer/computer-store";
 import { getComputerTools } from "./computer/computer-mcp";
 import { providerStore } from "./provider-store";
 import { detectModelImageSupport } from "@/lib/agent/vision-support";
-import { getConnectorTools } from "@/lib/connectors/composio";
+import { getConnectorTools, initiateConnection, COMPOSIO_TOOLKIT_MAP, DEFAULT_USER_ID } from "@/lib/connectors/composio";
 
 export function hasVisionCapability(modelName: string): boolean {
   let provResult = providerStore.getProviderByModel(modelName);
@@ -498,6 +498,28 @@ export async function createAgent(config: AgentConfig) {
       ...createBrowserTools(threadId),
       ...computerTools,
       ...composioTools,
+
+      connect_service: tool({
+        description: "Generates an OAuth connection link so the user can connect an external service (Gmail, Slack, GitHub, Notion, Linear, etc.). Use this whenever a connector tool fails because the service isn't connected yet, or when the user asks to connect/reconnect a service.",
+        inputSchema: z.object({
+          label: z.string().optional(),
+          connectorId: z.string().describe("The connector/toolkit ID to connect. Use one of: linear, atlassian, trello, airtable, notion, slack, github, google, hubspot, asana, dropbox, canva"),
+        }),
+        execute: async ({ connectorId }: { connectorId: string }) => {
+          try {
+            const uid = config.instanceId || DEFAULT_USER_ID;
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:1420";
+            const callbackUrl = `${baseUrl}/connectors/callback`;
+            const redirectUrl = await initiateConnection(connectorId, uid, callbackUrl);
+            if (!redirectUrl) {
+              return JSON.stringify({ error: `No auth config found for "${connectorId}". Make sure it's configured in the Composio dashboard.` });
+            }
+            return JSON.stringify({ connectUrl: redirectUrl, message: `Click the link to connect ${connectorId}: ${redirectUrl}` });
+          } catch (e) {
+            return JSON.stringify({ error: String(e) });
+          }
+        },
+      }),
     }) as any,
   });
 

@@ -97,7 +97,7 @@ export function ConnectorsTab() {
 
         const pollInterval = setInterval(async () => {
           try {
-            const statusRes = await fetch(`/api/connectors/status?instanceId=${getInstanceId()}`);
+            const statusRes = await fetch(`/api/connectors/status?instanceId=${getInstanceId()}&connectorId=${connectorId}`);
             const statusData = await statusRes.json();
             const connectedSlugs: string[] = statusData.connected || [];
             const connectorSlugs = TOOLKIT_SLUGS[connectorId] || [connectorId];
@@ -132,7 +132,7 @@ export function ConnectorsTab() {
         body: JSON.stringify({ connectorId }),
       });
       await fetchData();
-      setStatusMsg("Disconnected");
+
     } catch {}
     setConnectingId(null);
   }, [fetchData]);

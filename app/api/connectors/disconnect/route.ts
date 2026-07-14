@@ -13,8 +13,10 @@ export async function POST(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const instanceId = searchParams.get("instanceId") || DEFAULT_USER_ID;
     const client = getClient();
+    const connectionUserId = `${instanceId}-${connectorId}`;
     const accounts = await client.connectedAccounts.list({
-      userIds: [instanceId],
+      userIds: [connectionUserId],
+      limit: 100,
     });
 
     const toDelete = (accounts.items || []).filter((a: any) =>

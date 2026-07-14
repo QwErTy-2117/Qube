@@ -16,3 +16,4 @@ export { ScheduleTaskToolUI } from "./schedule-task-tool-ui";
 export { UpdateHeartbeatToolUI } from "./update-heartbeat-tool-ui";
 export { AppStateToolUI, ListAppsToolUI, ComputerToolUI } from "./computer-tool-ui";
 export { ConnectorToolUI } from "./connector-tool-ui";
+export { ConnectServiceToolUI } from "./connect-service-tool-ui";

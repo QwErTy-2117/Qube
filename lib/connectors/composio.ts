@@ -105,16 +105,38 @@ const KNOWN_COLORS: Record<string, string> = {
   dropbox: "#0061FF",
 };
 
+export const COMPOSIO_TOOLKIT_MAP: Record<string, string[]> = {
+  linear: ["linear"],
+  atlassian: ["jira"],
+  trello: ["trello"],
+  airtable: ["airtable"],
+  notion: ["notion"],
+  slack: ["slack"],
+  github: ["github"],
+  google: ["gmail", "googlecalendar", "googledrive"],
+  hubspot: ["hubspot"],
+  asana: ["asana"],
+  dropbox: ["dropbox"],
+  canva: ["canva"],
+};
+
 export async function listConnectors(userId?: string): Promise<ConnectorDisplay[]> {
   try {
     const client = getClient();
 
-    const [authConfigs, connectedAccounts] = await Promise.all([
-      client.authConfigs.list({}),
-      userId
-        ? client.connectedAccounts.list({ userIds: [userId] }).catch(() => ({ items: [] }))
-        : Promise.resolve({ items: [] }),
+    const connectorIds = Object.keys(COMPOSIO_TOOLKIT_MAP);
+    const [authConfigs, ...connectorAccountsList] = await Promise.all([
+      client.authConfigs.list({ limit: 100 }),
+      ...connectorIds.map(cid =>
+        userId
+          ? client.connectedAccounts.list({ userIds: [`${userId}-${cid}`], limit: 10 }).catch(() => ({ items: [] }))
+          : Promise.resolve({ items: [] })
+      )
     ]);
+
+    const connectedAccounts = {
+      items: connectorAccountsList.flatMap(list => list?.items || [])
+    };
 
     const connectedSlugs = new Set<string>();
     for (const acct of connectedAccounts.items || []) {
@@ -183,16 +205,17 @@ export async function initiateConnection(connectorId: string, userId: string, ca
     const client = getClient();
     const options = callbackUrl ? { callbackUrl } : undefined;
     const authConfigs = await client.authConfigs.list({ toolkit: connectorId });
+    const connectionUserId = `${userId}-${connectorId}`;
     if (!authConfigs.items?.length) {
-      const allConfigs = await client.authConfigs.list({});
+      const allConfigs = await client.authConfigs.list({ limit: 100 });
       const match = allConfigs.items?.find((a: any) =>
         a.toolkit?.slug === connectorId || a.app?.toLowerCase() === connectorId
       );
       if (!match) return null;
-      const req = await client.connectedAccounts.link(userId, match.id, options);
+      const req = await client.connectedAccounts.link(connectionUserId, match.id, options);
       return req.redirectUrl ?? null;
     }
-    const req = await client.connectedAccounts.link(userId, authConfigs.items[0].id, options);
+    const req = await client.connectedAccounts.link(connectionUserId, authConfigs.items[0].id, options);
     return req.redirectUrl ?? null;
   } catch (e) {
     console.error(`[composio] initiateConnection failed for ${connectorId}:`, e);
@@ -200,34 +223,36 @@ export async function initiateConnection(connectorId: string, userId: string, ca
   }
 }
 
-export async function getConnectedToolkits(userId: string): Promise<string[]> {
+export async function getConnectedToolkits(userId: string, connectorId?: string): Promise<string[]> {
   try {
     const client = getClient();
-    const accounts = await client.connectedAccounts.list({ userIds: [userId] });
     const slugs = new Set<string>();
-    for (const acct of accounts.items || []) {
-      const slug = acct.toolkit?.slug || acct.app?.toLowerCase();
-      if (slug) slugs.add(slug);
+    
+    if (connectorId) {
+      const accounts = await client.connectedAccounts.list({ userIds: [`${userId}-${connectorId}`], limit: 100 }).catch(() => ({ items: [] }));
+      for (const acct of accounts.items || []) {
+        const slug = acct.toolkit?.slug || acct.app?.toLowerCase();
+        if (slug) slugs.add(slug);
+      }
+    } else {
+      const connectorIds = Object.keys(COMPOSIO_TOOLKIT_MAP);
+      const lists = await Promise.all(
+        connectorIds.map(cid =>
+          client.connectedAccounts.list({ userIds: [`${userId}-${cid}`], limit: 10 }).catch(() => ({ items: [] }))
+        )
+      );
+      for (const list of lists) {
+        for (const acct of list.items || []) {
+          const slug = acct.toolkit?.slug || acct.app?.toLowerCase();
+          if (slug) slugs.add(slug);
+        }
+      }
     }
     return Array.from(slugs);
   } catch {
     return [];
   }
 }
-
-export const COMPOSIO_TOOLKIT_MAP: Record<string, string[]> = {
-  linear: ["linear"],
-  atlassian: ["jira"],
-  trello: ["trello"],
-  airtable: ["airtable"],
-  notion: ["notion"],
-  slack: ["slack"],
-  github: ["github"],
-  google: ["gmail", "googlecalendar", "googledrive"],
-  hubspot: ["hubspot"],
-  asana: ["asana"],
-  dropbox: ["dropbox"],
-};
 
 export function getToolkitSlugs(connectorId: string): string[] {
   return COMPOSIO_TOOLKIT_MAP[connectorId] || [];
@@ -246,12 +271,31 @@ export async function getSessionForUser(userId: string) {
 export async function getConnectorTools(userId?: string) {
   const client = getClient();
   const uid = userId || DEFAULT_USER_ID;
-  const toolkits = Object.values(COMPOSIO_TOOLKIT_MAP).flat();
-  const session = await client.sessions.create(uid, {
-    toolkits,
-    manageConnections: true,
-  });
-  const tools: Record<string, any> = await session.tools();
+  const allTools: Record<string, any> = {};
+
+  const connectedSlugs = await getConnectedToolkits(uid);
+
+  const connectorIds = Object.keys(COMPOSIO_TOOLKIT_MAP);
+  await Promise.all(
+    connectorIds.map(async (cid) => {
+      const toolkits = COMPOSIO_TOOLKIT_MAP[cid];
+      const hasConnection = toolkits.some((slug) => connectedSlugs.includes(slug));
+      if (!hasConnection) return;
+      try {
+        const connectorUserId = `${uid}-${cid}`;
+        const session = await client.sessions.create(connectorUserId, {
+          toolkits,
+          manageConnections: true,
+        });
+        const tools = await session.tools();
+        Object.assign(allTools, tools);
+      } catch (e) {
+        console.error(`[composio] failed to get tools for connector ${cid}:`, e);
+      }
+    })
+  );
+
+  const tools = allTools;
 
   for (const [_name, tool] of Object.entries(tools)) {
     if (tool.parameters?.extend) {

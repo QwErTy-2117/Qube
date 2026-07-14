@@ -7,7 +7,8 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const instanceId = searchParams.get("instanceId") || DEFAULT_USER_ID;
-    const connected = await getConnectedToolkits(instanceId);
+    const connectorId = searchParams.get("connectorId") || undefined;
+    const connected = await getConnectedToolkits(instanceId, connectorId);
     return NextResponse.json({ connected });
   } catch (e) {
     console.error("[connectors/status] Error:", e);

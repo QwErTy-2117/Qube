@@ -13,6 +13,20 @@ const KNOWN_ICON_IDS = new Set([
   "slack","github","google","hubspot","asana","dropbox",
 ]);
 
+const TOOLKIT_SLUGS: Record<string, string[]> = {
+  linear: ["linear"],
+  atlassian: ["jira"],
+  trello: ["trello"],
+  airtable: ["airtable"],
+  notion: ["notion"],
+  slack: ["slack"],
+  github: ["github"],
+  google: ["gmail", "googlecalendar", "googledrive"],
+  hubspot: ["hubspot"],
+  asana: ["asana"],
+  dropbox: ["dropbox"],
+};
+
 interface DisplayConnector {
   id: string;
   name: string;
@@ -83,12 +97,14 @@ export function ConnectorsTab() {
 
         const pollInterval = setInterval(async () => {
           try {
-            const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`);
-            const data = await res.json();
-            const match = (data.connectors || []).find((c: any) => c.id === connectorId);
-            if (match?.connected) {
+            const statusRes = await fetch(`/api/connectors/status?instanceId=${getInstanceId()}`);
+            const statusData = await statusRes.json();
+            const connectedSlugs: string[] = statusData.connected || [];
+            const connectorSlugs = TOOLKIT_SLUGS[connectorId] || [connectorId];
+            const isConnected = connectorSlugs.some((slug: string) => connectedSlugs.includes(slug));
+            if (isConnected) {
               clearInterval(pollInterval);
-              setConnectors(data.connectors);
+              await fetchData();
               setConnectingId((prev) => (prev === connectorId ? null : prev));
               setStatusMsg("Connected!");
             }

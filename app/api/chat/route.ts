@@ -210,7 +210,7 @@ export async function POST(req: Request) {
   console.log("[chat] POST /api/chat start", { url: req.url });
   try {
     const body = await req.json();
-    const { messages, threadId, config, customSystemPrompt, temperature, userName, userAbout } = body;
+    const { messages, threadId, config, customSystemPrompt, temperature, userName, userAbout, instanceId } = body;
     const modelName = config?.modelName;
     const currentThreadId = threadId || `thread_${Date.now()}`;
 
@@ -289,6 +289,7 @@ export async function POST(req: Request) {
               temperature: temperature !== undefined ? Number(temperature) : undefined,
               userName,
               userAbout,
+              instanceId,
             });
 
             const uiStream = agent.toUIMessageStream({

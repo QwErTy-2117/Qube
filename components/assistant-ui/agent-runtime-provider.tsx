@@ -87,6 +87,12 @@ function ToolUIRegistrar() {
 export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window !== "undefined") {
+      let instanceId = localStorage.getItem("qube-instance-id");
+      if (!instanceId) {
+        instanceId = crypto.randomUUID();
+        localStorage.setItem("qube-instance-id", instanceId);
+      }
+
       const stored = localStorage.getItem("qube-providers");
       if (stored) {
         try {
@@ -137,7 +143,10 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
         const userName = localStorage.getItem("qube-user-name") || undefined;
         const userAbout = localStorage.getItem("qube-user-about") || undefined;
 
+        const instanceId = localStorage.getItem("qube-instance-id") || undefined;
+
         return {
+          instanceId,
           ...(customSystemPrompt ? { customSystemPrompt } : {}),
           ...(temperature !== undefined && !isNaN(temperature) ? { temperature } : {}),
           ...(userName ? { userName } : {}),

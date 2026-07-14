@@ -193,10 +193,11 @@ export async function getSessionForUser(userId: string) {
   return session;
 }
 
-export async function getConnectorTools() {
+export async function getConnectorTools(userId?: string) {
   const client = getClient();
+  const uid = userId || "qube-default-user";
   const toolkits = Object.values(COMPOSIO_TOOLKIT_MAP).flat();
-  const session = await client.sessions.create("qube-default-user", {
+  const session = await client.sessions.create(uid, {
     toolkits,
     manageConnections: true,
   });

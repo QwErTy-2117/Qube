@@ -24,6 +24,11 @@ interface DisplayConnector {
   connected: boolean;
 }
 
+function getInstanceId(): string {
+  if (typeof window === "undefined") return "qube-user";
+  return localStorage.getItem("qube-instance-id") || "qube-user";
+}
+
 export function ConnectorsTab() {
   const [query, setQuery] = useState("");
   const [connectors, setConnectors] = useState<DisplayConnector[]>([]);
@@ -34,7 +39,7 @@ export function ConnectorsTab() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch("/api/connectors/list");
+      const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`);
       const data = await res.json();
       setConnectors(data.connectors || []);
     } catch {}
@@ -54,7 +59,7 @@ export function ConnectorsTab() {
     setConnectingId(connectorId);
     setStatusMsg(null);
     try {
-      const res = await fetch("/api/connectors/link", {
+      const res = await fetch(`/api/connectors/link?instanceId=${getInstanceId()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectorId }),
@@ -78,7 +83,7 @@ export function ConnectorsTab() {
 
         const pollInterval = setInterval(async () => {
           try {
-            const res = await fetch("/api/connectors/list");
+            const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`);
             const data = await res.json();
             const match = (data.connectors || []).find((c: any) => c.id === connectorId);
             if (match?.connected) {
@@ -105,7 +110,7 @@ export function ConnectorsTab() {
     setDisconnectTarget(null);
     setConnectingId(connectorId);
     try {
-      await fetch("/api/connectors/disconnect", {
+      await fetch(`/api/connectors/disconnect?instanceId=${getInstanceId()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectorId }),
@@ -129,13 +134,12 @@ export function ConnectorsTab() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, filter: "blur(4px)" }}
-      animate={{ opacity: 1, filter: "blur(0px)" }}
-      transition={{ duration: 0.2 }}
-      className="flex-1 flex flex-col overflow-hidden"
-    >
-      <div className="flex-1 overflow-y-auto pr-1">
+    <div className="flex-1 overflow-y-auto pr-1">
+      <motion.div
+        initial={{ opacity: 0, filter: "blur(4px)" }}
+        animate={{ opacity: 1, filter: "blur(0px)" }}
+        transition={{ duration: 0.2 }}
+      >
         <div className="space-y-1 mb-4">
           <h3 className="text-base font-semibold tracking-tight">Connectors</h3>
           <p className="text-xs text-muted-foreground">
@@ -210,7 +214,7 @@ export function ConnectorsTab() {
             No connectors match "{query}"
           </p>
         )}
-      </div>
+      </motion.div>
 
       <Dialog open={!!disconnectTarget} onOpenChange={(v) => { if (!v) setDisconnectTarget(null); }}>
         <DialogContent className="sm:max-w-sm rounded-3xl">
@@ -235,6 +239,6 @@ export function ConnectorsTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </motion.div>
+    </div>
   );
 }

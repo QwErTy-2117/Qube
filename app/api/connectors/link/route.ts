@@ -10,10 +10,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing connectorId" }, { status: 400 });
     }
 
+    const { searchParams } = new URL(req.url);
+    const instanceId = searchParams.get("instanceId") || "qube-user";
     const origin = req.headers.get("origin") || "http://localhost:3000";
     const callbackUrl = `${origin}/connectors/callback`;
 
-    const redirectUrl = await initiateConnection(connectorId, "qube-user", callbackUrl);
+    const redirectUrl = await initiateConnection(connectorId, instanceId, callbackUrl);
     if (!redirectUrl) {
       return NextResponse.json(
         { error: `No auth config available for "${connectorId}". Set it up in the Composio dashboard first.` },

@@ -91,6 +91,7 @@ export type AgentConfig = {
   temperature?: number;
   userName?: string;
   userAbout?: string;
+  instanceId?: string;
 };
 
 export async function createAgent(config: AgentConfig) {
@@ -142,7 +143,7 @@ export async function createAgent(config: AgentConfig) {
 
   let composioTools: Record<string, any> = {};
   try {
-    composioTools = await getConnectorTools();
+    composioTools = await getConnectorTools(config.instanceId);
   } catch (e) {
     console.error("[agent] Failed to init Composio tools:", e);
   }

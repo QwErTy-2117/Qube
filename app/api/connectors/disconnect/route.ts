@@ -1,18 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getClient } from "@/lib/connectors/composio";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const { connectorId } = await req.json();
     if (!connectorId) {
       return NextResponse.json({ error: "Missing connectorId" }, { status: 400 });
     }
 
+    const { searchParams } = new URL(req.url);
+    const instanceId = searchParams.get("instanceId") || "qube-user";
     const client = getClient();
     const accounts = await client.connectedAccounts.list({
-      userIds: ["qube-user"],
+      userIds: [instanceId],
     });
 
     const toDelete = (accounts.items || []).filter((a: any) =>

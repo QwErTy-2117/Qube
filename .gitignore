@@ -5,6 +5,7 @@ sidecar-dist/
 src-tauri/target/
 src-tauri/gen/
 
+.env
 .env.local
 .env*.local
 *.tsbuildinfo

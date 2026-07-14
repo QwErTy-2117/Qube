@@ -106,7 +106,9 @@ export const ConnectorToolUI: ToolCallMessagePartComponent = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirmationId: pendingId, action: "confirm" }),
       });
-    } catch {}
+    } catch {
+      setConfirming(false);
+    }
   }, [pendingId]);
 
   const handleCancel = useCallback(async () => {
@@ -118,7 +120,9 @@ export const ConnectorToolUI: ToolCallMessagePartComponent = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirmationId: pendingId, action: "cancel" }),
       });
-    } catch {}
+    } catch {
+      setConfirming(false);
+    }
   }, [pendingId]);
 
   const contentFields = extractContent(args);

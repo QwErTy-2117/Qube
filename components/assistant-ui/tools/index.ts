@@ -15,3 +15,4 @@ export { BrowserNavigateToolUI, BrowserScreenshotToolUI, BrowserToolUI } from ".
 export { ScheduleTaskToolUI } from "./schedule-task-tool-ui";
 export { UpdateHeartbeatToolUI } from "./update-heartbeat-tool-ui";
 export { AppStateToolUI, ListAppsToolUI, ComputerToolUI } from "./computer-tool-ui";
+export { ConnectorToolUI } from "./connector-tool-ui";

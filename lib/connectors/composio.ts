@@ -4,6 +4,53 @@ import { z } from "zod";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
+const DESTRUCTIVE_KEYWORDS = [
+  "send", "create", "post", "delete", "remove",
+  "update", "edit", "modify", "upload", "transfer",
+];
+
+function isDestructiveTool(toolName: string): boolean {
+  const lower = toolName.toLowerCase();
+  return DESTRUCTIVE_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+const pendingConfirmations = new Map<string, {
+  resolve: () => void;
+  reject: (reason: string) => void;
+  toolName: string;
+  args: any;
+}>();
+
+export function getPendingConfirmations(threadId: string): Array<{
+  confirmationId: string;
+  toolName: string;
+  args: any;
+}> {
+  const result: Array<any> = [];
+  for (const [key, val] of pendingConfirmations) {
+    if (key.startsWith(threadId)) {
+      result.push({
+        confirmationId: key,
+        toolName: val.toolName,
+        args: val.args,
+      });
+    }
+  }
+  return result;
+}
+
+export function resolveConfirmation(confirmationId: string, action: "confirm" | "cancel"): boolean {
+  const pending = pendingConfirmations.get(confirmationId);
+  if (!pending) return false;
+  if (action === "confirm") {
+    pending.resolve();
+  } else {
+    pending.reject("User cancelled this action");
+  }
+  pendingConfirmations.delete(confirmationId);
+  return true;
+}
+
 export const DEFAULT_USER_ID = "qube-default-user";
 
 let composioClient: any = null;
@@ -223,6 +270,32 @@ export async function getConnectorTools(userId?: string) {
           },
         };
       } catch {}
+    }
+  }
+
+  for (const [name, tool] of Object.entries(tools)) {
+    if (isDestructiveTool(name) && tool.execute) {
+      const originalExecute = tool.execute.bind(tool);
+      tool.execute = async (args: any, extra?: any) => {
+        const threadId = extra?.threadId || args?.threadId || "default";
+        return new Promise<string>((resolve, reject) => {
+          const confirmationId = `composio_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          pendingConfirmations.set(confirmationId, {
+            resolve: () => {
+              originalExecute(args, extra).then(resolve).catch(reject);
+            },
+            reject,
+            toolName: name,
+            args,
+          });
+          setTimeout(() => {
+            if (pendingConfirmations.has(confirmationId)) {
+              pendingConfirmations.delete(confirmationId);
+              reject("Confirmation timed out");
+            }
+          }, 300_000);
+        });
+      };
     }
   }
 

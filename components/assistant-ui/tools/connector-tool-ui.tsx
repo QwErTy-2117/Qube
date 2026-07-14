@@ -37,21 +37,22 @@ function getMeta(toolName: string): { id: string; name: string } | null {
   return null;
 }
 
-function extractContent(args: any): Record<string, string> {
-  if (!args || typeof args !== "object") return {};
-  const fields: Record<string, string> = {};
-  if (args.to) fields["To"] = String(args.to);
-  if (args.subject) fields["Subject"] = String(args.subject);
-  if (args.channel) fields["Channel"] = String(args.channel);
-  if (args.message) fields["Message"] = String(args.message).slice(0, 500);
-  if (args.body) fields["Body"] = String(args.body).slice(0, 500);
-  if (args.content) fields["Content"] = String(args.content).slice(0, 500);
-  if (args.title) fields["Title"] = String(args.title);
-  if (args.description) fields["Description"] = String(args.description).slice(0, 500);
-  if (args.text) fields["Text"] = String(args.text).slice(0, 500);
-  if (args.comment) fields["Comment"] = String(args.comment).slice(0, 500);
-  if (args.name) fields["Name"] = String(args.name);
-  return fields;
+function describeAction(toolName: string, args: any): string {
+  const a = args || {};
+  if (toolName.toLowerCase().includes("send") || toolName.toLowerCase().includes("create")) {
+    const parts: string[] = [];
+    if (a.to) parts.push(`to ${a.to}`);
+    if (a.subject) parts.push(`"${String(a.subject).slice(0, 60)}"`);
+    if (a.channel) parts.push(`in ${a.channel}`);
+    if (a.text) parts.push(`"${String(a.text).slice(0, 80)}"`);
+    if (a.message) parts.push(`"${String(a.message).slice(0, 80)}"`);
+    return parts.length ? parts.join(" ") : "…";
+  }
+  if (a.title) return String(a.title).slice(0, 80);
+  if (a.name) return String(a.name).slice(0, 80);
+  if (a.text) return `"${String(a.text).slice(0, 80)}"`;
+  if (a.comment) return `"${String(a.comment).slice(0, 80)}"`;
+  return "";
 }
 
 export const ConnectorToolUI: ToolCallMessagePartComponent = ({
@@ -67,6 +68,8 @@ export const ConnectorToolUI: ToolCallMessagePartComponent = ({
   const needsConfirmation = status?.type === "requires-action";
   const icon = meta ? renderConnectorIcon(meta.id, 18) : null;
   const color = meta ? (COLORS[meta.id] || "#888") : "#888";
+  const label = meta?.name || toolName;
+  const action = describeAction(toolName, args);
 
   const [confirming, setConfirming] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -125,77 +128,36 @@ export const ConnectorToolUI: ToolCallMessagePartComponent = ({
     }
   }, [pendingId]);
 
-  const contentFields = extractContent(args);
-
   return (
-    <div className="rounded-xl border border-border/60 bg-background p-3 text-sm">
-      <div className="flex items-center gap-2.5 mb-2">
+    <div className="rounded-xl border border-border/60 bg-background p-2.5 text-sm">
+      <div className="flex items-center gap-2">
         {icon && (
-          <div className="size-5 flex items-center justify-center shrink-0" style={{ color }}>
+          <div className="size-6 flex items-center justify-center shrink-0 rounded-md bg-muted/40" style={{ color }}>
             {icon}
           </div>
         )}
-        <span className="text-xs font-medium text-foreground/80" style={{ color: meta ? color : undefined }}>
-          {meta?.name || toolName}
-        </span>
-        {isRunning && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground/40 shrink-0 ml-auto" />}
-        {isComplete && <CheckIcon className="size-3.5 text-emerald-500 shrink-0 ml-auto" />}
+        <div className="min-w-0 flex-1">
+          <span className="text-xs font-medium text-foreground/80" style={{ color: meta ? color : undefined }}>
+            {label}
+          </span>
+          {action && (
+            <span className="text-[11px] text-muted-foreground/60 ml-1.5 truncate">{action}</span>
+          )}
+        </div>
+        {isRunning && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground/40 shrink-0" />}
+        {isComplete && !needsConfirmation && <CheckIcon className="size-3.5 text-emerald-500 shrink-0" />}
       </div>
 
       {needsConfirmation && (
-        <div className="space-y-2">
-          <div className="rounded-lg bg-muted/30 p-2.5 space-y-1 font-mono text-[11px]">
-            {Object.entries(contentFields).length > 0 ? (
-              Object.entries(contentFields).map(([label, val]) => (
-                <div key={label} className="flex gap-2">
-                  <span className="text-muted-foreground shrink-0">{label}:</span>
-                  <span className="text-foreground/90 break-words">{val}</span>
-                </div>
-              ))
-            ) : (
-              <pre className="text-muted-foreground overflow-auto max-h-32">
-                {JSON.stringify(args, null, 2)}
-              </pre>
-            )}
-          </div>
-          <div className="flex items-center gap-2 justify-end">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 rounded-full px-3 text-xs"
-              onClick={handleCancel}
-              disabled={confirming}
-            >
-              <XIcon className="size-3 mr-1" />
-              Cancel
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 rounded-full px-3 text-xs"
-              style={{
-                borderColor: color === "currentColor" ? undefined : `${color}40`,
-                color: color === "currentColor" ? undefined : color,
-              }}
-              onClick={handleConfirm}
-              disabled={confirming}
-            >
-              <CheckIcon className="size-3 mr-1" />
-              Confirm
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {isRunning && !needsConfirmation && (
-        <p className="text-[11px] text-muted-foreground/60">Working...</p>
-      )}
-
-      {isComplete && result && (
-        <div className="text-[11px] text-muted-foreground/70">
-          {typeof result === "string"
-            ? result.slice(0, 200)
-            : JSON.stringify(result).slice(0, 200)}
+        <div className="flex items-center gap-1.5 mt-2 justify-end">
+          <Button variant="ghost" size="sm" className="h-6 rounded-full px-2.5 text-[11px]" onClick={handleCancel} disabled={confirming}>
+            <XIcon className="size-3 mr-1" /> Cancel
+          </Button>
+          <Button variant="outline" size="sm" className="h-6 rounded-full px-2.5 text-[11px]"
+            style={{ borderColor: color === "currentColor" ? undefined : `${color}40`, color: color === "currentColor" ? undefined : color }}
+            onClick={handleConfirm} disabled={confirming}>
+            <CheckIcon className="size-3 mr-1" /> Confirm
+          </Button>
         </div>
       )}
     </div>

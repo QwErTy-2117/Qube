@@ -29,7 +29,7 @@ import {
   ScheduleTaskToolUI,
   UpdateHeartbeatToolUI,
 } from "@/components/assistant-ui/tools";
-import { ConnectorToolUI } from "@/components/assistant-ui/tools";
+import { ConnectorToolUI, ConnectServiceToolUI } from "@/components/assistant-ui/tools";
 import { type ReactNode, useEffect } from "react";
 
 function ToolUIRegistrar() {
@@ -49,6 +49,7 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "schedule_task", render: ScheduleTaskToolUI });
   useAssistantToolUI({ toolName: "update_heartbeat", render: UpdateHeartbeatToolUI });
 
+  useAssistantToolUI({ toolName: "connect_service", render: ConnectServiceToolUI });
   useAssistantToolUI({ toolName: "composio_search_tools", render: ConnectorToolUI });
   useAssistantToolUI({ toolName: "composio_multi_execute_tool", render: ConnectorToolUI });
 

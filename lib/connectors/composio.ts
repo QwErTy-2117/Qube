@@ -4,6 +4,7 @@ import { z } from "zod";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
+// Keep in sync with components/examples/base.tsx
 const DESTRUCTIVE_KEYWORDS = [
   "send", "create", "post", "delete", "remove",
   "update", "edit", "modify", "upload", "transfer",

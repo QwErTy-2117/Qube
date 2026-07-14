@@ -101,6 +101,7 @@ import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from "@/components/shared/settings-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
 
+// Keep in sync with lib/connectors/composio.ts
 const DESTRUCTIVE_KEYWORDS = [
   "send", "create", "post", "delete", "remove",
   "update", "edit", "modify", "upload", "transfer",

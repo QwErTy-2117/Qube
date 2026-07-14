@@ -8,6 +8,15 @@ import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
+async function openUrl(url: string) {
+  try {
+    const { open } = await import("@tauri-apps/plugin-shell");
+    await open(url);
+  } catch {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
 const KNOWN_ICON_IDS = new Set([
   "linear","atlassian","trello","airtable","notion",
   "slack","github","google","hubspot","asana","dropbox",
@@ -85,15 +94,7 @@ export function ConnectorsTab() {
         return;
       }
       if (data.redirectUrl) {
-        const w = Math.min(600, screen.width);
-        const h = Math.min(700, screen.height);
-        const left = (screen.width - w) / 2;
-        const top = (screen.height - h) / 2;
-        window.open(
-          data.redirectUrl,
-          `connect-${connectorId}`,
-          `width=${w},height=${h},left=${left},top=${top},popup=1`,
-        );
+        openUrl(data.redirectUrl);
 
         const pollInterval = setInterval(async () => {
           try {
@@ -105,15 +106,14 @@ export function ConnectorsTab() {
             if (isConnected) {
               clearInterval(pollInterval);
               await fetchData();
-              setConnectingId((prev) => (prev === connectorId ? null : prev));
-              setStatusMsg("Connected!");
+              setConnectingId(null);
             }
           } catch {}
         }, 2000);
 
         setTimeout(() => {
           clearInterval(pollInterval);
-          setConnectingId((prev) => (prev === connectorId ? null : prev));
+          setConnectingId(null);
         }, 120_000);
       }
     } catch {

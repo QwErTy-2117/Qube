@@ -101,6 +101,11 @@ import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from "@/components/shared/settings-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
 
+const DESTRUCTIVE_KEYWORDS = [
+  "send", "create", "post", "delete", "remove",
+  "update", "edit", "modify", "upload", "transfer",
+];
+
 const Sidebar: FC = () => {
   return (
     <aside className="flex h-full w-12 flex-col overflow-hidden">
@@ -830,28 +835,34 @@ const TOOL_GROUP_TITLES: Record<string, string> = {
   read_memory: "Scratching the brain",
   ask_user: "Poking the human",
 
-  composio_search_tools: "Searching your apps",
-  composio_multi_execute_tool: "Using your connected apps",
+  gmail: "Fiddling with your inbox",
+  slack: "Slacking off",
+  linear: "Organizing chaos",
+  github: "Poking the repo",
+  googlecalendar: "Rearranging your life",
+  googledrive: "Digging through files",
+  notion: "Notion-ing around",
+  hubspot: "CRM-ing it up",
+  asana: "Asana-ing tasks",
+  trello: "Carding things",
+  airtable: "Databasing casually",
+  dropbox: "Dropping files",
+  jira: "Ticketing around",
+  composio: "Rooting around your apps",
 };
 
-const COMPOSIO_TOOL_PREFIXES = [
-  "linear", "jira", "trello", "airtable", "notion", "slack",
-  "github", "gmail", "googlecalendar", "googledrive",
-  "hubspot", "asana", "dropbox", "composio",
-];
 
-function composioToolPrefix(toolName: string): string | null {
-  const lower = toolName.toLowerCase();
-  for (const prefix of COMPOSIO_TOOL_PREFIXES) {
-    if (lower.startsWith(prefix)) return prefix;
-  }
-  return null;
-}
 
 function getToolLabel(part: ToolCallMessagePart): string {
   const label = (part.args as any)?.label;
   if (label) return label;
-  return TOOL_GROUP_TITLES[part.toolName] || part.toolName;
+  const title = TOOL_GROUP_TITLES[part.toolName];
+  if (title) return title;
+  const lower = part.toolName.toLowerCase();
+  for (const [prefix, title] of Object.entries(TOOL_GROUP_TITLES)) {
+    if (lower.startsWith(prefix)) return title;
+  }
+  return part.toolName;
 }
 
 function ToolGroupWithTitle({
@@ -998,12 +1009,11 @@ const AssistantMessage: FC = () => {
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
-                const isComposioTool = composioToolPrefix(part.toolName) !== null;
-                if (isComposioTool && !part.toolUI) {
-                  return <ToolFallback {...part} />;
-                }
+                const isDestructive = DESTRUCTIVE_KEYWORDS.some(kw =>
+                  part.toolName.toLowerCase().includes(kw)
+                );
                 return (
-                  <ToolGroupRoot variant="ghost" defaultOpen={false}>
+                  <ToolGroupRoot variant="ghost" defaultOpen={isDestructive}>
                     <ToolGroupTrigger
                       count={1}
                       active={part.status.type === "running"}

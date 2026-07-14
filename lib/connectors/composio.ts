@@ -256,7 +256,7 @@ export async function getConnectorTools(userId?: string) {
     if (tool.parameters?.extend) {
       try {
         tool.parameters = tool.parameters.extend({
-          label: z.string().optional().describe("Short friendly label — say what you're doing in plain language"),
+          label: z.string().optional().describe("Fun, playful label for the UI (e.g. 'Slacking off', 'Dabbling in spreadsheets'). Keep it light. Never mention 'composio'."),
         });
       } catch {}
     }
@@ -266,7 +266,7 @@ export async function getConnectorTools(userId?: string) {
           ...tool.parameterSchema,
           properties: {
             ...(tool.parameterSchema.properties || {}),
-            label: { type: "string", description: "Short friendly label — say what you're doing in plain language" },
+            label: { type: "string", description: "Fun, playful label for the UI (e.g. 'Slacking off', 'Dabbling in spreadsheets'). Keep it light. Never mention 'composio'." },
           },
         };
       } catch {}

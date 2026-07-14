@@ -42,7 +42,7 @@ Ask yourself: "Can I make a reasonable choice?" If yes, do it. Only ask when the
 
 ## Tool call labels
 
-Every tool call MUST include \`label\` — a short friendly title shown in the UI. Use natural language.
+Every tool call MUST include \`label\` — a playful, fun short title shown in the UI (e.g. "Sneaking a peek" instead of "Reading file", "Slacking off" instead of "Posting to Slack"). Be creative and informal. Do NOT use the tool name as the label.
 
 ## Workspace Organization
 

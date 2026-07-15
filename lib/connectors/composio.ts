@@ -124,12 +124,12 @@ export async function listConnectors(userId?: string): Promise<ConnectorDisplay[
   try {
     const client = getClient();
 
-    const connectorIds = Object.keys(COMPOSIO_TOOLKIT_MAP);
+    const allToolkitSlugs = Object.values(COMPOSIO_TOOLKIT_MAP).flat();
     const [authConfigs, ...connectorAccountsList] = await Promise.all([
       client.authConfigs.list({ limit: 100 }),
-      ...connectorIds.map(cid =>
+      ...allToolkitSlugs.map(slug =>
         userId
-          ? client.connectedAccounts.list({ userIds: [`${userId}-${cid}`], limit: 10 }).catch(() => ({ items: [] }))
+          ? client.connectedAccounts.list({ userIds: [`${userId}-${slug}`], limit: 10 }).catch(() => ({ items: [] }))
           : Promise.resolve({ items: [] })
       )
     ]);

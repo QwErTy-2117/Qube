@@ -2059,7 +2059,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                             className="rounded-full font-semibold h-8 px-4"
                             size="sm"
                             onClick={() => {
-                              const args = mcpFormArgs.trim() ? mcpFormArgs.trim().split(/\s+/) : [];
+                              const name = mcpFormName.trim();
+                              const command = mcpFormCommand.trim();
+                              const argsStr = mcpFormArgs.trim();
+                              if (!name || !command || !argsStr) return;
+                              const args = argsStr.split(/\s+/);
                               const env: Record<string, string> = {};
                               for (const line of mcpFormEnv.split("\n")) {
                                 const trimmed = line.trim();
@@ -2072,16 +2076,16 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                               if (mcpEditingId) {
                                 setMcpServers((prev) => prev.map((s) => s.id === mcpEditingId ? {
                                   ...s,
-                                  name: mcpFormName.trim(),
-                                  command: mcpFormCommand.trim(),
+                                  name,
+                                  command,
                                   args,
                                   env,
                                 } : s));
                               } else {
                                 setMcpServers((prev) => [...prev, {
                                   id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-                                  name: mcpFormName.trim(),
-                                  command: mcpFormCommand.trim(),
+                                  name,
+                                  command,
                                   args,
                                   env,
                                 }]);

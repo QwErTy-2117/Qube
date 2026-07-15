@@ -129,8 +129,16 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
             if (s.defaultModel) localStorage.setItem("qube-default-model", s.defaultModel);
             if (s.runOnStart !== undefined) localStorage.setItem("qube-run-on-start", String(s.runOnStart));
             if (s.keepAlive !== undefined) localStorage.setItem("qube-keep-alive", String(s.keepAlive));
+            if (s.runOnStart) {
+              fetch("/api/scheduler/tasks").catch(() => {});
+            }
           })
           .catch(() => {});
+      } else {
+        const runOnStart = localStorage.getItem("qube-run-on-start");
+        if (runOnStart === "true") {
+          fetch("/api/scheduler/tasks").catch(() => {});
+        }
       }
     }
   }, []);

@@ -180,7 +180,7 @@ Has tool results: ${hasToolResults}
 Delivered: ${hasDeliveryText}
 Tool errors: ${hasToolErrors ? "YES — the agent encountered tool failures" : "none"}
 ${computerNote}
-COMPLETE if agent answered OR explained why it cannot proceed. CONTINUE: <what's missing> otherwise.`;
+COMPLETE if agent wrote the answer. CONTINUE: <what's missing> otherwise.`;
 
   try {
     const result = await generateText({
@@ -190,6 +190,12 @@ COMPLETE if agent answered OR explained why it cannot proceed. CONTINUE: <what's
       prompt,
       temperature: 0,
       maxOutputTokens: 60,
+      // Disable reasoning for the verification agent
+      providerOptions: {
+        openai: {
+          reasoningEffort: "none",
+        },
+      },
     });
 
     const text = result.text.trim();
@@ -212,6 +218,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { messages, threadId, config, customSystemPrompt, temperature, userName, userAbout, instanceId } = body;
     const modelName = config?.modelName;
+    const reasoningEffort = config?.reasoningEffort;
     const currentThreadId = threadId || `thread_${Date.now()}`;
 
     const { getLastThreadId, setLastThreadId } = await loadSessionTracker();
@@ -285,6 +292,7 @@ export async function POST(req: Request) {
               messages: modelMessages,
               threadId: currentThreadId,
               modelName,
+              reasoningEffort,
               customSystemPrompt,
               temperature: temperature !== undefined ? Number(temperature) : undefined,
               userName,

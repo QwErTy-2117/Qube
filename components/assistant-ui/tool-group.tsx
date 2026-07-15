@@ -121,7 +121,7 @@ function ToolGroupTrigger({
         className="inline-flex items-baseline gap-1.5 font-normal"
       >
         {count > 1 && <NumberRoll value={count} />}
-        <span className={cn(active && "shimmer")}>{displayLabel}</span>
+        <span className={cn(active && "animate-pulse")}>{displayLabel}</span>
       </span>
       <ChevronDownIcon
         data-slot="tool-group-trigger-chevron"

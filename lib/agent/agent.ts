@@ -92,6 +92,7 @@ export type AgentConfig = {
   userName?: string;
   userAbout?: string;
   instanceId?: string;
+  reasoningEffort?: string;
 };
 
 export async function createAgent(config: AgentConfig) {
@@ -148,6 +149,19 @@ export async function createAgent(config: AgentConfig) {
     console.error("[agent] Failed to init Composio tools:", e);
   }
 
+  const provResult = providerStore.getProviderByModel(config.modelName || "");
+  const providerId = provResult?.provider.id;
+
+  const providerOptions: Record<string, any> = {};
+  const effort = config.reasoningEffort;
+  if (effort && effort !== "off") {
+    if (providerId === "openai") {
+      providerOptions.openai = { reasoningEffort: effort };
+    } else if (providerId === "mistral") {
+      providerOptions.mistral = { reasoningEffort: effort };
+    }
+  }
+
   const result = streamText({
     model: createModelClient(config.modelName || ""),
     system: systemPrompt,
@@ -158,6 +172,7 @@ export async function createAgent(config: AgentConfig) {
       return false;
     },
     temperature: config.temperature !== undefined ? config.temperature : 0.7,
+    ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
 
     tools: ({
       read_file: tool({

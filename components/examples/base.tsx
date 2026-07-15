@@ -96,7 +96,10 @@ import { motion } from "motion/react";
 import TextRotate from "@/components/fancy/text/text-rotate";
 import Image from "next/image";
 import { useState, useEffect, type FC, type ReactNode } from "react";
-import { ModelSelector } from "@/components/assistant-ui/model-selector";
+import {
+  ModelSelector,
+  ModelSelectorModelContext,
+} from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from "@/components/shared/settings-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
@@ -174,10 +177,8 @@ const ModelPicker: FC = () => {
                     id: m.id,
                     name: m.name,
                     icon: renderLobeIcon(iconName, 16),
-                    efforts: m.reasoning ? true : undefined,
-                    ...(m.reasoning !== undefined ? {
-                      reasoning: { supported: m.reasoning }
-                    } : {}),
+                    reasoning: { supported: m.reasoning === true },
+                    efforts: m.reasoning === true ? true : undefined,
                   });
                 }
               });
@@ -242,14 +243,24 @@ const ModelPicker: FC = () => {
   };
 
   return (
-    <ModelSelector
+    <ModelSelector.Root
       models={models}
       value={model}
       onValueChange={handleValueChange}
-      variant="ghost"
-      className="h-7 rounded-full text-sm"
-      arrowInverted={hasMessages}
-    />
+    >
+      <ModelSelectorModelContext />
+      <ModelSelector.Trigger
+        variant="ghost"
+        className="h-7 rounded-full text-sm"
+        arrowInverted={hasMessages}
+      >
+        <ModelSelector.Value showBrainIcon={false} showEffort={false} />
+      </ModelSelector.Trigger>
+      <ModelSelector.Content>
+        <ModelSelector.List />
+        <ModelSelector.Effort />
+      </ModelSelector.Content>
+    </ModelSelector.Root>
   );
 };
 
@@ -883,8 +894,11 @@ function ToolGroupWithTitle({
   const parts = indices
     .map((i) => message.content[i])
     .filter((p): p is ToolCallMessagePart => p?.type === "tool-call");
+  const reasoningParts = indices
+    .map((i) => message.content[i])
+    .filter((p): p is { type: "reasoning"; text: string } => p?.type === "reasoning");
   const labels = parts.map(getToolLabel);
-  const title = labels[labels.length - 1] || "Performing operations";
+  const title = labels[labels.length - 1] || reasoningParts.length > 0 ? "Thinking" : "Performing operations";
   return (
     <ToolGroupRoot variant="ghost">
       <ToolGroupTrigger
@@ -940,8 +954,8 @@ const AssistantMessage: FC = () => {
       >
         <MessagePrimitive.GroupedParts
           groupBy={groupPartByType({
-            reasoning: ["group-chainOfThought", "group-reasoning"],
-            "tool-call": ["group-chainOfThought", "group-tool"],
+            reasoning: ["group-tool", "group-chainOfThought"],
+            "tool-call": ["group-tool", "group-chainOfThought"],
             "standalone-tool-call": [],
           })}
         >
@@ -1011,8 +1025,24 @@ const AssistantMessage: FC = () => {
                   </>
                 );
               }
-              case "reasoning":
-                return <Reasoning {...part} />;
+              case "reasoning": {
+                // Render reasoning as a tool-group-like compressed component
+                const running = part.status?.type === "running";
+                return (
+                  <ToolGroupRoot variant="ghost" defaultOpen={running}>
+                    <ToolGroupTrigger
+                      count={1}
+                      active={running}
+                      label="Thinking"
+                    />
+                    <ToolGroupContent>
+                      <ReasoningContent aria-busy={running}>
+                        <ReasoningText>{part.text}</ReasoningText>
+                      </ReasoningContent>
+                    </ToolGroupContent>
+                  </ToolGroupRoot>
+                );
+              }
               case "tool-call":
                 const isDestructive = DESTRUCTIVE_KEYWORDS.some(kw =>
                   part.toolName.toLowerCase().includes(kw)

@@ -17,6 +17,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { BrainIcon, CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useAui } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
+import { AnimatePresence, motion } from "motion/react";
 import {
   Popover,
   PopoverContent,
@@ -324,6 +325,8 @@ export type ModelSelectorValueProps = {
   placeholder?: ReactNode;
   /** Show the active effort level next to the model name. */
   showEffort?: boolean;
+  /** Show the brain icon for reasoning-capable models. */
+  showBrainIcon?: boolean;
   className?: string;
 };
 
@@ -338,6 +341,7 @@ function ModelIcon({ children }: { children: ReactNode }) {
 function ModelSelectorValue({
   placeholder = "Select model",
   showEffort = true,
+  showBrainIcon = true,
   className,
 }: ModelSelectorValueProps) {
   const { selectedModel, efforts, effort } = useModelSelectorContext();
@@ -365,7 +369,7 @@ function ModelSelectorValue({
     >
       {selectedModel.icon && <ModelIcon>{selectedModel.icon}</ModelIcon>}
       <span className="truncate font-medium">{selectedModel.name}</span>
-      {selectedModel.reasoning?.supported && effort && effort !== "off" && (
+      {showBrainIcon && selectedModel.reasoning?.supported && effort && effort !== "off" && (
         <BrainIcon className="size-3.5 text-muted-foreground/50 shrink-0" />
       )}
       {effortName && (
@@ -520,7 +524,6 @@ function ModelSelectorItem({
       {...(model.disabled ? { disabled: true } : undefined)}
       onSelect={(selectedValue) => {
         setValue(model.id);
-        setOpen(false);
         onSelect?.(selectedValue);
       }}
       className={cn("relative gap-2 rounded-lg py-2 ps-3 pe-9 text-foreground", className)}
@@ -541,7 +544,17 @@ function ModelSelectorItem({
       )}
       {isSelected && (
         <span className="absolute end-3 flex size-4 items-center justify-center">
-          <CheckIcon className="size-4" />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key="check"
+              initial={{ scale: 2.5, rotate: -20, opacity: 0 }}
+              animate={{ scale: 1, rotate: 0, opacity: 1 }}
+              exit={{ scale: 0, rotate: 20, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+            >
+              <CheckIcon className="size-4" />
+            </motion.div>
+          </AnimatePresence>
         </span>
       )}
     </CommandItem>
@@ -578,17 +591,27 @@ function ModelSelectorEffort({
       {...props}
     >
       <span className="text-muted-foreground text-xs">{label}</span>
-      <div
+      <motion.div
         role="group"
         aria-label={typeof label === "string" ? label : "Reasoning effort"}
         className="flex items-center gap-0.5"
+        layout
+        transition={{ type: "spring", stiffness: 300, damping: 25 }}
       >
+        <AnimatePresence mode="popLayout">
         {efforts.map((option) => {
           const isActive = option.id === effort;
           const isDisabled = effort === "off";
           return (
-            <button
+            <motion.div
               key={option.id}
+              layout
+              initial={{ opacity: 0, scale: 0.8, x: -8 }}
+              animate={{ opacity: 1, scale: 1, x: 0 }}
+              exit={{ opacity: 0, scale: 0.8, x: 8 }}
+              transition={{ duration: 0.15 }}
+            >
+            <button
               type="button"
               aria-pressed={isActive}
               data-state={isActive ? "on" : "off"}
@@ -604,9 +627,11 @@ function ModelSelectorEffort({
             >
               {option.name}
             </button>
+            </motion.div>
           );
         })}
-      </div>
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 }
@@ -621,8 +646,11 @@ export type ModelSelectorProps = Omit<ModelSelectorRootProps, "children"> &
     arrowInverted?: boolean;
   };
 
-/** Registers the selection with assistant-ui's ModelContext system. The
- * context's effort is already resolved against the selected model. */
+/**
+ * Registers the selection with assistant-ui's ModelContext system.
+ * Must be rendered inside ModelSelector.Root.
+ * The context's effort is already resolved against the selected model.
+ */
 function ModelSelectorModelContext() {
   const { value, effort } = useModelSelectorContext();
   const api = useAui();
@@ -715,4 +743,5 @@ export {
   ModelSelectorSeparator,
   ModelSelectorItem,
   ModelSelectorEffort,
+  ModelSelectorModelContext,
 };

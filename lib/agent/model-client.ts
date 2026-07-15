@@ -1,9 +1,10 @@
 import { createOpenAI } from "@ai-sdk/openai";
+import { createMistral } from "@ai-sdk/mistral";
 import { providerStore } from "./provider-store";
 
-type OpenAIChatModel = ReturnType<ReturnType<typeof createOpenAI>["chat"]>;
+type ChatModel = ReturnType<ReturnType<typeof createOpenAI>["chat"]>;
 
-export function createModelClient(qualifiedModelId?: string | null): OpenAIChatModel {
+export function createModelClient(qualifiedModelId?: string | null): ChatModel {
   let modelIdToUse = qualifiedModelId;
   if (!modelIdToUse || modelIdToUse === "undefined" || modelIdToUse === "null") {
     modelIdToUse = providerStore.getDefaultModelId() || "";
@@ -26,6 +27,15 @@ export function createModelClient(qualifiedModelId?: string | null): OpenAIChatM
     );
   }
   const { provider, modelId } = result;
+
+  if (provider.id === "mistral") {
+    const client = createMistral({
+      apiKey: provider.apiKey || "",
+      baseURL: provider.baseURL,
+    });
+    return client.chat(modelId);
+  }
+
   const client = createOpenAI({
     apiKey: provider.apiKey || "",
     baseURL: provider.baseURL,

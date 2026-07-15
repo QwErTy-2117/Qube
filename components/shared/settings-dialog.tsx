@@ -2058,11 +2058,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                           <Button
                             className="rounded-full font-semibold h-8 px-4"
                             size="sm"
+                            disabled={!mcpFormName.trim() || !mcpFormCommand.trim() || !mcpFormArgs.trim()}
                             onClick={() => {
                               const name = mcpFormName.trim();
                               const command = mcpFormCommand.trim();
                               const argsStr = mcpFormArgs.trim();
-                              if (!name || !command || !argsStr) return;
                               const args = argsStr.split(/\s+/);
                               const env: Record<string, string> = {};
                               for (const line of mcpFormEnv.split("\n")) {

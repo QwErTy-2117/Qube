@@ -4,15 +4,8 @@ mod tray;
 
 use commands::AppState;
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::Duration;
 use tauri::Manager;
-
-mod commands;
-mod sidecar;
-mod tray;
-
-use commands::AppState;
 
 fn find_dist_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     if cfg!(debug_assertions) {

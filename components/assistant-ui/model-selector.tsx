@@ -14,7 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { BrainIcon, CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useAui } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
 import {
@@ -57,12 +57,25 @@ export type ModelOption = {
    * configurable reasoning.
    */
   efforts?: boolean | readonly ModelSelectorEffortOption[];
+  /**
+   * Whether the model supports reasoning/thinking. When false, the effort
+   * selector shows a single "Off" option (disabled). When true or omitted,
+   * the effort defaults are used.
+   */
+  reasoning?: {
+    supported: boolean;
+    effortLevels?: string[];
+  };
 };
 
 function getModelEfforts(
   model: ModelOption | undefined,
 ): readonly ModelSelectorEffortOption[] | undefined {
-  if (!model?.efforts) return undefined;
+  if (!model) return undefined;
+  if (model.reasoning?.supported === false) {
+    return [{ id: "off", name: "Off" }];
+  }
+  if (!model.efforts) return undefined;
   return model.efforts === true ? DEFAULT_EFFORT_OPTIONS : model.efforts;
 }
 
@@ -207,6 +220,15 @@ function ModelSelectorRoot({
   const selectedModel = models.find((m) => m.id === value);
   const efforts = getModelEfforts(selectedModel);
   const activeEffort = resolveEffort(efforts, effort);
+
+  useEffect(() => {
+    if (efforts?.length === 1 && efforts[0].id === "off") {
+      if (effort !== "off") {
+        setEffort("off");
+      }
+    }
+  }, [efforts, effort, setEffort]);
+
   const contextValue = useMemo(
     () => ({
       models,
@@ -343,6 +365,9 @@ function ModelSelectorValue({
     >
       {selectedModel.icon && <ModelIcon>{selectedModel.icon}</ModelIcon>}
       <span className="truncate font-medium">{selectedModel.name}</span>
+      {selectedModel.reasoning?.supported && effort && effort !== "off" && (
+        <BrainIcon className="size-3.5 text-muted-foreground/50 shrink-0" />
+      )}
       {effortName && (
         <span className="text-muted-foreground truncate">{effortName}</span>
       )}
@@ -560,18 +585,21 @@ function ModelSelectorEffort({
       >
         {efforts.map((option) => {
           const isActive = option.id === effort;
+          const isDisabled = effort === "off";
           return (
             <button
               key={option.id}
               type="button"
               aria-pressed={isActive}
               data-state={isActive ? "on" : "off"}
-              onClick={() => setEffort(option.id)}
+              disabled={isDisabled}
+              onClick={() => (isDisabled ? undefined : setEffort(option.id))}
               className={cn(
                 "focus-visible:ring-ring/50 rounded-md px-2 py-1 text-xs transition-colors outline-none focus-visible:ring-2",
                 isActive
                   ? "bg-accent text-accent-foreground font-medium"
                   : "text-muted-foreground hover:text-foreground",
+                isDisabled && "opacity-50 cursor-not-allowed",
               )}
             >
               {option.name}

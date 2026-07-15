@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClient, DEFAULT_USER_ID } from "@/lib/connectors/composio";
+import { getClient, DEFAULT_USER_ID, COMPOSIO_TOOLKIT_MAP } from "@/lib/connectors/composio";
 
 export const dynamic = "force-dynamic";
 
@@ -13,21 +13,20 @@ export async function POST(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const instanceId = searchParams.get("instanceId") || DEFAULT_USER_ID;
     const client = getClient();
-    const connectionUserId = `${instanceId}-${connectorId}`;
+
+    const toolkits = COMPOSIO_TOOLKIT_MAP[connectorId] || [connectorId];
+    const userIds = toolkits.map((slug: string) => `${instanceId}-${slug}`);
+
     const accounts = await client.connectedAccounts.list({
-      userIds: [connectionUserId],
+      userIds,
       limit: 100,
     });
 
-    const toDelete = (accounts.items || []).filter((a: any) =>
-      a.toolkit?.slug === connectorId || a.app?.toLowerCase() === connectorId
-    );
-
-    await Promise.all(toDelete.map((a: any) =>
+    await Promise.all((accounts.items || []).map((a: any) =>
       client.connectedAccounts.delete(a.id)
     ));
 
-    return NextResponse.json({ disconnected: connectorId, count: toDelete.length });
+    return NextResponse.json({ disconnected: connectorId, count: (accounts.items || []).length });
   } catch (e) {
     console.error("[connectors/disconnect] Error:", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });

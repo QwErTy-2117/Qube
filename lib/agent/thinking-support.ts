@@ -6,9 +6,7 @@ export function detectModelThinkingSupport(modelId: string): boolean {
     lower.startsWith("o3") ||
     lower.startsWith("o4") ||
     lower.includes("gpt-5") ||
-    lower.includes("gpt-5.5") ||
-    lower.includes("gpt-5.6") ||
-    // Anthropic extended thinking models
+    // Anthropic: Claude Sonnet 4.x/Opus 4.x, Fable 5, Mythos 5
     (lower.includes("claude") && /sonnet.*4\.\d|opus.*4\.\d|fable|mythos/.test(lower)) ||
     lower.includes("claude-4") ||
     lower.includes("claude-5") ||

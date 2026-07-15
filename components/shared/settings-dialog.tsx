@@ -145,6 +145,7 @@ export interface ProviderConfig {
     enabled: boolean;
     icon?: string;
     imageInput?: boolean;
+    reasoning?: boolean;
   }[];
 }
 

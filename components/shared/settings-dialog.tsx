@@ -330,10 +330,12 @@ export function detectModelIcon(modelId: string, providerId: string): string {
 }
 
 import { detectModelImageSupport } from "@/lib/agent/vision-support";
+import { detectModelThinkingSupport } from "@/lib/agent/thinking-support";
 
 interface FetchedModel {
   id: string;
   imageInput: boolean;
+  reasoning: boolean;
 }
 
 async function fetchProviderModels(baseURL: string, apiKey: string): Promise<FetchedModel[]> {
@@ -372,7 +374,14 @@ async function fetchProviderModels(baseURL: string, apiKey: string): Promise<Fet
           m.capabilities?.vision === true ||
           m.capabilities?.image_input === true ||
           detectModelImageSupport(m.id);
-        models.push({ id: m.id, imageInput });
+        const reasoning =
+          m.capabilities?.reasoning?.supported === true ||
+          m.capabilities?.reasoning === true ||
+          m.reasoning?.supported === true ||
+          m.reasoning === true ||
+          m.architecture?.reasoning === true ||
+          detectModelThinkingSupport(m.id);
+        models.push({ id: m.id, imageInput, reasoning });
       }
     }
     return models;
@@ -663,6 +672,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         enabled: false,
         icon: autoDetectIcons.includes(provId) ? detectModelIcon(model.id, provId) : providerIcon,
         imageInput: model.imageInput,
+        reasoning: model.reasoning,
       }));
 
       await new Promise((r) => setTimeout(r, 400));
@@ -755,6 +765,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       enabled: true,
       icon: autoDetectIcons.includes(provId) ? detectModelIcon(customModelCode.trim(), provId) : providerIcon,
       imageInput: detectModelImageSupport(customModelCode.trim()),
+      reasoning: detectModelThinkingSupport(customModelCode.trim()),
     };
 
     setManageModels((prev) => [...prev, newModel]);
@@ -782,6 +793,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           enabled: existing ? existing.enabled : false,
           icon: autoDetectIcons.includes(provId) ? detectModelIcon(model.id, provId) : providerIcon,
           imageInput: model.imageInput,
+          reasoning: model.reasoning,
         };
       });
       setManageModels(qualified);
@@ -1777,6 +1789,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         </button>
                       )}
                       {m.imageInput ? <EyeIcon className="size-3.5 text-muted-foreground/50 shrink-0" /> : null}
+                      {m.reasoning ? <BrainIcon className="size-3.5 text-muted-foreground/50 shrink-0" /> : null}
                       <SwitchToggle
                         checked={m.enabled}
                         onCheckedChange={(checked) => handleToggleModel(m.id, checked)}

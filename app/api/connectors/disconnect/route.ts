@@ -15,10 +15,9 @@ export async function POST(req: NextRequest) {
     const client = getClient();
 
     const toolkits = COMPOSIO_TOOLKIT_MAP[connectorId] || [connectorId];
-    const userIds = toolkits.map((slug: string) => `${instanceId}-${slug}`);
 
     const accounts = await client.connectedAccounts.list({
-      userIds,
+      userIds: [instanceId, ...toolkits.map((s: string) => `${instanceId}-${s}`)],
       limit: 100,
     });
 

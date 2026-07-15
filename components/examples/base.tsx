@@ -174,6 +174,10 @@ const ModelPicker: FC = () => {
                     id: m.id,
                     name: m.name,
                     icon: renderLobeIcon(iconName, 16),
+                    efforts: m.reasoning ? true : undefined,
+                    ...(m.reasoning !== undefined ? {
+                      reasoning: { supported: m.reasoning }
+                    } : {}),
                   });
                 }
               });

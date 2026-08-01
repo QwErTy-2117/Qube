@@ -40,28 +40,36 @@ fn is_server_running(port: u16) -> bool {
     .is_ok()
 }
 
-fn read_keep_alive(data_dir: &std::path::Path) -> bool {
+use tauri_plugin_autostart::MacosLauncher;
+
+fn read_app_settings(data_dir: &std::path::Path) -> (bool, bool) {
     let settings_path = data_dir.join(".memory").join("app-settings.json");
     if let Ok(raw) = std::fs::read_to_string(&settings_path) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
-            return json.get("keepAlive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let keep_alive = json.get("keepAlive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let run_on_start = json.get("runOnStart").and_then(|v| v.as_bool()).unwrap_or(false);
+            return (keep_alive, run_on_start);
         }
     }
-    false
+    (false, false)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::AppleScript, Some(vec!["--autostart"])))
         .manage(AppState::new())
         .setup(|app| {
             tray::build_tray(app.handle())?;
-            if let Some(dist_dir) = find_dist_dir(app.handle()) {
-                let data_dir = app.path().app_data_dir().unwrap_or_else(|_| {
-                    std::env::temp_dir().join("qube-data")
-                });
 
+            let data_dir = app.path().app_data_dir().unwrap_or_else(|_| {
+                std::env::temp_dir().join("qube-data")
+            });
+            let (_keep_alive, run_on_start) = read_app_settings(&data_dir);
+            commands::set_autostart(app.handle().clone(), run_on_start).ok();
+
+            if let Some(dist_dir) = find_dist_dir(app.handle()) {
                 // Check if a previous sidecar is already running (keepAlive)
                 let preferred_port: u16 = 3010;
                 if is_server_running(preferred_port) {
@@ -101,16 +109,18 @@ pub fn run() {
                 let data_dir = app_handle.path().app_data_dir().unwrap_or_else(|_| {
                     std::env::temp_dir().join("qube-data")
                 });
-                let keep_alive = read_keep_alive(&data_dir);
+                let (keep_alive, _) = read_app_settings(&data_dir);
                 if !keep_alive {
                     let state = app_handle.state::<AppState>();
                     state.kill_child();
+                    app_handle.exit(0);
+                } else {
+                    let _ = window.hide();
+                    api.prevent_close();
                 }
-                let _ = window.hide();
-                api.prevent_close();
             }
         })
-        .invoke_handler(tauri::generate_handler![commands::get_port])
+        .invoke_handler(tauri::generate_handler![commands::get_port, commands::set_autostart])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
@@ -121,3 +131,4 @@ pub fn run() {
         }
     });
 }
+

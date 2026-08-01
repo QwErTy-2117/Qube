@@ -131,6 +131,7 @@ export async function listConnectors(userId?: string): Promise<ConnectorDisplay[
 
     const connectedSlugs = new Set<string>();
     for (const acct of connectedAccounts.items || []) {
+      if (acct.status !== "ACTIVE") continue;
       const slug = acct.toolkit?.slug || acct.app?.toLowerCase();
       if (slug) connectedSlugs.add(slug);
     }
@@ -151,6 +152,11 @@ export async function listConnectors(userId?: string): Promise<ConnectorDisplay[
 
     const result: ConnectorDisplay[] = [];
 
+    const isConnected = (slug: string): boolean => {
+      const toolkits = COMPOSIO_TOOLKIT_MAP[slug] || [slug];
+      return toolkits.some((t) => connectedSlugs.has(t));
+    };
+
     for (const slug of toolkitSlugs) {
       const tk = tkMap.get(slug);
       const name = tk?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1);
@@ -167,7 +173,7 @@ export async function listConnectors(userId?: string): Promise<ConnectorDisplay[
           icon: slug,
           hasIcon: true,
           appUrl: meta?.appUrl ?? "",
-          connected: connectedSlugs.has(slug),
+          connected: isConnected(slug),
         });
       } else {
         result.push({
@@ -178,7 +184,7 @@ export async function listConnectors(userId?: string): Promise<ConnectorDisplay[
           icon: logo || "default",
           hasIcon: !!logo,
           appUrl: meta?.appUrl ?? "",
-          connected: connectedSlugs.has(slug),
+          connected: isConnected(slug),
         });
       }
     }

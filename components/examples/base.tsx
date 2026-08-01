@@ -102,6 +102,7 @@ import {
 } from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from "@/components/shared/settings-dialog";
+import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
 
 // Keep in sync with lib/connectors/composio.ts
@@ -113,6 +114,7 @@ const DESTRUCTIVE_KEYWORDS = [
 const Sidebar: FC = () => {
   return (
     <aside className="flex h-full w-12 flex-col overflow-hidden">
+      <OnboardingModal />
       <div className="mt-2 flex h-12 shrink-0 items-center px-3.5">
         <Image
           src={logoPng}
@@ -153,6 +155,7 @@ const Sidebar: FC = () => {
     </aside>
   );
 };
+
 
 import type { ModelOption } from "@/components/assistant-ui/model-selector";
 

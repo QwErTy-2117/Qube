@@ -31,7 +31,7 @@ import {
   RefreshCwIcon,
   PlusIcon,
   PencilIcon,
-  Sparkles,
+  SparklesIcon,
   LayoutGridIcon,
 } from "lucide-react";
 import {
@@ -46,7 +46,9 @@ import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "motion/react";
 import { SchedulingTab } from "./scheduling-tab";
 import { ConnectorsTab } from "./connectors-tab";
+import { syncTauriAutostart } from "@/lib/tauri-utils";
 import { Switch } from "radix-ui";
+
 
 import OpenAI from "@lobehub/icons/es/OpenAI";
 import Anthropic from "@lobehub/icons/es/Anthropic";
@@ -291,7 +293,7 @@ const PROVIDER_ID_TO_ICON: Record<string, string> = {
 
 export function renderLobeIcon(iconName: string, size: number = 24, className?: string) {
   const IconComp = LOBE_ICONS_MAP[iconName];
-  if (!IconComp) return <Sparkles className={cn("size-6 text-muted-foreground/60", className)} />;
+  if (!IconComp) return <SparklesIcon className={cn("size-6 text-muted-foreground/60", className)} />;
   if (IconComp.Color) {
     return <IconComp.Color size={size} className={className} />;
   }
@@ -958,6 +960,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       localStorage.setItem("qube-user-about", userAbout);
       localStorage.setItem("qube-run-on-start", String(runOnStart));
       localStorage.setItem("qube-keep-alive", String(keepAlive));
+      syncTauriAutostart(runOnStart);
       saveSettingsToServer();
       fetch("/api/providers/sync", {
         method: "POST",
@@ -978,11 +981,13 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       } else if (tabValue === "advanced") {
         localStorage.setItem("qube-run-on-start", String(runOnStart));
         localStorage.setItem("qube-keep-alive", String(keepAlive));
+        syncTauriAutostart(runOnStart);
       }
       saveSettingsToServer();
     }
     setTabValue(next);
   };
+
 
   // Auto-save custom instructions when its popup closes
   const handleInstructionsOpenChange = (v: boolean) => {
@@ -1110,8 +1115,21 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     </div>
   </div>
 
-            {/* Save button */}
-            <div className="pt-4 border-t border-border/60 mt-4 flex justify-end shrink-0">
+            {/* Save button & Replay Onboarding */}
+            <div className="pt-4 border-t border-border/60 mt-4 flex items-center justify-between shrink-0">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setOpen(false);
+                  setTimeout(() => {
+                    window.dispatchEvent(new Event("qube-open-onboarding"));
+                  }, 150);
+                }}
+                className="rounded-full text-xs font-semibold h-9 px-4 border-border/60 hover:bg-muted/40"
+              >
+                <SparklesIcon className="size-3.5 mr-1.5 text-primary" />
+                Replay Onboarding Flow
+              </Button>
               <Button
                 onClick={handleSaveUserPreferences}
                 className={cn("font-semibold px-5 rounded-full transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
@@ -1122,6 +1140,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 }
               </Button>
             </div>
+
             </motion.div>
           </TabsContent>
 
@@ -1529,6 +1548,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                       onClick={() => {
                         localStorage.setItem("qube-run-on-start", String(runOnStart));
                         localStorage.setItem("qube-keep-alive", String(keepAlive));
+                        syncTauriAutostart(runOnStart);
                         saveSettingsToServer();
                         setSavedAdvanced(true);
                         setTimeout(() => setSavedAdvanced(false), 2000);
@@ -1577,7 +1597,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={addProviderOpen} onOpenChange={setAddProviderOpen}>
+      <Dialog open={addProviderOpen} onOpenChange={(v) => {
+        if (!v && configureProvider !== null) return;
+        setAddProviderOpen(v);
+      }}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
             <DialogTitle>Add Provider</DialogTitle>

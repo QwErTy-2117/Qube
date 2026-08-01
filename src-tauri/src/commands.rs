@@ -41,3 +41,17 @@ impl AppState {
 pub fn get_port(state: State<AppState>) -> Option<u16> {
     state.sidecar_port.lock().ok().and_then(|p| *p)
 }
+
+#[tauri::command]
+pub fn set_autostart(app: tauri::AppHandle, enable: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let autostart = app.autolaunch();
+    if enable {
+        let _ = autostart.enable();
+    } else {
+        let _ = autostart.disable();
+    }
+    Ok(())
+}
+
+

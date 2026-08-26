@@ -376,7 +376,7 @@ const Thread: FC = () => {
             </ThreadPrimitive.Messages>
           </div>
           <ThreadPrimitive.ViewportFooter
-            className="aui-thread-viewport-footer bg-background mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible sticky bottom-0 mt-auto rounded-t-(--composer-radius) pb-4 md:pb-6"
+            className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
           >
             <ThreadScrollToBottom />
             <Composer />

@@ -147,7 +147,7 @@ export function ChatGPTOnboardingSection({
       <motion.div
         layout
         transition={{ type: "spring", stiffness: 260, damping: 20 }}
-        className="rounded-2xl border border-border bg-muted/5 min-h-[56px] p-3 w-full flex items-center justify-center mx-auto"
+        className="rounded-[30px] border border-border bg-muted/5 min-h-[56px] p-3 w-full flex items-center justify-center mx-auto"
       >
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2Icon className="size-4 animate-spin" /> Checking ChatGPT session…
@@ -163,7 +163,7 @@ export function ChatGPTOnboardingSection({
         <motion.div
           layout
           transition={{ type: "spring", stiffness: 260, damping: 20 }}
-          className="rounded-2xl border border-border/60 bg-background/60 px-3 py-2 w-fit mx-auto flex items-center justify-center overflow-hidden"
+          className="rounded-[30px] border border-border/60 bg-background/60 px-3 py-2 w-fit mx-auto flex items-center justify-center overflow-hidden"
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -203,7 +203,7 @@ export function ChatGPTOnboardingSection({
       <motion.div
         layout
         transition={{ type: "spring", stiffness: 260, damping: 20 }}
-        className="rounded-2xl border border-border bg-muted/5 min-h-[56px] p-3 w-full flex items-center justify-center overflow-hidden mx-auto"
+        className="rounded-[30px] border border-border bg-muted/5 min-h-[56px] p-3 w-full flex items-center justify-center overflow-hidden mx-auto"
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.div

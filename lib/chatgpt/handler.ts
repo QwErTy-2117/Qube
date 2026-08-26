@@ -101,6 +101,14 @@ export const chatGptAuth = createChatGPTHandler({
   secret,
   // @ts-ignore - allow FileStore to satisfy KeyValueStore
   sessionStore: new FileStore(),
+  allowedOrigins: [
+    "http://localhost:3010",
+    "http://127.0.0.1:3010",
+    "http://localhost:3000",
+    "tauri://localhost",
+    "https://tauri.localhost",
+    "http://tauri.localhost",
+  ],
   responsesProxy: {
     // Allow all models returned by the account; handler will validate via upstream.
     // You can set a guardrail like: allowedModels: ["gpt-5.5", "gpt-5", "gpt-4o", "o3", "o4-mini"]
@@ -109,6 +117,39 @@ export const chatGptAuth = createChatGPTHandler({
   // Default model when request omits one; per-docs defaults to gpt-5.5
   defaultModel: "gpt-5.5",
 });
+
+/**
+ * Tauri prod can send Origin: tauri://localhost or Origin: null (opaque)
+ * which the handler's strict CSRF check rejects with 403. Normal http origin
+ * already passes via host equality, but tauri/null origins need sanitizing.
+ */
+function sanitizeOrigin(req: Request): Request {
+  const origin = req.headers.get("origin");
+  if (!origin) return req;
+  const needsStrip =
+    origin === "null" ||
+    origin === "null," ||
+    origin.startsWith("tauri://") ||
+    origin.startsWith("https://tauri.") ||
+    origin.startsWith("http://tauri.") ||
+    origin.startsWith("capacitor://") ||
+    origin.startsWith("ionic://");
+  if (!needsStrip) return req;
+  const headers = new Headers(req.headers);
+  headers.delete("origin");
+  // Clone request with cleaned headers; preserve method/body/signal
+  try {
+    return new Request(req, { headers } as any);
+  } catch {
+    // Fallback: reconstruct manually
+    return new Request(req.url, {
+      method: req.method,
+      headers,
+      // @ts-ignore duplex
+      duplex: "half",
+    } as any);
+  }
+}
 
 // Codex /responses requires stream:true — force it for every request so both
 // streamText and generateText work. The AI SDK's generateText sends stream:false.
@@ -139,7 +180,8 @@ async function forceStreamTrue(req: Request): Promise<Request> {
 }
 
 (chatGptAuth as any).handler = async (req: Request) => {
-  const fixed = await forceStreamTrue(req);
+  const sanitized = sanitizeOrigin(req);
+  const fixed = await forceStreamTrue(sanitized);
   return _origHandler(fixed);
 };
 (chatGptAuth as any).fetch = (chatGptAuth as any).handler;

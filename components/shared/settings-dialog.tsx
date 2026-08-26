@@ -54,7 +54,7 @@ import { ChatGPTPreferencesCard } from "@/components/chatgpt/chatgpt-preferences
 import { useLoginWithChatGPT } from "@opencoredev/loginwithchatgpt-react";
 import { TermsPrivacyContent } from "./terms-content";
 import { useUpdaterStore } from "@/lib/updater-store";
-import { checkForUpdates, downloadAndInstall } from "@/lib/updater";
+import { checkForUpdates } from "@/lib/updater";
 
 
 import OpenAI from "@lobehub/icons/es/OpenAI";
@@ -554,9 +554,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [termsOpen, setTermsOpen] = useState<boolean>(false);
 
   // Updater state (web UI, wired to Tauri via plugin)
-  const [updateConfirmOpen, setUpdateConfirmOpen] = useState<boolean>(false);
   const [updateChecking, setUpdateChecking] = useState<boolean>(false);
-  const [updateInstalling, setUpdateInstalling] = useState<boolean>(false);
   const [updateNoUpdate, setUpdateNoUpdate] = useState<boolean>(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const updaterStore = useUpdaterStore();
@@ -979,7 +977,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       if (elapsed < minSpin) await new Promise((r) => setTimeout(r, minSpin - elapsed));
       if (res.available) {
         updaterStore.setAvailable(res.info);
-        setUpdateConfirmOpen(true);
+        // Only the top toast (UpdateToast) is shown; the centered install dialog was removed.
       } else {
         // Show white "up to date" popup (same shape as update, auto dismiss after 2s)
         updaterStore.setShowUpToDate(true);
@@ -990,20 +988,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       setUpdateError(e instanceof Error ? e.message : String(e));
     } finally {
       setUpdateChecking(false);
-    }
-  };
-
-  const handleConfirmUpdate = async () => {
-    setUpdateInstalling(true);
-    setUpdateError(null);
-    try {
-      await downloadAndInstall();
-      setUpdateConfirmOpen(false);
-      // In Tauri, relaunch happens automatically; in web, new tab opened
-    } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setUpdateInstalling(false);
     }
   };
 
@@ -1232,8 +1216,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       || addCustomModelOpen
       || mcpManagerOpen
       || mcpDeleteConfirm !== null
-      || chatGptCodeDialogOpen
-      || updateConfirmOpen;
+      || chatGptCodeDialogOpen;
 
     if (!next && childDialogOpen) return;
 
@@ -2065,7 +2048,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 <div className="flex items-center justify-center py-1">
                   <span className="text-[11px] font-medium text-muted-foreground/60 tracking-wide">or</span>
                 </div>
-                <div className="rounded-2xl border border-border bg-muted/5 min-h-[56px] p-3 w-full flex items-center justify-center overflow-hidden">
+                <div className="rounded-[30px] border border-border bg-muted/5 min-h-[56px] p-3 w-full flex items-center justify-center overflow-hidden">
                   <div className="flex items-center justify-between gap-4 w-full">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="size-9 flex items-center justify-center shrink-0">
@@ -2415,43 +2398,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   >
                     <Trash2Icon className="size-3.5" />
                     Hard Reset
-                  </Button>
-                </div>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={updateConfirmOpen} onOpenChange={setUpdateConfirmOpen}>
-            <DialogContent className="sm:max-w-sm rounded-3xl">
-              <DialogHeader>
-                <DialogTitle>Install update</DialogTitle>
-                <DialogDescription>
-                  {updaterStore.info ? (
-                    <>Version <span className="font-semibold text-foreground">v{updaterStore.info.version}</span> is available (you have v{updaterStore.info.currentVersion || appVersion}). Your data in the workspace and settings will be preserved — only the app will be updated and restarted. </>
-                  ) : (
-                    <>An update is available. Your data will be preserved — only the app will be updated and restarted.</>
-                  )}
-                </DialogDescription>
-              </DialogHeader>
-              {updateError && (
-                <div className="text-xs text-red-500 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
-                  {updateError}
-                </div>
-              )}
-              <DialogFooter>
-                <div className="flex items-center gap-2 ml-auto">
-                  <Button type="button" variant="outline" size="sm" onClick={() => { setUpdateConfirmOpen(false); setUpdateError(null); }} className="rounded-full h-8 px-4" disabled={updateInstalling}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handleConfirmUpdate}
-                    disabled={updateInstalling}
-                    className="rounded-full h-8 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1.5"
-                  >
-                    {updateInstalling ? <Loader2Icon className="size-3.5 animate-spin" /> : <ArrowUpCircleIcon className="size-3.5" />}
-                    {updateInstalling ? "Updating…" : "Update"}
                   </Button>
                 </div>
               </DialogFooter>

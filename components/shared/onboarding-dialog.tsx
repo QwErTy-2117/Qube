@@ -648,7 +648,7 @@ export function OnboardingModal() {
                       <motion.div
                         layout
                         transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                        className={`rounded-2xl border flex items-center justify-center overflow-hidden transition-colors duration-300 mx-auto mt-6 ${
+                        className={`rounded-[30px] border flex items-center justify-center overflow-hidden transition-colors duration-300 mx-auto mt-6 ${
                           badgeVisible
                             ? "border-border/60 bg-background/60 px-3 py-2 w-fit"
                             : "border-border bg-muted/5 min-h-[56px] p-3 w-full"

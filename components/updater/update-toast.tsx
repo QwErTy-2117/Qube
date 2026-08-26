@@ -82,9 +82,7 @@ export function UpdateToast() {
                 Update available
               </h4>
               <p className="text-[12.5px] text-white/70 leading-relaxed mt-1.5">
-                {info.body
-                  ? info.body.slice(0, 120) + (info.body.length > 120 ? "…" : "")
-                  : "A new version is ready. Your data will be preserved — only the app is updated."}
+                Version v{info.version} is available for download, your current version is v{info.currentVersion}
               </p>
               {error && (
                 <p className="text-[11px] text-red-200 mt-2 bg-white/10 border border-white/15 rounded-lg px-2 py-1">

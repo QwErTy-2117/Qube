@@ -247,15 +247,21 @@ export function Titlebar() {
   };
 
   return (
-    <div
-      data-tauri-drag-region={isTauri ? true : undefined}
-      className="absolute top-0 left-0 right-0 h-14 z-50 flex items-start justify-end select-none bg-transparent"
-    >
-      <div className="group/zone h-full w-60 flex items-start justify-end pt-4 pr-4 bg-transparent">
-        <div className="opacity-0 pointer-events-none group-hover/zone:opacity-100 group-hover/zone:pointer-events-auto transition-all duration-300 ease-in-out">
-          {renderButtons()}
+    <>
+      {/* Drag region — stays below dialogs so it doesn't block modals */}
+      <div
+        data-tauri-drag-region={isTauri ? true : undefined}
+        className="fixed top-0 left-0 right-0 h-14 z-40 select-none bg-transparent pointer-events-auto"
+        aria-hidden
+      />
+      {/* Window controls — always above dialogs/overlays so hover works even with popups */}
+      <div className="fixed top-0 right-0 h-14 z-[999] flex items-start justify-end select-none bg-transparent pointer-events-none">
+        <div className="group/zone h-full w-60 flex items-start justify-end pt-4 pr-4 bg-transparent pointer-events-auto">
+          <div className="opacity-0 pointer-events-none group-hover/zone:opacity-100 group-hover/zone:pointer-events-auto transition-all duration-300 ease-in-out">
+            {renderButtons()}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

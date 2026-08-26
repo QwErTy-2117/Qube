@@ -142,6 +142,22 @@ try {
   copySync(path.join(standaloneDir, 'server.js'), path.join(sidecarDistDir, 'server.js'));
   copySync(path.join(standaloneDir, 'package.json'), path.join(sidecarDistDir, 'package.json'));
 
+  // Legal docs: needed for /api/legal/* — standalone trace may omit them on some builds
+  for (const doc of ['TERMS.md', 'PRIVACY.md']) {
+    const src = path.join(standaloneDir, doc);
+    const fallbackSrc = path.join(rootDir, doc);
+    const dest = path.join(sidecarDistDir, doc);
+    if (fs.existsSync(src)) {
+      copySync(src, dest);
+      console.log(`  Copied ${doc} from standalone`);
+    } else if (fs.existsSync(fallbackSrc)) {
+      copySync(fallbackSrc, dest);
+      console.log(`  Copied ${doc} from project root (fallback)`);
+    } else {
+      console.warn(`  WARNING: ${doc} not found in standalone or project root`);
+    }
+  }
+
   console.log('Copying standalone .next folder...');
   copySync(path.join(standaloneDir, '.next'), path.join(sidecarDistDir, '.next'));
 

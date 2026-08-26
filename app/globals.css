@@ -110,6 +110,8 @@
 }
 
 .rainbow-border {
+  position: relative;
+  isolation: isolate;
   background:
     linear-gradient(var(--composer-bg, var(--color-background)), var(--composer-bg, var(--color-background))) padding-box,
     conic-gradient(from var(--border-angle),
@@ -128,6 +130,7 @@
 .rainbow-border-active {
   animation-duration: 3s;
   position: relative;
+  isolation: isolate;
 }
 
 .rainbow-border-active::before,

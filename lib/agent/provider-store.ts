@@ -18,7 +18,8 @@ class ProviderStore {
         const raw = readFileSync(PROVIDERS_FILE, "utf-8");
         const data = JSON.parse(raw);
         if (Array.isArray(data?.providers)) {
-          this.sync(data.providers, data.defaultModelId, false);
+          this.sync(data.providers as ProviderConfig[], data.defaultModelId, false);
+          return;
         }
       }
     } catch (e) {

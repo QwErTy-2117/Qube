@@ -38,7 +38,7 @@ export const RunCommandToolUI: ToolCallMessagePartComponent = ({
               key={f.name}
               filename={f.name}
               filePath={f.relativePath}
-              downloadUrl={`/api/files/${f.relativePath}`}
+              downloadUrl={`/api/files/${f.relativePath.split("/").map((s) => encodeURIComponent(s)).join("/")}`}
             />
           ))}
         </div>

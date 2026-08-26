@@ -57,15 +57,23 @@ export function ConnectorsTab() {
   const [connectors, setConnectors] = useState<DisplayConnector[]>([]);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [disconnectTarget, setDisconnectTarget] = useState<DisplayConnector | null>(null);
+  const [detailConnector, setDetailConnector] = useState<DisplayConnector | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setConnectors(data.connectors || []);
-    } catch {}
+    } catch (e) {
+      console.error("[connectors] fetchData failed", e);
+      setConnectors([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -150,7 +158,7 @@ export function ConnectorsTab() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto pr-1">
+    <div className="flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
       <motion.div
         initial={{ opacity: 0, filter: "blur(4px)" }}
         animate={{ opacity: 1, filter: "blur(0px)" }}
@@ -159,7 +167,7 @@ export function ConnectorsTab() {
         <div className="space-y-1 mb-4">
           <h3 className="text-base font-semibold tracking-tight">Connectors</h3>
           <p className="text-xs text-muted-foreground">
-            Connect Qube to external services via Composio.
+            Connect Qube to your favorite external services and tools.
           </p>
         </div>
 
@@ -182,7 +190,7 @@ export function ConnectorsTab() {
           </div>
         )}
 
-        <div className="flex flex-wrap gap-3 pt-1">
+        <div className="flex flex-wrap gap-3 pt-1 justify-center">
           {filtered.map((connector) => {
             const isConnected = connector.connected;
             const isConnecting = connectingId === connector.id;
@@ -192,16 +200,12 @@ export function ConnectorsTab() {
                 key={connector.id}
                 onClick={() => {
                   if (isConnecting) return;
-                  if (isConnected) {
-                    setDisconnectTarget(connector);
-                  } else {
-                    handleConnect(connector.id);
-                  }
+                  setDetailConnector(connector);
                 }}
                 className={cn(
-                  "flex flex-col items-center justify-center size-[72px] rounded-2xl border transition-all text-center p-1.5 gap-1 relative select-none",
-                  !isConnected && "cursor-pointer hover:scale-105 active:scale-95 bg-background hover:bg-muted/30",
-                  isConnected && "cursor-pointer hover:scale-105 active:scale-95 border-emerald-500/40 hover:border-red-500/50",
+                  "flex flex-col items-center justify-center size-[72px] rounded-2xl ring-1 ring-inset transition-all text-center p-1.5 gap-1 relative select-none shadow-md shadow-black/5 dark:shadow-[0_4px_16px_-2px_rgba(255,255,255,0.08)] hover:shadow-lg dark:hover:shadow-[0_6px_20px_-2px_rgba(255,255,255,0.14)]",
+                  !isConnected && "cursor-pointer hover:scale-105 active:scale-95 bg-background hover:bg-muted/30 ring-border/50",
+                  isConnected && "cursor-pointer hover:scale-105 active:scale-95 ring-emerald-500/40 hover:ring-red-500/50 shadow-emerald-500/20 dark:shadow-[0_4px_16px_-2px_rgba(16,185,129,0.35)] hover:shadow-red-500/20 dark:hover:shadow-[0_4px_16px_-2px_rgba(239,68,68,0.35)]",
                 )}
               >
                 {isConnecting && (
@@ -253,6 +257,86 @@ export function ConnectorsTab() {
               Disconnect
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Connector detail popup — logo in square top-left aligned with dialog corner */}
+      <Dialog open={!!detailConnector} onOpenChange={(v) => { if (!v) setDetailConnector(null); }}>
+        <DialogContent className="sm:max-w-sm rounded-3xl p-0 overflow-hidden gap-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{detailConnector?.name}</DialogTitle>
+            <DialogDescription>{detailConnector?.description}</DialogDescription>
+          </DialogHeader>
+
+          {detailConnector && (
+            <>
+              <div className="flex gap-3 items-start p-5">
+                {/* Square with rounded corners container for the image */}
+                <div
+                  className="size-12 rounded-xl bg-background border border-border/60 flex items-center justify-center shrink-0"
+                  style={{ color: detailConnector.brandColor || undefined }}
+                >
+                  {KNOWN_ICON_IDS.has(detailConnector.id)
+                    ? renderConnectorIcon(detailConnector.id, 28)
+                    : detailConnector.icon?.startsWith("http")
+                      ? <img src={detailConnector.icon} alt="" className="size-7 object-contain" />
+                      : <LinkIcon className="size-6 text-muted-foreground/50" />}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="text-sm font-semibold text-foreground leading-none">{detailConnector.name}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-4">
+                    {detailConnector.description || `${detailConnector.name} integration via Composio`}
+                  </p>
+                  {detailConnector.appUrl && (
+                    <a
+                      href={detailConnector.appUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 mt-1"
+                    >
+                      Visit site ↗
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              <div className="w-fit ml-auto flex items-center gap-2 rounded-full border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-1.5 py-1.5 m-5">
+                <button
+                  onClick={() => setDetailConnector(null)}
+                  type="button"
+                  className="flex items-center justify-center size-8 rounded-full text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <XIcon className="size-4" />
+                </button>
+                <div className="relative">
+                  {detailConnector.connected ? (
+                    <Button
+                      onClick={() => {
+                        setDisconnectTarget(detailConnector);
+                        setDetailConnector(null);
+                      }}
+                      className="rounded-full font-semibold"
+                    >
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => {
+                        handleConnect(detailConnector.id);
+                        setDetailConnector(null);
+                      }}
+                      disabled={connectingId === detailConnector.id}
+                      className="rounded-full font-semibold"
+                    >
+                      {connectingId === detailConnector.id ? <Loader2Icon className="size-4 animate-spin" /> : null}
+                      Connect
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

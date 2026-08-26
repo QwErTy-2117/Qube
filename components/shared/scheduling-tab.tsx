@@ -221,8 +221,8 @@ function RecurringSchedule({
   value,
   onChange,
 }: {
-  value: { intervalMinutes: number; hour?: number; weekdays?: number[]; monthDay?: number };
-  onChange: (v: { intervalMinutes: number; hour?: number; weekdays?: number[]; monthDay?: number }) => void;
+  value: { intervalMinutes: number; hour?: number; minute?: number; weekdays?: number[]; monthDay?: number };
+  onChange: (v: { intervalMinutes: number; hour?: number; minute?: number; weekdays?: number[]; monthDay?: number }) => void;
 }) {
   const [recurTab, setRecurTab] = useState(
     value.intervalMinutes === 1440 ? "daily"
@@ -233,6 +233,7 @@ function RecurringSchedule({
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>(value.weekdays ?? [1]);
   const [selectedMonthDay, setSelectedMonthDay] = useState(value.monthDay ?? 1);
   const [selectedHour, setSelectedHour] = useState(value.hour ?? 9);
+  const [selectedMinute, setSelectedMinute] = useState(value.minute ?? 0);
   const [customMinutes, setCustomMinutes] = useState(
     value.intervalMinutes && ![1440, 10080, 43200].includes(value.intervalMinutes)
       ? value.intervalMinutes
@@ -241,9 +242,9 @@ function RecurringSchedule({
 
   const handleRecurTabChange = (tab: string) => {
     setRecurTab(tab);
-    if (tab === "daily") onChange({ intervalMinutes: 1440, hour: selectedHour });
-    else if (tab === "weekly") onChange({ intervalMinutes: 10080, weekdays: selectedWeekdays, hour: selectedHour });
-    else if (tab === "monthly") onChange({ intervalMinutes: 43200, monthDay: selectedMonthDay, hour: selectedHour });
+    if (tab === "daily") onChange({ intervalMinutes: 1440, hour: selectedHour, minute: selectedMinute });
+    else if (tab === "weekly") onChange({ intervalMinutes: 10080, weekdays: selectedWeekdays, hour: selectedHour, minute: selectedMinute });
+    else if (tab === "monthly") onChange({ intervalMinutes: 43200, monthDay: selectedMonthDay, hour: selectedHour, minute: selectedMinute });
   };
 
   const handleWeekdayToggle = (idx: number) => {
@@ -251,20 +252,27 @@ function RecurringSchedule({
       ? selectedWeekdays.filter((d) => d !== idx)
       : [...selectedWeekdays, idx].sort();
     setSelectedWeekdays(next);
-    onChange({ intervalMinutes: 10080, weekdays: next, hour: selectedHour });
+    onChange({ intervalMinutes: 10080, weekdays: next, hour: selectedHour, minute: selectedMinute });
   };
 
   const handleMonthDayChange = (d: number) => {
     const clamped = Math.max(1, Math.min(28, d));
     setSelectedMonthDay(clamped);
-    onChange({ intervalMinutes: 43200, monthDay: clamped, hour: selectedHour });
+    onChange({ intervalMinutes: 43200, monthDay: clamped, hour: selectedHour, minute: selectedMinute });
   };
 
   const handleHourChange = (h: number) => {
     setSelectedHour(h);
-    if (recurTab === "daily") onChange({ intervalMinutes: 1440, hour: h });
-    else if (recurTab === "weekly") onChange({ intervalMinutes: 10080, weekdays: selectedWeekdays, hour: h });
-    else onChange({ intervalMinutes: 43200, monthDay: selectedMonthDay, hour: h });
+    if (recurTab === "daily") onChange({ intervalMinutes: 1440, hour: h, minute: selectedMinute });
+    else if (recurTab === "weekly") onChange({ intervalMinutes: 10080, weekdays: selectedWeekdays, hour: h, minute: selectedMinute });
+    else onChange({ intervalMinutes: 43200, monthDay: selectedMonthDay, hour: h, minute: selectedMinute });
+  };
+
+  const handleMinuteChange = (m: number) => {
+    setSelectedMinute(m);
+    if (recurTab === "daily") onChange({ intervalMinutes: 1440, hour: selectedHour, minute: m });
+    else if (recurTab === "weekly") onChange({ intervalMinutes: 10080, weekdays: selectedWeekdays, hour: selectedHour, minute: m });
+    else onChange({ intervalMinutes: 43200, monthDay: selectedMonthDay, hour: selectedHour, minute: m });
   };
 
   return (
@@ -280,21 +288,26 @@ function RecurringSchedule({
       {recurTab === "daily" && (
         <div className="space-y-3">
           <label className="text-xs font-medium text-muted-foreground">Time of day</label>
-          <div className="flex flex-wrap gap-1.5">
-            {HOURS.filter((_, i) => i % 3 === 0).map((h, i) => (
-              <button
-                key={h}
-                onClick={() => handleHourChange(i * 3)}
-                className={cn(
-                  "px-2.5 py-1.5 rounded-lg border text-xs transition-all",
-                  selectedHour === i * 3
-                    ? "border-primary/60 bg-primary/5 text-foreground font-medium"
-                    : "border-border text-muted-foreground hover:bg-muted/40"
-                )}
-              >
-                {h}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 justify-start">
+            <select
+              value={selectedHour}
+              onChange={(e) => handleHourChange(parseInt(e.target.value))}
+              className="px-2 py-1 rounded-lg border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring"
+            >
+              {Array.from({ length: 24 }, (_, i) => (
+                <option key={i} value={i}>{i.toString().padStart(2, "0")}</option>
+              ))}
+            </select>
+            <span className="text-xs text-muted-foreground">:</span>
+            <select
+              value={selectedMinute}
+              onChange={(e) => handleMinuteChange(parseInt(e.target.value))}
+              className="px-2 py-1 rounded-lg border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring"
+            >
+              {[0, 15, 30, 45].map((m) => (
+                <option key={m} value={m}>{m.toString().padStart(2, "0")}</option>
+              ))}
+            </select>
           </div>
         </div>
       )}
@@ -319,21 +332,26 @@ function RecurringSchedule({
             ))}
           </div>
           <label className="text-xs font-medium text-muted-foreground">Time of day</label>
-          <div className="flex flex-wrap gap-1.5">
-            {HOURS.filter((_, i) => i % 3 === 0).map((h, i) => (
-              <button
-                key={h}
-                onClick={() => handleHourChange(i * 3)}
-                className={cn(
-                  "px-2.5 py-1.5 rounded-lg border text-xs transition-all",
-                  selectedHour === i * 3
-                    ? "border-primary/60 bg-primary/5 text-foreground font-medium"
-                    : "border-border text-muted-foreground hover:bg-muted/40"
-                )}
-              >
-                {h}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 justify-start">
+            <select
+              value={selectedHour}
+              onChange={(e) => handleHourChange(parseInt(e.target.value))}
+              className="px-2 py-1 rounded-lg border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring"
+            >
+              {Array.from({ length: 24 }, (_, i) => (
+                <option key={i} value={i}>{i.toString().padStart(2, "0")}</option>
+              ))}
+            </select>
+            <span className="text-xs text-muted-foreground">:</span>
+            <select
+              value={selectedMinute}
+              onChange={(e) => handleMinuteChange(parseInt(e.target.value))}
+              className="px-2 py-1 rounded-lg border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring"
+            >
+              {[0, 15, 30, 45].map((m) => (
+                <option key={m} value={m}>{m.toString().padStart(2, "0")}</option>
+              ))}
+            </select>
           </div>
         </div>
       )}
@@ -358,21 +376,26 @@ function RecurringSchedule({
             ))}
           </div>
           <label className="text-xs font-medium text-muted-foreground">Time of day</label>
-          <div className="flex flex-wrap gap-1.5">
-            {HOURS.filter((_, i) => i % 3 === 0).map((h, i) => (
-              <button
-                key={h}
-                onClick={() => handleHourChange(i * 3)}
-                className={cn(
-                  "px-2.5 py-1.5 rounded-lg border text-xs transition-all",
-                  selectedHour === i * 3
-                    ? "border-primary/60 bg-primary/5 text-foreground font-medium"
-                    : "border-border text-muted-foreground hover:bg-muted/40"
-                )}
-              >
-                {h}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 justify-start">
+            <select
+              value={selectedHour}
+              onChange={(e) => handleHourChange(parseInt(e.target.value))}
+              className="px-2 py-1 rounded-lg border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring"
+            >
+              {Array.from({ length: 24 }, (_, i) => (
+                <option key={i} value={i}>{i.toString().padStart(2, "0")}</option>
+              ))}
+            </select>
+            <span className="text-xs text-muted-foreground">:</span>
+            <select
+              value={selectedMinute}
+              onChange={(e) => handleMinuteChange(parseInt(e.target.value))}
+              className="px-2 py-1 rounded-lg border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring"
+            >
+              {[0, 15, 30, 45].map((m) => (
+                <option key={m} value={m}>{m.toString().padStart(2, "0")}</option>
+              ))}
+            </select>
           </div>
         </div>
       )}
@@ -455,12 +478,12 @@ function ScheduleDialog({
   );
 }
 
-function scheduleSummary(kind: "interval" | "once", recur?: { intervalMinutes: number; hour?: number; weekdays?: number[]; monthDay?: number }, date?: Date | null): string {
+function scheduleSummary(kind: "interval" | "once", recur?: { intervalMinutes: number; hour?: number; minute?: number; weekdays?: number[]; monthDay?: number }, date?: Date | null): string {
   if (kind === "once" && date) {
     return `Once on ${date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })} at ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   }
   if (kind === "interval" && recur) {
-    const hourStr = recur.hour !== undefined ? ` at ${recur.hour.toString().padStart(2, "0")}:00` : "";
+    const hourStr = recur.hour !== undefined ? ` at ${recur.hour.toString().padStart(2, "0")}:${(recur.minute ?? 0).toString().padStart(2, "0")}` : "";
     if (recur.intervalMinutes === 1440) return `Every day${hourStr}`;
     if (recur.intervalMinutes === 10080) {
       const days = recur.weekdays?.map((d) => WEEKDAYS[d]).join(", ") || "";
@@ -488,8 +511,18 @@ function TaskFormDialog({
   const [name, setName] = useState(initial?.name || "");
   const [instructions, setInstructions] = useState(initial?.instructions || "");
   const [scheduleKind, setScheduleKind] = useState<"interval" | "once">(initial?.schedule?.kind || "interval");
-  const [recurSchedule, setRecurSchedule] = useState({
-    intervalMinutes: initial?.schedule?.intervalMinutes ?? 1440,
+  const [recurSchedule, setRecurSchedule] = useState<{
+    intervalMinutes: number;
+    hour?: number;
+    minute?: number;
+    weekdays?: number[];
+    monthDay?: number;
+  }>({
+    intervalMinutes: (initial?.schedule as any)?.intervalMinutes ?? 1440,
+    hour: (initial?.schedule as any)?.hour ?? 9,
+    minute: (initial?.schedule as any)?.minute ?? 0,
+    weekdays: (initial?.schedule as any)?.weekdays,
+    monthDay: (initial?.schedule as any)?.monthDay,
   });
   const [runOnceDate, setRunOnceDate] = useState<Date | null>(
     initial?.schedule?.runAt ? new Date(initial.schedule.runAt) : null
@@ -512,7 +545,13 @@ function TaskFormDialog({
       setName(initial?.name || "");
       setInstructions(initial?.instructions || "");
       setScheduleKind(initial?.schedule?.kind || "interval");
-      setRecurSchedule({ intervalMinutes: initial?.schedule?.intervalMinutes ?? 1440 });
+      setRecurSchedule({
+        intervalMinutes: (initial?.schedule as any)?.intervalMinutes ?? 1440,
+        hour: (initial?.schedule as any)?.hour ?? 9,
+        minute: (initial?.schedule as any)?.minute ?? 0,
+        weekdays: (initial?.schedule as any)?.weekdays,
+        monthDay: (initial?.schedule as any)?.monthDay,
+      });
       setRunOnceDate(initial?.schedule?.runAt ? new Date(initial.schedule.runAt) : null);
       setPermissions(
         initial?.permissions || {
@@ -539,6 +578,10 @@ function TaskFormDialog({
       instructions,
       scheduleKind,
       intervalMinutes: scheduleKind === "interval" ? recurSchedule.intervalMinutes : undefined,
+      hour: scheduleKind === "interval" ? (recurSchedule as any).hour : undefined,
+      minute: scheduleKind === "interval" ? (recurSchedule as any).minute : undefined,
+      weekdays: scheduleKind === "interval" ? (recurSchedule as any).weekdays : undefined,
+      monthDay: scheduleKind === "interval" ? (recurSchedule as any).monthDay : undefined,
       runAt: scheduleKind === "once" && runOnceDate ? runOnceDate.toISOString() : undefined,
       permissions,
     });
@@ -568,7 +611,7 @@ function TaskFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden rounded-3xl">
         <DialogHeader>
           <DialogTitle>{initial ? "Edit Task" : "Create Task"}</DialogTitle>
           <DialogDescription>
@@ -850,7 +893,7 @@ export function SchedulingTab() {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden min-h-0">
                 {log.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <FileText className="size-8 text-muted-foreground/30 mb-2" />
@@ -916,7 +959,7 @@ export function SchedulingTab() {
             onSave={(data) => editingTaskId && handleUpdateTask(editingTaskId, data)}
           />
 
-          <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden min-h-0">
           {scheduledTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-border/60 bg-muted/10">
               <Clock className="size-8 text-muted-foreground/30 mb-3" />

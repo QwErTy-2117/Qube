@@ -15,7 +15,7 @@ export const WriteFileToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   const relativePath = data.relativePath;
-  const downloadUrl = relativePath ? `/api/files/${relativePath}` : null;
+  const downloadUrl = relativePath ? `/api/files/${relativePath.split("/").map((s) => encodeURIComponent(s)).join("/")}` : null;
   const filePath = data.path || filename;
 
   const ext = filename.split(".").pop()?.toLowerCase();

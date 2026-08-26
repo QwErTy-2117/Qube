@@ -18,7 +18,7 @@ export const EditFileToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   const displayPath = data.path || path;
-  const downloadUrl = data.relativePath ? `/api/files/${data.relativePath}` : null;
+  const downloadUrl = data.relativePath ? `/api/files/${data.relativePath.split("/").map((s) => encodeURIComponent(s)).join("/")}` : null;
 
   const ext = displayPath.split(".").pop()?.toLowerCase();
   const isDownloadable = ["pptx", "docx", "xlsx", "pdf", "csv", "zip", "png", "jpg", "jpeg", "gif", "svg"].includes(ext || "");

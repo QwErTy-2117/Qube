@@ -47,13 +47,15 @@ export async function GET(
 
     const buffer = await readFile(resolved);
     const filename = filePath.split("/").pop() || "download";
+    const encodedFilename = encodeURIComponent(filename).replace(/['()]/g, escape);
 
-    return new NextResponse(buffer, {
+    return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `inline; filename="${filename}"`,
+        "Content-Disposition": `attachment; filename="${filename}"; filename*=UTF-8''${encodedFilename}`,
         "Content-Length": String(buffer.length),
+        "Cache-Control": "private, max-age=0, must-revalidate",
       },
     });
   } catch (err) {

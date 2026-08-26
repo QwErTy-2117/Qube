@@ -1,9 +1,21 @@
 import { settingsStore, type AppSettings } from "@/lib/settings-store";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+function getAppVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf-8"));
+    return pkg.version || "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 
 export async function GET() {
   try {
     const settings = settingsStore.getAll();
-    return Response.json({ settings });
+    const version = getAppVersion();
+    return Response.json({ settings, version });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return Response.json({ ok: false, error: msg }, { status: 500 });

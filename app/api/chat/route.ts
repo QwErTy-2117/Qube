@@ -4,7 +4,7 @@ import {
   createUIMessageStreamResponse,
   generateText,
 } from "ai";
-import { createModelClient } from "@/lib/agent/model-client";
+import { createModelClient, createModelClientForRequest, isChatGPTModel } from "@/lib/agent/model-client";
 import { hasVisionCapability } from "@/lib/agent/agent";
 
 export const maxDuration = 120;
@@ -230,7 +230,9 @@ export async function POST(req: Request) {
       const prevSession = await readSession(lastThreadId);
       if (prevSession?.transcript) {
         try {
-          const memModel = createModelClient(modelName);
+          const memModel = isChatGPTModel(modelName)
+            ? createModelClientForRequest(modelName, req)
+            : createModelClient(modelName);
           extractAndStoreMemories(prevSession.transcript, memModel).catch(() => {});
           cleanupMemories(memModel).catch(() => {});
         } catch {}
@@ -298,6 +300,7 @@ export async function POST(req: Request) {
               userName,
               userAbout,
               instanceId,
+              request: req,
             });
 
             const uiStream = agent.toUIMessageStream({
@@ -361,10 +364,12 @@ export async function POST(req: Request) {
                 if (v.type === "error") {
                   let errData: any = {};
                   try { errData = JSON.parse(v.errorText); } catch {}
-                  const isRateLimit = errData?.statusCode === 429 || /too many|rate limit|token_quota/i.test(errData?.message || "");
+                  const isRateLimit = errData?.statusCode === 429 || /too many|rate limit|token_quota/i.test(errData?.message || "") || /usage_limit/i.test(v.errorText || "");
                   if (isRateLimit) {
                     lastWasRateLimit = true;
                     lastRateLimitDelayMs = computeRateLimitDelay(errData);
+                    // Write the error so frontend can show the red top popup (still retry in background)
+                    try { writer.write(v); } catch {}
                     break;
                   }
                   writer.write(v);
@@ -396,28 +401,7 @@ export async function POST(req: Request) {
             }
 
             const textToVerify = textOutput || (assistantParts.length > 0 ? "[Tool calls made, no delivery text]" : "");
-            try {
-              const verify = await verifyCompletion(originalRequest, currentUIMessages, textToVerify, streamEndedNaturally, modelName);
-              if (!verify.done) {
-                if (generalAttempts < MAX_GENERAL) {
-                  console.log(`[bgcheck] Attempt ${generalAttempts} incomplete (verify: ${verify.message}), retrying`);
-                  const assistantMsg = assistantParts.length > 0
-                    ? [{ role: "assistant", parts: assistantParts }]
-                    : [];
-                  currentUIMessages = [...currentUIMessages, ...assistantMsg, {
-                    role: "user",
-                    parts: [{ type: "text", text: `[INSTRUCTION] ${verify.message}` }],
-                  }];
-                  continue;
-                }
-                loopExhausted = true;
-                console.error(`[bgcheck] Last attempt (${generalAttempts}) still incomplete:`, verify.message);
-              }
-            } catch (e) {
-              console.error("[bgcheck] Verify error (non-fatal):", e);
-              if (generalAttempts < MAX_GENERAL) continue;
-              loopExhausted = true;
-            }
+            // Turn completed naturally
             break;
           } catch (e) {
             const err = e as any;

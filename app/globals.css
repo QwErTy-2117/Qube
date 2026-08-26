@@ -74,14 +74,12 @@
   body {
     @apply bg-background text-foreground;
   }
+}
 
   @supports not selector(::-webkit-scrollbar) {
     * {
       scrollbar-width: thin;
       scrollbar-color: transparent transparent;
-    }
-    *:hover {
-      scrollbar-color: color-mix(in srgb, var(--muted-foreground) 35%, transparent) transparent;
     }
   }
   *::-webkit-scrollbar {
@@ -95,17 +93,9 @@
     background-color: transparent;
     border-radius: 9999px;
   }
-  *:hover::-webkit-scrollbar-thumb {
-    background-color: color-mix(in srgb, var(--muted-foreground) 30%, transparent);
-  }
-  *::-webkit-scrollbar-thumb:hover,
-  *::-webkit-scrollbar-thumb:active {
-    background-color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
-  }
   *::-webkit-scrollbar-corner {
     background: transparent;
   }
-}
 
 @property --border-angle {
   inherits: false;
@@ -137,6 +127,50 @@
 
 .rainbow-border-active {
   animation-duration: 3s;
+  position: relative;
+}
+
+.rainbow-border-active::before,
+.rainbow-border::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--border-angle),
+    transparent 60%,
+    #6366f1 68%,
+    #a5b4fc 72%,
+    #ec4899 76%,
+    #22d3ee 80%,
+    #6366f1 84%,
+    transparent 92%
+  );
+  filter: blur(12px);
+  opacity: 0;
+  z-index: -1;
+  pointer-events: none;
+  animation: border-rotate 8s linear infinite;
+  transition: opacity 0.3s ease;
+}
+
+.rainbow-border::before {
+  opacity: 0.12;
+  filter: blur(10px);
+}
+
+.rainbow-border-active::before {
+  opacity: 0.35;
+  filter: blur(12px);
+  animation-duration: 3s;
+}
+
+.dark .rainbow-border::before {
+  opacity: 0.18;
+}
+
+.dark .rainbow-border-active::before {
+  opacity: 0.45;
+  filter: blur(14px);
 }
 
 :focus-visible {

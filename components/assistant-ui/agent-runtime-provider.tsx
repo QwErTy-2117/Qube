@@ -63,27 +63,21 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "set_value", render: ComputerToolUI });
   useAssistantToolUI({ toolName: "perform_secondary_action", render: ComputerToolUI });
 
+  // Browser-use (https://github.com/browser-use/browser-use) — replaces legacy Playwright browser_* tools
   useAssistantToolUI({ toolName: "browser_navigate", render: BrowserNavigateToolUI });
-  useAssistantToolUI({ toolName: "browser_take_screenshot", render: BrowserScreenshotToolUI });
-  useAssistantToolUI({ toolName: "browser_snapshot", render: BrowserToolUI });
   useAssistantToolUI({ toolName: "browser_click", render: BrowserToolUI });
   useAssistantToolUI({ toolName: "browser_type", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_fill_form", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_hover", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_press_key", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_select_option", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_file_upload", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_tabs", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_evaluate", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_console_messages", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_network_requests", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_get_state", render: BrowserToolUI });
   useAssistantToolUI({ toolName: "browser_scroll", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_save_profile", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_load_profile", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_list_profiles", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_navigate_back", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_reload", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_wait_for", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_go_back", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_list_tabs", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_switch_tab", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_close_tab", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_extract_content", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_list_sessions", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_close_session", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_close_all", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "retry_with_browser_use_agent", render: BrowserToolUI });
 
   return null;
 }
@@ -91,6 +85,9 @@ function ToolUIRegistrar() {
 
 export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
+    // Trigger background installs for Cua + browser-use at launch / first steer
+    // Fire-and-forget, never blocks UI — agent stays backend-agnostic
+    fetch("/api/setup", { method: "POST" }).catch(() => {});
     if (typeof window !== "undefined") {
       let instanceId = localStorage.getItem("qube-instance-id");
       if (!instanceId) {

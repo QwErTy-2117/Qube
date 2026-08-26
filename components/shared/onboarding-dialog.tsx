@@ -18,12 +18,13 @@ import {
   PlusIcon,
   SearchIcon,
   Loader2Icon,
-  PencilIcon,
   UnplugIcon,
+  LinkIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Highlighter } from "@/components/ui/highlighter";
 import { MorphingText } from "@/components/ui/morphing-text";
+import { cn } from "@/lib/utils";
 import {
   DEFAULT_PROVIDERS,
   type ProviderConfig,
@@ -31,6 +32,8 @@ import {
   detectModelIcon,
 } from "./settings-dialog";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
+import { ChatGPTOnboardingSection } from "@/components/chatgpt/chatgpt-onboarding";
+import { TermsPrivacyContent } from "./terms-content";
 
 const KNOWN_ICON_IDS = new Set([
   "linear","atlassian","trello","airtable","notion",
@@ -56,6 +59,7 @@ const PROVIDER_ID_TO_ICON: Record<string, string> = {
   ollama: "Ollama",
   lmstudio: "LmStudio",
   custom: "OpenAI",
+  chatgpt: "OpenAI",
 };
 
 interface FetchedModel {
@@ -65,26 +69,17 @@ interface FetchedModel {
 }
 
 async function fetchProviderModels(baseURL: string, apiKey: string): Promise<FetchedModel[]> {
-  const base = baseURL.replace(/\/+$/, "");
-  const tryFetch = async (url: string): Promise<Response> => {
-    return fetch(url, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-  };
-
-  let url = base + "/models";
-  let res = await tryFetch(url);
-
-  if (res.status === 404 && !base.endsWith("/v1")) {
-    url = base + "/v1/models";
-    res = await tryFetch(url);
-  }
+  const res = await fetch("/api/providers/models", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ baseURL, apiKey }),
+  });
 
   if (!res.ok) {
-    throw new Error(`Failed to fetch models: ${res.status} ${res.statusText}`);
+    const errBody = await res.json().catch(() => null);
+    throw new Error(errBody?.error || `Failed to fetch models: ${res.status} ${res.statusText}`);
   }
 
   const body = await res.json();
@@ -109,11 +104,12 @@ async function fetchProviderModels(baseURL: string, apiKey: string): Promise<Fet
 
 export function OnboardingModal() {
   const [open, setOpen] = useState(false);
-  const [stage, setStage] = useState<1 | 2 | 3 | 4>(1);
+  const [stage, setStage] = useState<1 | 2 | 3 | 4 | 5>(1);
 
-  // Profile preferences
+  // Profile & Auth preferences
   const [userName, setUserName] = useState("");
   const [userAbout, setUserAbout] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   // Providers & models state
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
@@ -132,7 +128,6 @@ export function OnboardingModal() {
   // Model selection popup after provider configured
   const [selectModelOpen, setSelectModelOpen] = useState(false);
   const [newlyConfiguredProv, setNewlyConfiguredProv] = useState<ProviderConfig | null>(null);
-
   // Stage 4 confirmation animation
   const [confirmed, setConfirmed] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -146,7 +141,7 @@ export function OnboardingModal() {
   }, [open]);
 
   useEffect(() => {
-    if (stage === 4) {
+    if (stage === 5) {
       const t = setTimeout(() => setConfirmed(true), 600);
       return () => clearTimeout(t);
     }
@@ -154,25 +149,34 @@ export function OnboardingModal() {
     setFinished(false);
   }, [stage]);
 
-  // Connectors state for Stage 3
+  // Connectors state for Stage 5
   const [connectors, setConnectors] = useState<any[]>([]);
   const [connectorsLoading, setConnectorsLoading] = useState(false);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [connectorQuery, setConnectorQuery] = useState("");
   const [disconnectTarget, setDisconnectTarget] = useState<any | null>(null);
+  const [connectorDetail, setConnectorDetail] = useState<any | null>(null);
 
   const fetchConnectors = useCallback(async () => {
     setConnectorsLoading(true);
     try {
-      const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setConnectors(data.connectors || []);
-    } catch {}
-    setConnectorsLoading(false);
+    } catch (e) {
+      console.error("[onboarding] fetchConnectors failed", e);
+      setConnectors([]);
+    } finally {
+      setConnectorsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (open && stage === 3) fetchConnectors();
+    if (open && stage === 4) fetchConnectors();
   }, [open, stage, fetchConnectors]);
 
   useEffect(() => {
@@ -199,17 +203,42 @@ export function OnboardingModal() {
     if (typeof window === "undefined") return;
 
     const completed = localStorage.getItem("qube-onboarding-completed");
+    const consent = localStorage.getItem("qube-terms-accepted");
     if (completed !== "true") {
+      setOpen(true);
+    } else if (consent !== "true") {
+      // Prevent bypass: onboarding done but consent revoked/never given -> force stage 2
+      setStage(2);
+      setTermsAccepted(false);
       setOpen(true);
     }
 
-    const handleReopen = () => {
-      setStage(1);
+    const handleReopen = (e?: Event) => {
+      const detail = (e as CustomEvent)?.detail as { stage?: number } | undefined;
+      if (detail?.stage && [1,2,3,4,5].includes(detail.stage)) {
+        setStage(detail.stage as any);
+        if (detail.stage === 2) {
+          const c = localStorage.getItem("qube-terms-accepted");
+          setTermsAccepted(c === "true");
+        }
+      } else {
+        setStage(1);
+      }
       setOpen(true);
     };
 
-    window.addEventListener("qube-open-onboarding", handleReopen);
-    return () => window.removeEventListener("qube-open-onboarding", handleReopen);
+    const handleRevoke = () => {
+      setTermsAccepted(false);
+      setStage(2);
+      setOpen(true);
+    };
+
+    window.addEventListener("qube-open-onboarding", handleReopen as any);
+    window.addEventListener("qube-revoke-consent", handleRevoke);
+    return () => {
+      window.removeEventListener("qube-open-onboarding", handleReopen as any);
+      window.removeEventListener("qube-revoke-consent", handleRevoke);
+    };
   }, []);
 
   // Load existing values into state when opening
@@ -220,14 +249,17 @@ export function OnboardingModal() {
     const about = localStorage.getItem("qube-user-about") || "";
     const defM = localStorage.getItem("qube-default-model") || "";
     const stored = localStorage.getItem("qube-providers");
+    const consent = localStorage.getItem("qube-terms-accepted");
 
     setUserName(name);
     setUserAbout(about);
     setDefaultModel(defM);
+    setTermsAccepted(consent === "true");
 
     if (stored) {
       try {
-        setProviders(JSON.parse(stored));
+        const parsed: ProviderConfig[] = JSON.parse(stored);
+        setProviders(parsed);
       } catch {
         setProviders(DEFAULT_PROVIDERS);
       }
@@ -235,6 +267,26 @@ export function OnboardingModal() {
       setProviders(DEFAULT_PROVIDERS);
     }
   }, [open]);
+
+  // Keep providers state in sync with localStorage when other components
+  // (e.g. ChatGPT preferences card, ChatGPT onboarding section) mutate the
+  // provider list in the background.
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const raw = localStorage.getItem("qube-providers");
+        if (!raw) return;
+        const parsed: ProviderConfig[] = JSON.parse(raw);
+        setProviders(parsed);
+        const def = localStorage.getItem("qube-default-model") || "";
+        if (def) setDefaultModel(def);
+      } catch {}
+    };
+    window.addEventListener("qube-providers-changed", handler);
+    return () => window.removeEventListener("qube-providers-changed", handler);
+  }, []);
+
+
 
   const saveProvidersList = (updated: ProviderConfig[]) => {
     setProviders(updated);
@@ -246,6 +298,18 @@ export function OnboardingModal() {
     }).catch(() => {});
     window.dispatchEvent(new Event("qube-providers-changed"));
   };
+
+  const handleChatGPTProvidersChanged = useCallback(() => {
+    try {
+      const stored = localStorage.getItem("qube-providers");
+      if (stored) {
+        const parsed: ProviderConfig[] = JSON.parse(stored);
+        setProviders(parsed);
+        const defM = localStorage.getItem("qube-default-model") || "";
+        if (defM) setDefaultModel(defM);
+      }
+    } catch {}
+  }, []);
 
   const handleSaveProfile = () => {
     localStorage.setItem("qube-user-name", userName);
@@ -333,11 +397,15 @@ export function OnboardingModal() {
   const handleFinishOnboarding = () => {
     handleSaveProfile();
     localStorage.setItem("qube-onboarding-completed", "true");
+    localStorage.setItem("qube-terms-accepted", "true");
     setOpen(false);
   };
 
   const handleNext = () => {
-    if (stage < 4) {
+    if (stage === 2 && termsAccepted) {
+      localStorage.setItem("qube-terms-accepted", "true");
+    }
+    if (stage < 5) {
       setStage((prev) => (prev + 1) as any);
     } else {
       setFinished(true);
@@ -346,10 +414,10 @@ export function OnboardingModal() {
   };
 
   const handleBack = () => {
-    if (stage === 4 && confirmed) {
+    if (stage === 5 && confirmed) {
       setConfirmed(false);
       setFinished(false);
-      setTimeout(() => setStage(3), 450);
+      setTimeout(() => setStage(4), 450);
     } else if (stage > 1) {
       setStage((prev) => (prev - 1) as any);
     }
@@ -399,10 +467,16 @@ export function OnboardingModal() {
   );
   const configuredProvider = activeProviders[0] || null;
   const selectedModel = activeModelsList.find((m) => m.id === defaultModel);
-  const stage2Ready = !!configuredProvider && !!defaultModel;
+  const providerSelectedModel = configuredProvider
+    ? activeModelsList.find((m) => m.providerId === configuredProvider.id && m.id === defaultModel) ||
+      activeModelsList.find((m) => m.providerId === configuredProvider.id) ||
+      null
+    : null;
+  const stage4Ready = !!configuredProvider && !!defaultModel;
 
   // Show the model badge only once the model-selection popup has closed,
   // so the compress-into-badge animation is visible (not hidden by the popup).
+  // Provider badge is independent of Qube selection per latest spec.
   const [badgeVisible, setBadgeVisible] = useState(false);
 
   useEffect(() => {
@@ -410,17 +484,25 @@ export function OnboardingModal() {
       setBadgeVisible(false);
       return;
     }
-    if (configuredProvider && selectedModel) {
+    if (configuredProvider && providerSelectedModel) {
       const t = setTimeout(() => setBadgeVisible(true), 250);
       return () => clearTimeout(t);
     }
     setBadgeVisible(false);
-  }, [selectModelOpen, configuredProvider, selectedModel]);
+  }, [selectModelOpen, configuredProvider, providerSelectedModel]);
 
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => {
         if (!v && (addProviderOpen || configureProvider !== null || selectModelOpen)) return;
+        if (!v && stage === 2 && !termsAccepted) return;
+        if (!v) {
+          try {
+            const consent = localStorage.getItem("qube-terms-accepted");
+            const completed = localStorage.getItem("qube-onboarding-completed");
+            if (completed === "true" && consent !== "true") return;
+          } catch {}
+        }
         setOpen(v);
       }}>
         <DialogContent
@@ -439,73 +521,141 @@ export function OnboardingModal() {
                   animate={{ opacity: 1, filter: "blur(0px)" }}
                   exit={{ opacity: 0, filter: "blur(4px)" }}
                   transition={{ duration: 0.2 }}
-                  className={`relative flex-1 overflow-y-auto min-h-0 flex flex-col ${stage !== 4 ? "md:pr-[18rem]" : ""}`}
+                  className={`relative flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden min-h-0 flex flex-col ${
+                    stage === 1 || stage === 3 || stage === 4 ? "md:pr-[18rem]" : "w-full"
+                  }`}
                 >
+                  {/* Stage 1: Welcome */}
                   {stage === 1 && (
-                    <div className="flex flex-col h-full">
-                      <div className="space-y-4">
+                    <div className="flex flex-col h-full space-y-4">
+                      <h2 className="text-2xl font-bold tracking-tight text-foreground">
+                        Qube welcomes you
+                      </h2>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Qube is your{" "}
+                        <Highlighter action="highlight" color="#f59e0b80">
+                          personal AI worker
+                        </Highlighter>{" "}
+                        — a helper that lives on your desktop, ready to get complex tasks done for
+                        you. You describe what you need, and Qube autonomously figures out how to make
+                        it happen using subagents and tools.
+                      </p>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Your worker understands your workspace context, connects
+                        to services like{" "}
+                        <Highlighter action="underline" color="#10b981">
+                          Google, GitHub, and Slack
+                        </Highlighter>
+                        , and works alongside you — organizing, writing, and executing code end-to-end.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Stage 2: Terms & Conditions & Privacy Policy */}
+                  {stage === 2 && (
+                    <div className="flex flex-col h-full max-w-lg mx-auto w-full justify-between space-y-4">
+                      <div className="space-y-2 text-center">
                         <h2 className="text-2xl font-bold tracking-tight text-foreground">
-                          Qube welcomes you
+                          Terms & Policy Agreement
                         </h2>
                         <p className="text-sm text-muted-foreground leading-relaxed">
-                          Qube is your{" "}
-                          <Highlighter action="highlight" color="#f59e0b80">
-                            personal AI worker
-                          </Highlighter>{" "}
-                          — a helper that lives on your computer, ready to get things done for
-                          you. You don't need to be technical or know anything about AI to use
-                          it. You just describe what you need, and Qube figures out how to make
-                          it happen.
+                          Please review and accept our Terms of Service and Privacy Policy before starting Qube.
                         </p>
-                        <p className="text-sm text-muted-foreground leading-relaxed">
-                          Your worker understands the context of what you're working on, connects
-                          to the tools you already use like{" "}
-                          <Highlighter action="underline" color="#10b981">
-                            your calendar, email, and messaging
-                          </Highlighter>
-                          , and then works alongside you — organizing, summarizing, and taking
-                          tasks off your plate so you can focus on what actually matters.
-                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-2xl border border-border/60 bg-muted/20 space-y-3 flex-1 min-h-0 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden text-xs text-muted-foreground leading-relaxed">
+                        <TermsPrivacyContent />
+                      </div>
+
+                      {/* Checkbox matching model selector style */}
+                      <div
+                        onClick={() => {
+                          setTermsAccepted((prev) => {
+                            const next = !prev;
+                            try { localStorage.setItem("qube-terms-accepted", next ? "true" : "false"); } catch {}
+                            return next;
+                          });
+                        }}
+                        className="flex items-center justify-center gap-3 cursor-pointer select-none py-1.5 shrink-0"
+                      >
+                        <button
+                          type="button"
+                          className={`size-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer overflow-hidden ${
+                            termsAccepted
+                              ? "border-emerald-500 bg-emerald-500"
+                              : "border-muted-foreground/30 hover:border-emerald-400"
+                          }`}
+                        >
+                          <AnimatePresence mode="wait">
+                            {termsAccepted && (
+                              <motion.div
+                                key="check"
+                                initial={{ scale: 2.5, rotate: -20, opacity: 0 }}
+                                animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                                exit={{ scale: 0, rotate: 20, opacity: 0 }}
+                                transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                                className="flex items-center justify-center"
+                              >
+                                <CheckIcon className="size-3 text-white" />
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </button>
+                        <span className="text-xs font-medium text-foreground">
+                          I accept the{" "}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              document.getElementById("qube-terms")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            }}
+                            className="font-medium hover:font-bold transition-[font-weight] duration-150"
+                          >
+                            Terms of Service
+                          </button>
+                          {" & "}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              document.getElementById("qube-privacy")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            }}
+                            className="font-medium hover:font-bold transition-[font-weight] duration-150"
+                          >
+                            Privacy Policy
+                          </button>
+                        </span>
                       </div>
                     </div>
                   )}
 
-                  {stage === 2 && (
+                  {/* Stage 4: AI Worker's Brain */}
+                  {stage === 3 && (
                     <div className="space-y-6">
                       <div className="space-y-2">
                         <h2 className="text-2xl font-bold tracking-tight text-foreground">
                           Your worker's brain
                         </h2>
                         <p className="text-sm text-muted-foreground leading-relaxed">
-                          Your AI worker thinks with a brain made of an AI provider and a model.
-                          The provider is the service that powers it — like{" "}
-                          <Highlighter action="circle" color="#8b5cf680">
-                            OpenAI
-                          </Highlighter>{" "}
-                          or a local model running on your machine. The model is the specific
-                          brain inside it that understands and answers you.
-                        </p>
-                        <p className="text-sm text-muted-foreground leading-relaxed">
-                          Don't worry about the details — just{" "}
-                          <Highlighter action="underline" color="#10b981">
-                            click the button below
-                          </Highlighter>
-                          , pick a provider you already have, and choose a model. We'll handle
-                          the rest.
+                          Every AI worker relies on an AI provider and model to think, reason, and solve problems.
+                          Think of the provider as the engine that powers your assistant, and the model as the specific intelligence inside it.
+                          You can connect online services like OpenAI, Anthropic, or DeepSeek, or run models locally right on your computer.
+                          You don't need any technical setup — simply pick a provider you already use and select your preferred model below.
+                          Qube will automatically handle all background configurations and keep your connections safe.
                         </p>
                       </div>
 
                       <motion.div
                         layout
                         transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                        className={`rounded-2xl border flex items-center justify-center overflow-hidden transition-colors duration-300 mx-auto mt-8 ${
+                        className={`rounded-2xl border flex items-center justify-center overflow-hidden transition-colors duration-300 mx-auto mt-6 ${
                           badgeVisible
                             ? "border-border/60 bg-background/60 px-3 py-2 w-fit"
                             : "border-border bg-muted/5 min-h-[56px] p-3 w-full"
                         }`}
                       >
                         <AnimatePresence mode="wait" initial={false}>
-                          {badgeVisible && configuredProvider && selectedModel ? (
+                          {badgeVisible && configuredProvider && providerSelectedModel ? (
                             <motion.div
                               key="badge"
                               initial={{ opacity: 0 }}
@@ -516,31 +666,21 @@ export function OnboardingModal() {
                             >
                               <div className="size-9 flex items-center justify-center shrink-0">
                                 {renderLobeIcon(
-                                  selectedModel.icon ||
-                                    PROVIDER_ID_TO_ICON[selectedModel.providerId] ||
-                                    selectedModel.providerName,
+                                  providerSelectedModel.icon ||
+                                    PROVIDER_ID_TO_ICON[providerSelectedModel.providerId] ||
+                                    providerSelectedModel.providerName,
                                   22
                                 )}
                               </div>
                               <div className="min-w-0 text-left flex-1">
                                 <p className="text-xs font-semibold text-foreground truncate">
-                                  {selectedModel.name}
+                                  {providerSelectedModel.name}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground truncate">
-                                  {selectedModel.providerName}
+                                  {providerSelectedModel.providerName}
                                 </p>
                               </div>
                               <CheckIcon className="size-4 text-emerald-500 shrink-0" />
-                              <button
-                                onClick={() => {
-                                  setSearchQuery("");
-                                  setAddProviderOpen(true);
-                                }}
-                                className="flex items-center justify-center size-7 rounded-full text-foreground/50 hover:bg-muted/40 hover:text-foreground transition-colors shrink-0 cursor-pointer"
-                                title="Edit Provider"
-                              >
-                                <PencilIcon className="size-3.5" />
-                              </button>
                             </motion.div>
                           ) : (
                             <motion.div
@@ -574,10 +714,20 @@ export function OnboardingModal() {
                           )}
                         </AnimatePresence>
                       </motion.div>
+
+                      {/* Divider "or" */}
+                      <div className="flex items-center justify-center py-1">
+                        <span className="text-[11px] font-medium text-muted-foreground/60 tracking-wide">or</span>
+                      </div>
+
+                      <ChatGPTOnboardingSection
+                        onProvidersChanged={handleChatGPTProvidersChanged}
+                      />
                     </div>
                   )}
 
-                  {stage === 3 && (
+                  {/* Stage 5: Tools & Connectors */}
+                  {stage === 4 && (
                     <div className="flex flex-col min-h-0">
                       <div className="space-y-2">
                         <h2 className="text-2xl font-bold tracking-tight text-foreground">
@@ -593,8 +743,7 @@ export function OnboardingModal() {
                           <Highlighter action="box" color="#3b82f680">
                             tools your AI worker can use
                           </Highlighter>
-                          . Connect the ones you already use and Qube will tap into them when it
-                          works for you.
+                          . Connect the services you already use.
                         </p>
                       </div>
                       <div className="flex flex-col flex-1 min-h-0 pt-8">
@@ -602,50 +751,54 @@ export function OnboardingModal() {
                           <Loader2Icon className="size-8 animate-spin text-muted-foreground mx-auto mt-8" />
                         ) : (
                           <>
-                            <div className="relative mb-4 max-w-md mx-auto w-full px-8 shrink-0">
-                              <SearchIcon className="absolute left-10 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50 pointer-events-none" />
-                              <input
-                                value={connectorQuery}
-                                onChange={(e) => setConnectorQuery(e.target.value)}
-                                placeholder="Search tools..."
-                                className="w-full h-8 rounded-lg border border-border bg-background pl-8 pr-3 text-xs outline-none focus:border-ring transition-colors placeholder:text-muted-foreground/40"
-                              />
+                            <div className="w-full max-w-xl mx-auto px-4 shrink-0">
+                              <div className="relative mb-4">
+                                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50 pointer-events-none" />
+                                <input
+                                  value={connectorQuery}
+                                  onChange={(e) => setConnectorQuery(e.target.value)}
+                                  placeholder="Search connectors..."
+                                  className="w-full h-8 rounded-lg border border-border bg-background pl-8 pr-3 text-xs outline-none focus:border-ring transition-colors placeholder:text-muted-foreground/40"
+                                />
+                              </div>
                             </div>
                             <div className="flex-1 min-h-0 overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                              <div className="grid grid-cols-5 gap-2 w-full max-w-md mx-auto px-8 pb-2">
+                              <div className="flex flex-wrap justify-center gap-3 pt-1 w-full max-w-xl mx-auto px-4 pb-2">
                                 {connectors
                                   .filter((c: any) => c.name.toLowerCase().includes(connectorQuery.trim().toLowerCase()))
                                   .map((connector: any) => {
+                                    const isConnected = connector.connected;
                                     const isConnecting = connectingId === connector.id;
                                     return (
-                                      <button
+                                      <div
                                         key={connector.id}
                                         onClick={() => {
                                           if (isConnecting) return;
-                                          if (connector.connected) {
-                                            setDisconnectTarget(connector);
-                                          } else {
-                                            handleConnect(connector.id);
-                                          }
+                                          setConnectorDetail(connector);
                                         }}
-                                        className={`p-0.5 rounded-xl border transition-all aspect-square flex items-center justify-center ${
-                                          connector.connected
-                                            ? "border-emerald-500/40 hover:border-red-500/50"
-                                            : "border-border/50 bg-background/80 backdrop-blur-sm shadow-md hover:border-primary/40 hover:shadow-lg"
-                                        } ${isConnecting ? "opacity-60 pointer-events-none" : "cursor-pointer hover:scale-105 active:scale-95"}`}
+                                        className={cn(
+                                          "flex flex-col items-center justify-center size-[72px] rounded-2xl ring-1 ring-inset transition-all text-center p-1.5 gap-1 relative select-none shadow-md shadow-black/5 dark:shadow-[0_4px_16px_-2px_rgba(255,255,255,0.08)] hover:shadow-lg dark:hover:shadow-[0_6px_20px_-2px_rgba(255,255,255,0.14)]",
+                                          !isConnected && "cursor-pointer hover:scale-105 active:scale-95 bg-background hover:bg-muted/30 ring-border/50",
+                                          isConnected && "cursor-pointer hover:scale-105 active:scale-95 ring-emerald-500/40 hover:ring-red-500/50 shadow-emerald-500/20 dark:shadow-[0_4px_16px_-2px_rgba(16,185,129,0.35)] hover:shadow-red-500/20 dark:hover:shadow-[0_4px_16px_-2px_rgba(239,68,68,0.35)]",
+                                        )}
                                       >
-                                        {isConnecting ? (
-                                          <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
-                                        ) : (
-                                          <div className="size-8 rounded-lg bg-muted/20 flex items-center justify-center">
-                                            {KNOWN_ICON_IDS.has(connector.id)
-                                              ? renderConnectorIcon(connector.id, 22)
-                                              : connector.hasIcon && connector.icon
-                                                ? <img src={connector.icon} alt="" className="size-6 object-contain" />
-                                                : <span className="text-lg font-bold text-foreground/80">{connector.name?.charAt(0).toUpperCase()}</span>}
+                                        {isConnecting && (
+                                          <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-2xl z-10">
+                                            <Loader2Icon className="size-5 animate-spin text-muted-foreground/60" />
                                           </div>
                                         )}
-                                      </button>
+
+                                        <div
+                                          className="size-9 flex items-center justify-center shrink-0"
+                                          style={{ color: (connector as any).brandColor || undefined }}
+                                        >
+                                          {KNOWN_ICON_IDS.has(connector.id)
+                                            ? renderConnectorIcon(connector.id, 24)
+                                            : (connector as any).icon?.startsWith("http")
+                                              ? <img src={(connector as any).icon} alt="" className="size-6 object-contain" />
+                                              : <LinkIcon className="size-5 text-muted-foreground/50" />}
+                                        </div>
+                                      </div>
                                     );
                                   })}
                               </div>
@@ -656,7 +809,8 @@ export function OnboardingModal() {
                     </div>
                   )}
 
-                  {stage === 4 && (
+                  {/* Stage 6: Ready */}
+                  {stage === 5 && (
                     <div className="flex flex-col items-center justify-center h-full space-y-4">
                       <motion.div
                         initial={{ scale: 0 }}
@@ -677,13 +831,14 @@ export function OnboardingModal() {
                     </div>
                   )}
 
-                  {stage !== 4 && (
+                  {/* Right side image container: only shown for steps 1, 4, 5 */}
+                  {(stage === 1 || stage === 3 || stage === 4) && (
                     <div className="absolute top-0 right-0 bottom-0 w-60 rounded-[calc(1.5rem-0.75rem)] border-2 border-border/40 bg-muted/10 overflow-hidden flex items-center justify-center pointer-events-none">
                       <img
                         src={
                           stage === 1
                             ? "/onboarding-hero.png"
-                            : stage === 2
+                            : stage === 3
                               ? "/onboarding-create.png"
                               : "/onboarding-tools.png"
                         }
@@ -698,7 +853,7 @@ export function OnboardingModal() {
               {/* Bottom bar: indicator left, buttons right */}
               <div className="flex items-center justify-between pt-6 shrink-0">
                 <div className="flex items-center gap-1.5">
-                  {[1, 2, 3, 4].map((i) => (
+                  {[1, 2, 3, 4, 5].map((i) => (
                     <div
                       key={i}
                       className={`size-2 rounded-full transition-all duration-300 ${
@@ -720,15 +875,15 @@ export function OnboardingModal() {
                   </button>
                   <motion.button
                     onClick={handleNext}
-                    disabled={stage === 2 && !stage2Ready}
+                    disabled={(stage === 2 && !termsAccepted)}
                     type="button"
-                    animate={{ width: finished ? 28 : stage === 4 && confirmed ? expandedWidth || 76 : 28 }}
+                    animate={{ width: finished ? 28 : stage === 5 && confirmed ? expandedWidth || 76 : 28 }}
                     transition={{ type: "spring", stiffness: 260, damping: 26 }}
                     className="relative flex items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-30 disabled:pointer-events-none overflow-hidden"
-                    title={stage === 4 ? "Complete Setup" : "Next"}
+                    title={stage === 5 ? "Complete Setup" : "Next"}
                   >
                     <motion.span
-                      animate={{ opacity: finished ? 0 : stage === 4 && confirmed ? 0 : 1 }}
+                      animate={{ opacity: finished ? 0 : stage === 5 && confirmed ? 0 : 1 }}
                       transition={{ duration: 0.12 }}
                       className="absolute inset-0 flex items-center justify-center"
                     >
@@ -736,7 +891,7 @@ export function OnboardingModal() {
                     </motion.span>
                     <motion.span
                       ref={continueTextRef}
-                      animate={{ opacity: finished ? 0 : stage === 4 && confirmed ? 1 : 0 }}
+                      animate={{ opacity: finished ? 0 : stage === 5 && confirmed ? 1 : 0 }}
                       transition={{ duration: 0.12 }}
                       className="flex items-center justify-center px-3 h-7 text-xs font-semibold whitespace-nowrap shrink-0"
                     >
@@ -780,8 +935,15 @@ export function OnboardingModal() {
               />
             </div>
 
-            <div className="grid grid-cols-4 gap-3 max-h-[280px] overflow-y-auto pr-1 py-1">
-              {providers
+            <div className="grid grid-cols-4 gap-3 max-h-[280px] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-1 justify-items-center">
+              {Array.from(new Map(
+                [
+                  ...DEFAULT_PROVIDERS,
+                  ...providers.filter((p) => !(p as any).isBuiltIn && !DEFAULT_PROVIDERS.some((dp) => dp.id === p.id)),
+                ].map((p) => [p.id, p])
+              ).values())
+                .filter((p) => !(p as any).isBuiltIn)
+                .filter((p) => p.id !== "chatgpt")
                 .filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.id.toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((p) => {
                   const detectedIcon = PROVIDER_ID_TO_ICON[p.id] || p.id.charAt(0).toUpperCase() + p.id.slice(1);
@@ -794,7 +956,7 @@ export function OnboardingModal() {
                         setConfigBaseUrl(p.baseURL || "");
                         setConfigHasApiKey(p.hasApiKey !== undefined ? p.hasApiKey : true);
                       }}
-                      className="flex flex-col items-center justify-center size-20 rounded-3xl border border-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
+                      className="flex flex-col items-center justify-center size-20 rounded-3xl ring-1 ring-inset ring-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
                     >
                       <div className="size-8 flex items-center justify-center shrink-0">
                         {renderLobeIcon(detectedIcon, 24)}
@@ -811,7 +973,11 @@ export function OnboardingModal() {
       </Dialog>
 
       {/* Sub-Dialog 2: Configure Provider Credentials */}
-      <Dialog open={configureProvider !== null} onOpenChange={(v) => { if (!v) { setConfigureProvider(null); setAddProviderOpen(false); } }}>
+      <Dialog open={configureProvider !== null} onOpenChange={(v) => {
+        if (v) return;
+        setConfigureProvider(null);
+        setAddProviderOpen(true);
+      }}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
             <DialogTitle>Configure {configureProvider?.name}</DialogTitle>
@@ -866,7 +1032,7 @@ export function OnboardingModal() {
           <DialogFooter className="pt-2">
             <Button
               variant="outline"
-              onClick={() => { setConfigureProvider(null); setAddProviderOpen(false); }}
+              onClick={() => { setConfigureProvider(null); }}
               className="rounded-full h-8 px-4"
               size="sm"
             >
@@ -898,7 +1064,7 @@ export function OnboardingModal() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2 py-2 max-h-[300px] overflow-y-auto pr-1">
+          <div className="space-y-2 py-2 max-h-[300px] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {newlyConfiguredProv?.models.map((m) => (
               <div
                 key={m.id}
@@ -954,6 +1120,80 @@ export function OnboardingModal() {
               Disconnect
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Connector detail popup — rectangle similar to other cards, logo in square top-left */}
+      <Dialog open={!!connectorDetail} onOpenChange={(v) => { if (!v) setConnectorDetail(null); }}>
+        <DialogContent className="sm:max-w-sm rounded-3xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{connectorDetail?.name}</DialogTitle>
+            <DialogDescription>{connectorDetail?.description}</DialogDescription>
+          </DialogHeader>
+
+          {connectorDetail && (
+            <>
+              <div className="rounded-2xl border border-border bg-muted/10 p-4 flex gap-3 items-start">
+                <div
+                  className="size-12 rounded-xl bg-background border border-border/60 flex items-center justify-center shrink-0 shadow-sm"
+                  style={{ color: (connectorDetail as any).brandColor || undefined }}
+                >
+                  {KNOWN_ICON_IDS.has(connectorDetail.id)
+                    ? renderConnectorIcon(connectorDetail.id, 28)
+                    : (connectorDetail as any).icon?.startsWith("http")
+                      ? <img src={(connectorDetail as any).icon} alt="" className="size-7 object-contain" />
+                      : <LinkIcon className="size-6 text-muted-foreground/50" />}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="text-sm font-semibold text-foreground leading-none">{connectorDetail.name}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-4">
+                    {connectorDetail.description || `${connectorDetail.name} integration via Composio`}
+                  </p>
+                  {connectorDetail.appUrl && (
+                    <a
+                      href={connectorDetail.appUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 mt-1"
+                    >
+                      Visit site ↗
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline" className="rounded-full h-8">Close</Button>
+                </DialogClose>
+                {connectorDetail.connected ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setDisconnectTarget(connectorDetail);
+                      setConnectorDetail(null);
+                    }}
+                    className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-4 h-8"
+                  >
+                    <UnplugIcon className="size-3.5" />
+                    Disconnect
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      handleConnect(connectorDetail.id);
+                      setConnectorDetail(null);
+                    }}
+                    disabled={connectingId === connectorDetail.id}
+                    className="rounded-full h-8 px-5"
+                  >
+                    {connectingId === connectorDetail.id ? <Loader2Icon className="size-4 animate-spin mr-1.5" /> : null}
+                    Connect
+                  </Button>
+                )}
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
         </DialogContent>

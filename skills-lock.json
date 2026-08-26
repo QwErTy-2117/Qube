@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "login-with-chatgpt": {
+      "source": "opencoredev/login-with-chatgpt",
+      "sourceType": "github",
+      "skillPath": "skills/login-with-chatgpt/SKILL.md",
+      "computedHash": "5ff4786321f72b56469a35868c5a8cbe9d6ece0887bab9ee8a10735068f9dc23"
+    }
+  }
+}

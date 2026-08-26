@@ -17,6 +17,10 @@ export type ScheduledTask = {
     kind: TaskScheduleKind;
     intervalMinutes?: number;
     runAt?: number;
+    hour?: number;
+    minute?: number;
+    weekdays?: number[];
+    monthDay?: number;
   };
   enabled: boolean;
   permissions: TaskPermissions;

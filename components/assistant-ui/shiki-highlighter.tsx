@@ -30,7 +30,7 @@ export const SyntaxHighlighter: FC<HighlighterProps> = ({
       showLanguage={showLanguage}
       defaultColor="light-dark()"
       className={cn(
-        "aui-shiki-base [&_pre]:overflow-x-auto [&_pre]:rounded-b-lg [&_pre]:p-4 [&_pre]:dark:!bg-black",
+        "aui-shiki-base mb-6 [&_pre]:overflow-x-auto [&_pre]:rounded-b-lg [&_pre]:p-4 [&_pre]:dark:!bg-black",
         className,
       )}
     >

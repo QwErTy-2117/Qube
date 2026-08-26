@@ -62,6 +62,10 @@ export async function createTask(data: {
   scheduleKind: TaskScheduleKind;
   intervalMinutes?: number;
   runAt?: number;
+  hour?: number;
+  minute?: number;
+  weekdays?: number[];
+  monthDay?: number;
   permissions?: Partial<TaskPermissions>;
 }): Promise<ScheduledTask> {
   const tasks = await getTasks();
@@ -83,6 +87,10 @@ export async function createTask(data: {
       intervalMinutes:
         data.scheduleKind === "interval" ? data.intervalMinutes : undefined,
       runAt: data.scheduleKind === "once" ? data.runAt : undefined,
+      hour: data.scheduleKind === "interval" ? data.hour : undefined,
+      minute: data.scheduleKind === "interval" ? data.minute : undefined,
+      weekdays: data.scheduleKind === "interval" ? data.weekdays : undefined,
+      monthDay: data.scheduleKind === "interval" ? data.monthDay : undefined,
     },
     enabled: true,
     permissions: { ...DEFAULT_TASK_PERMISSIONS, ...data.permissions },

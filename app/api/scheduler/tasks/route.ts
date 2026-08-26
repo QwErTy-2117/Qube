@@ -35,6 +35,10 @@ export async function POST(req: NextRequest) {
           scheduleKind: data.scheduleKind,
           intervalMinutes: data.intervalMinutes,
           runAt: data.runAt ? new Date(data.runAt).getTime() : undefined,
+          hour: data.hour,
+          minute: data.minute,
+          weekdays: data.weekdays,
+          monthDay: data.monthDay,
           permissions: data.permissions,
         });
         return NextResponse.json({ task });
@@ -52,6 +56,10 @@ export async function POST(req: NextRequest) {
             runAt: data.runAt
               ? new Date(data.runAt).getTime()
               : undefined,
+            hour: data.hour,
+            minute: data.minute,
+            weekdays: data.weekdays,
+            monthDay: data.monthDay,
           };
         }
         if (data.enabled !== undefined) patch.enabled = data.enabled;

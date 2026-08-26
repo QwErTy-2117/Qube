@@ -162,11 +162,35 @@ try {
     copySync(publicSrc, path.join(sidecarDistDir, 'public'));
   }
 
-  // Ensure open-computer-use binary is executable
-  const binaryPath = path.join(sidecarDistDir, 'node_modules', 'open-computer-use', 'dist', process.platform, process.arch === 'x64' ? 'amd64' : 'arm64', process.platform === 'win32' ? 'open-computer-use.exe' : 'open-computer-use');
-  if (fs.existsSync(binaryPath)) {
-    fs.chmodSync(binaryPath, 0o755);
-    console.log(`  Made executable: ${binaryPath}`);
+  // Ensure computer-use binaries are executable (cua-driver replaces open-computer-use)
+  const cuaCandidates = [
+    // New Cua driver - native binaries via @trycua scoped packages
+    path.join(sidecarDistDir, 'node_modules', '@trycua', 'cua-driver-linux-x64-gnu'),
+    path.join(sidecarDistDir, 'node_modules', '@trycua', 'cua-driver-linux-arm64-gnu'),
+    path.join(sidecarDistDir, 'node_modules', '@trycua', 'cua-driver-darwin-arm64'),
+    path.join(sidecarDistDir, 'node_modules', '@trycua', 'cua-driver-darwin-x64'),
+    path.join(sidecarDistDir, 'node_modules', '@trycua', 'cua-driver-win32-x64-msvc'),
+    path.join(sidecarDistDir, 'node_modules', '@trycua', 'cua-driver-win32-arm64-msvc'),
+    // Legacy open-computer-use fallback (if still present)
+    path.join(sidecarDistDir, 'node_modules', 'open-computer-use', 'dist', process.platform, process.arch === 'x64' ? 'amd64' : 'arm64', process.platform === 'win32' ? 'open-computer-use.exe' : 'open-computer-use'),
+  ];
+  for (const bin of cuaCandidates) {
+    if (fs.existsSync(bin)) {
+      try { fs.chmodSync(bin, 0o755); console.log(`  Made executable: ${bin}`); } catch {}
+      // Also make nested binaries executable
+      try {
+        const files = fs.readdirSync(bin, { withFileTypes: true });
+        for (const f of files) {
+          const fp = path.join(bin, f.name);
+          if (f.isFile()) try { fs.chmodSync(fp, 0o755); } catch {}
+        }
+      } catch {}
+    }
+  }
+  // Also check for system cua-driver in sidecar (if bundled)
+  const sysBinary = path.join(sidecarDistDir, 'cua-driver' + (process.platform === 'win32' ? '.exe' : ''));
+  if (fs.existsSync(sysBinary)) {
+    try { fs.chmodSync(sysBinary, 0o755); console.log(`  Made executable: ${sysBinary}`); } catch {}
   }
 
   // Embed COMPOSIO_API_KEY into a runtime config file

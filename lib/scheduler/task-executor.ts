@@ -91,7 +91,7 @@ Use the following folder structure:
 Rules for writing files:
 1. When calling write_file, ALWAYS prefix your file paths with the appropriate category folder name (e.g., presentations/my_slides.pptx or documents/apple_pie_recipe.txt instead of my_slides.pptx or apple_pie_recipe.txt).
 2. If you are executing a command/script (via run_command) that automatically writes/generates files, configure the script to output those files into these specific directories.
-3. When referencing these files in your final response or using them, always use their full structured path (e.g. [file: presentations/my_slides.pptx]).
+3. Download links for generated files are NOT automatic — they only appear when YOU explicitly mark them. At the very end of your final response, add a [file: <path>] marker for each deliverable the user should be able to download (e.g. [file: presentations/my_slides.pptx]). Only do this for finished deliverables (documents, presentations, spreadsheets, images, archives) — never for source code, scripts, intermediate files, or files you merely read.
 
 ## Rules
 - Do NOT ask the user any questions. Work autonomously.

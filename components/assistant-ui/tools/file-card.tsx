@@ -32,15 +32,37 @@ export function FileCard({
   const Icon = entry?.icon || FileIcon;
   const color = entry?.color || "text-muted-foreground";
 
+  const handleDownload = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(downloadUrl);
+      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
+    } catch (err) {
+      console.error("[FileCard] download failed, falling back to direct link", err);
+      // Fallback: open in new tab - server sends attachment so browser will still download
+      window.open(downloadUrl, "_blank", "noopener,noreferrer");
+    }
+  };
+
   return (
     <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background p-1.5 text-sm shadow-xs">
       <Icon className={`size-4 shrink-0 ${color}`} />
       <span className="truncate font-medium text-foreground max-w-[180px]">{filename}</span>
       <a
         href={downloadUrl}
-        target="_blank"
+        download={filename}
+        onClick={handleDownload}
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 rounded-sm bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+        className="inline-flex items-center gap-1 rounded-sm bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 cursor-pointer"
       >
         <svg className="size-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />

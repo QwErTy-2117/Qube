@@ -23,3 +23,4 @@ generate_ppt.*
 .memory/browser-profiles/
 *.log
 *.log.*
+.clerk/

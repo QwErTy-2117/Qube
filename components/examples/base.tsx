@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
 import { FileCard } from "@/components/assistant-ui/tools/file-card";
+import { SubagentToolUI } from "@/components/assistant-ui/tools/subagent-tool-ui";
 import {
   ComposerQuotePreview,
   QuoteBlock,
@@ -73,6 +74,7 @@ import {
   CopyIcon,
   DownloadIcon,
   FileTextIcon,
+  FilesIcon,
   GlobeIcon,
   HelpCircleIcon,
   LanguagesIcon,
@@ -81,10 +83,12 @@ import {
   MoreHorizontalIcon,
   PencilIcon,
   PencilLineIcon,
+  PlugIcon,
   PlusIcon,
   RefreshCwIcon,
   Settings as SettingsIcon,
   SlashIcon,
+  SparklesIcon,
   SquareIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -92,18 +96,32 @@ import {
   LexicalComposerInput,
   type DirectiveChipProps,
 } from "@assistant-ui/react-lexical";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import TextRotate from "@/components/fancy/text/text-rotate";
 import Image from "next/image";
 import { useState, useEffect, type FC, type ReactNode } from "react";
 import {
   ModelSelector,
   ModelSelectorModelContext,
+  useModelSelectorEfforts,
+  useModelSelectorContext,
 } from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from "@/components/shared/settings-dialog";
 import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
+import { ChatErrorTopPopup, pushChatError, parseChatGPTError } from "@/components/chat/chat-error-popup";
+
+const baseToolGroupBy = groupPartByType({
+  reasoning: ["group-tool", "group-chainOfThought"],
+  "tool-call": ["group-tool", "group-chainOfThought"],
+  "standalone-tool-call": [],
+});
+
+const messageGroupBy = (part: any, context: any) => {
+  if (part.type === "tool-call" && part.toolName === "subagent") return [];
+  return baseToolGroupBy(part as any, context as any);
+};
 
 // Keep in sync with lib/connectors/composio.ts
 const DESTRUCTIVE_KEYWORDS = [
@@ -245,6 +263,8 @@ const ModelPicker: FC = () => {
     localStorage.setItem("qube-default-model", val);
   };
 
+  const selectedModel = models.find((m) => m.id === model);
+
   return (
     <ModelSelector.Root
       models={models}
@@ -252,18 +272,58 @@ const ModelPicker: FC = () => {
       onValueChange={handleValueChange}
     >
       <ModelSelectorModelContext />
-      <ModelSelector.Trigger
-        variant="ghost"
-        className="h-7 rounded-full text-sm"
-        arrowInverted={hasMessages}
+      <motion.div
+        layout
+        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+        className="flex items-center"
       >
-        <ModelSelector.Value showBrainIcon={false} showEffort={false} />
-      </ModelSelector.Trigger>
-      <ModelSelector.Content>
+        <ModelSelector.Trigger
+          variant="ghost"
+          className="h-7 rounded-full text-sm shrink-0 justify-between px-2.5 py-1 w-auto min-w-0"
+          arrowInverted={hasMessages}
+        >
+          <SingleModelText />
+        </ModelSelector.Trigger>
+      </motion.div>
+      <ModelSelector.Content className="w-auto min-w-[220px] max-w-[320px] overflow-hidden rounded-xl p-0 shadow-lg">
         <ModelSelector.List />
         <ModelSelector.Effort />
       </ModelSelector.Content>
     </ModelSelector.Root>
+  );
+};
+
+const SingleModelText: FC = () => {
+  const { selectedModel } = useModelSelectorContext();
+  const { efforts, effort } = useModelSelectorEfforts();
+  const modelName = selectedModel?.name || (selectedModel as any)?.id?.split(":").pop() || "Select model";
+  const thinkingName = efforts?.find((e) => e.id === effort)?.name;
+  const hasThinking = !!effort && effort !== "off" && !!thinkingName;
+
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 flex-1">
+      {selectedModel?.icon && <span className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">{selectedModel.icon}</span>}
+      <span className="truncate font-medium">{modelName}</span>
+      {hasThinking && <span className="text-sm font-light text-muted-foreground shrink-0">{thinkingName}</span>}
+    </span>
+  );
+};
+
+const ThinkingLevelInline: FC = () => {
+  const { efforts, effort } = useModelSelectorEfforts();
+  const activeName = efforts?.find((e) => e.id === effort)?.name;
+  const isActive = !!effort && effort !== "off" && !!activeName;
+  return (
+    <motion.span
+      layout
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      className="text-sm font-light text-muted-foreground ml-1 shrink-0"
+    >
+      {activeName}
+    </motion.span>
   );
 };
 
@@ -288,7 +348,7 @@ const Thread: FC = () => {
       <ThreadPrimitive.Viewport
         turnAnchor="top"
         data-slot="aui_thread-viewport"
-        className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth px-4 pt-4"
+        className="relative flex flex-1 flex-col overflow-x-auto overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden scroll-smooth px-4 pt-4"
       >
         <AuiIf condition={isNewChatView}>
           <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4">
@@ -389,90 +449,84 @@ type SuggestionGroup = {
 
 const SUGGESTION_GROUPS: SuggestionGroup[] = [
   {
-    label: "Weather",
-    icon: <CloudSunIcon />,
-    options: [
-      {
-        label: "in San Francisco",
-        prompt: "What's the weather in San Francisco?",
-      },
-      { label: "in Singapore", prompt: "What's the weather in Singapore?" },
-      { label: "in Tokyo", prompt: "What's the weather in Tokyo?" },
-      { label: "in London", prompt: "What's the weather in London?" },
-    ],
-  },
-  {
-    label: "Code",
-    icon: <CodeXmlIcon />,
-    options: [
-      {
-        label: "explain React hooks",
-        prompt: "Explain React hooks like useState and useEffect",
-      },
-      {
-        label: "write a debounce function",
-        prompt: "Write a debounce function in TypeScript",
-      },
-      {
-        label: "review a useEffect cleanup",
-        prompt: "Show me the right way to clean up a subscription in useEffect",
-      },
-    ],
-  },
-  {
-    label: "Write",
-    icon: <PencilLineIcon />,
-    options: [
-      {
-        label: "a product announcement",
-        prompt: "Draft a short product announcement for a new dark mode",
-      },
-      {
-        label: "release notes",
-        prompt:
-          "Write release notes for a bugfix release of a React component library",
-      },
-      {
-        label: "a PR description",
-        prompt:
-          "Write a pull request description for a change that adds keyboard shortcuts",
-      },
-    ],
-  },
-  {
-    label: "Analyze",
-    icon: <ChartColumnIcon />,
-    options: [
-      {
-        label: "React vs Vue vs Svelte",
-        prompt: "Compare React, Vue, and Svelte in a table",
-      },
-      {
-        label: "GDP of US, China, Japan",
-        prompt:
-          "Compare the GDP of the United States, China, and Japan in a table",
-      },
-      {
-        label: "pros and cons of SSR",
-        prompt: "What are the pros and cons of server-side rendering?",
-      },
-    ],
-  },
-  {
-    label: "Brainstorm",
+    label: "Organize",
     icon: <LightbulbIcon />,
     options: [
       {
-        label: "side project ideas",
-        prompt: "Brainstorm five side project ideas for a React developer",
+        label: "weekly schedule & priorities",
+        prompt: "Summarize my key priorities and organize a clear schedule for this week",
       },
       {
-        label: "names for a dev tool",
-        prompt: "Brainstorm names for a developer tools startup",
+        label: "plan a weekend trip",
+        prompt: "Plan a 3-day weekend trip itinerary with activities and dining recommendations",
       },
       {
-        label: "talk topics",
-        prompt: "Brainstorm talk topics for a React meetup",
+        label: "clean up notes & ideas",
+        prompt: "Organize my unformatted notes and brainstorming points into structured action items",
+      },
+    ],
+  },
+  {
+    label: "Writing",
+    icon: <PencilIcon />,
+    options: [
+      {
+        label: "professional email draft",
+        prompt: "Draft a polite, clear follow-up email regarding an ongoing project",
+      },
+      {
+        label: "project summary overview",
+        prompt: "Write a concise executive summary for a project proposal",
+      },
+      {
+        label: "blog post outline",
+        prompt: "Create an engaging blog post outline about workplace productivity and focus",
+      },
+    ],
+  },
+  {
+    label: "Documents",
+    icon: <FilesIcon />,
+    options: [
+      {
+        label: "presentation slide deck",
+        prompt: "Create a modern visual presentation slide deck outline and slide contents",
+      },
+      {
+        label: "weekly status document",
+        prompt: "Create a styled Word document summarizing project goals, status, and deliverables",
+      },
+      {
+        label: "budget spreadsheet",
+        prompt: "Create a clean Excel spreadsheet budget tracker with formatted categories",
+      },
+    ],
+  },
+  {
+    label: "Research",
+    icon: <GlobeIcon />,
+    options: [
+      {
+        label: "compare product reviews",
+        prompt: "Research top-rated product options, comparing key pros, cons, and recommendations",
+      },
+      {
+        label: "explain complex topic",
+        prompt: "Explain how artificial intelligence helps with daily organization in simple terms",
+      },
+    ],
+  },
+  {
+    label: "Connectors",
+    icon: <PlugIcon />,
+    options: [
+      {
+        label: "check email & calendar",
+        prompt: "Check my recent emails and summarize upcoming calendar events",
+      },
+      {
+        label: "send team message",
+        prompt: "Draft and post a clear team progress update",
       },
     ],
   },
@@ -629,12 +683,12 @@ const PermissionBlocker: FC<{
 };
 
 const PLACEHOLDERS = [
-  "Ask me anything...",
-  "What would you like to do?",
-  "Type a message...",
-  "How can I help?",
-  "Got a question?",
-  "What's on your mind?",
+  "Draft an email or summarize notes...",
+  "Plan a trip or organize your schedule...",
+  "Generate a presentation slide deck...",
+  "Create a budget spreadsheet with categories...",
+  "Connect your calendar or team apps...",
+  "Ask Qube to help with any task...",
 ];
 
 const Composer: FC = () => {
@@ -901,7 +955,7 @@ function ToolGroupWithTitle({
     .map((i) => message.content[i])
     .filter((p): p is { type: "reasoning"; text: string } => p?.type === "reasoning");
   const labels = parts.map(getToolLabel);
-  const title = labels[labels.length - 1] || reasoningParts.length > 0 ? "Thinking" : "Performing operations";
+  const title = labels[labels.length - 1] || (reasoningParts.length > 0 ? "Thinking" : "Performing operations");
   return (
     <ToolGroupRoot variant="ghost">
       <ToolGroupTrigger
@@ -955,13 +1009,7 @@ const AssistantMessage: FC = () => {
         data-slot="aui_assistant-message-content"
         className="text-foreground px-2 leading-relaxed wrap-break-word"
       >
-        <MessagePrimitive.GroupedParts
-          groupBy={groupPartByType({
-            reasoning: ["group-tool", "group-chainOfThought"],
-            "tool-call": ["group-tool", "group-chainOfThought"],
-            "standalone-tool-call": [],
-          })}
-        >
+        <MessagePrimitive.GroupedParts groupBy={messageGroupBy as any}>
           {({ part, children }) => {
             switch (part.type) {
               case "group-chainOfThought":
@@ -991,11 +1039,7 @@ const AssistantMessage: FC = () => {
               }
               case "text": {
                 const rawText = (part as { text?: string }).text || "";
-                const extPattern = "(pptx?|docx?|xlsx?|pdf|csv|zip|png|jpe?g|gif|svg)";
-                const fileRefs = [
-                  ...rawText.matchAll(new RegExp(`\\[file:\\s*(.+?)\\]`, "gi")),
-                  ...rawText.matchAll(new RegExp(`\\[(?!file:)([^\\]]+\\.${extPattern})\\]`, "gi")),
-                ];
+                const fileRefs = [...rawText.matchAll(new RegExp(`\\[file:\\s*(.+?)\\]`, "gi"))];
                 if (!fileRefs.length) return <MarkdownText />;
 
                 return (
@@ -1006,25 +1050,27 @@ const AssistantMessage: FC = () => {
                       preprocess={(t: string) => t
                         .replace(/<script[\s\S]*?<\/script>/gi, "")
                         .replace(/<script\b[^>]*\/>/gi, "")
-                        .replace(new RegExp(`\\[file:\\s*.+?\\]|\\[[^\\]]+\\.${extPattern}\\]`, "gi"), "").trim()}
+                        .replace(new RegExp(`\\[file:\\s*.+?\\]`, "gi"), "").trim()}
                     />
-                    {fileRefs.map(([, path, fallbackExt], i) => {
-                      const filePath = (path || fallbackExt).trim();
-                      const filename = filePath.split("/").pop() || filePath;
-                      const isExternal = filePath.startsWith("/") || filePath.startsWith("~");
-                  const downloadUrl = isExternal
-                        ? `/api/external-files/${filePath.replace(/^\//, "")}`
-                        : `/api/files/${filePath}`;
-                      return (
-                        <div key={i} className="my-2">
+                    <div className="my-2 flex flex-wrap items-center gap-2">
+                      {fileRefs.map(([, path], i) => {
+                        const filePath = path.trim();
+                        const filename = filePath.split("/").pop() || filePath;
+                        const isExternal = filePath.startsWith("/") || filePath.startsWith("~");
+                        const encodePath = (p: string) => p.split("/").map((s) => encodeURIComponent(s)).join("/");
+                        const downloadUrl = isExternal
+                          ? `/api/external-files/${encodePath(filePath.replace(/^\//, "").replace(/^~\//, ""))}`
+                          : `/api/files/${encodePath(filePath)}`;
+                        return (
                           <FileCard
+                            key={i}
                             filename={filename}
                             filePath={filePath}
                             downloadUrl={downloadUrl}
                           />
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </>
                 );
               }
@@ -1047,6 +1093,16 @@ const AssistantMessage: FC = () => {
                 );
               }
               case "tool-call":
+                if (part.toolName === "subagent") {
+                  return (
+                    <SubagentToolUI
+                      toolCallId={part.toolCallId}
+                      args={part.args as any}
+                      result={part.result as any}
+                      isExecuting={part.status.type === "running"}
+                    />
+                  );
+                }
                 const isDestructive = DESTRUCTIVE_KEYWORDS.some(kw =>
                   part.toolName.toLowerCase().includes(kw)
                 );
@@ -1087,6 +1143,20 @@ const AssistantMessage: FC = () => {
   );
 };
 
+const handleExportMarkdown = async (content: string) => {
+  const date = new Date();
+  const stamp = `${date.toISOString().slice(0, 10)}_${date.getHours().toString().padStart(2, "0")}-${date.getMinutes().toString().padStart(2, "0")}`;
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `qube-message-${stamp}.md`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+};
+
 const AssistantActionBar: FC = () => {
   return (
     <ActionBarPrimitive.Root
@@ -1124,7 +1194,7 @@ const AssistantActionBar: FC = () => {
           sideOffset={6}
           className="aui-action-bar-more-content bg-popover text-popover-foreground data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:animate-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] overflow-hidden rounded-xl border p-1 shadow-lg"
         >
-          <ActionBarPrimitive.ExportMarkdown asChild>
+          <ActionBarPrimitive.ExportMarkdown asChild onExport={handleExportMarkdown}>
             <ActionBarMorePrimitive.Item className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none">
               <DownloadIcon className="size-4" />
               Export as Markdown
@@ -1247,9 +1317,45 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
   );
 };
 
+const ChatErrorWatcher: FC = () => {
+  const messages = useAuiState((s) => s.thread.messages);
+  const lastSeenRef = useState(() => new Set<string>())[0] as Set<string>;
+  useEffect(() => {
+    for (const msg of messages) {
+      const parts: any[] = (msg as any).content || (msg as any).parts || [];
+      for (const part of parts) {
+        if (part.type === "text" && typeof part.text === "string" && /usage_limit_reached|responses_request_failed/i.test(part.text)) {
+          const key = `${msg.id}-${part.text.slice(0, 80)}`;
+          if (!lastSeenRef.has(key)) {
+            lastSeenRef.add(key);
+            const parsed = parseChatGPTError(part.text);
+            if (parsed) pushChatError(parsed);
+            else pushChatError({ title: "Request failed", message: part.text.slice(0, 300), detail: part.text, status: 429 });
+          }
+        }
+        // Also check for error parts
+        if ((part as any).status?.type === "error" || (part as any).type === "error") {
+          const errText = (part as any).errorText || (part as any).text || "";
+          if (errText) {
+            const key = `${msg.id}-${errText.slice(0, 80)}`;
+            if (!lastSeenRef.has(key)) {
+              lastSeenRef.add(key);
+              const parsed = parseChatGPTError(errText);
+              if (parsed) pushChatError(parsed);
+            }
+          }
+        }
+      }
+    }
+  }, [messages, lastSeenRef]);
+  return null;
+};
+
 export const Base: FC = () => {
   return (
     <div className="bg-muted relative flex h-full w-full pl-2">
+      <ChatErrorTopPopup />
+      <ChatErrorWatcher />
       <div data-tauri-no-drag-region>
         <Sidebar />
       </div>

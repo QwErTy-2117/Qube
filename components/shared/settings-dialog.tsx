@@ -33,6 +33,8 @@ import {
   PencilIcon,
   SparklesIcon,
   LayoutGridIcon,
+  CopyIcon,
+  ArrowUpCircleIcon,
 } from "lucide-react";
 import {
   Tabs,
@@ -48,6 +50,11 @@ import { SchedulingTab } from "./scheduling-tab";
 import { ConnectorsTab } from "./connectors-tab";
 import { syncTauriAutostart } from "@/lib/tauri-utils";
 import { Switch } from "radix-ui";
+import { ChatGPTPreferencesCard } from "@/components/chatgpt/chatgpt-preferences";
+import { useLoginWithChatGPT } from "@opencoredev/loginwithchatgpt-react";
+import { TermsPrivacyContent } from "./terms-content";
+import { useUpdaterStore } from "@/lib/updater-store";
+import { checkForUpdates, downloadAndInstall } from "@/lib/updater";
 
 
 import OpenAI from "@lobehub/icons/es/OpenAI";
@@ -141,6 +148,7 @@ export interface ProviderConfig {
   enabled: boolean;
   hasApiKey: boolean;
   apiKey?: string;
+  isBuiltIn?: boolean;
   models: {
     id: string;
     name: string;
@@ -148,6 +156,7 @@ export interface ProviderConfig {
     icon?: string;
     imageInput?: boolean;
     reasoning?: boolean;
+    isBuiltIn?: boolean;
   }[];
 }
 
@@ -256,6 +265,14 @@ export const DEFAULT_PROVIDERS: ProviderConfig[] = [
     hasApiKey: true,
     models: [],
   },
+  {
+    id: "chatgpt",
+    name: "ChatGPT",
+    baseURL: "/api/chatgpt",
+    enabled: false,
+    hasApiKey: false,
+    models: [],
+  },
 ];
 
 export const LOBE_ICONS_MAP: Record<string, any> = {
@@ -289,6 +306,7 @@ const PROVIDER_ID_TO_ICON: Record<string, string> = {
   ollama: "Ollama",
   lmstudio: "LmStudio",
   custom: "OpenAI",
+  chatgpt: "OpenAI",
 };
 
 export function renderLobeIcon(iconName: string, size: number = 24, className?: string) {
@@ -342,28 +360,20 @@ interface FetchedModel {
 }
 
 async function fetchProviderModels(baseURL: string, apiKey: string): Promise<FetchedModel[]> {
-  const base = baseURL.replace(/\/+$/, "");
-
-  const tryFetch = async (url: string): Promise<Response> => {
-    return fetch(url, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-  };
-
-  let url = base + "/models";
-  let res = await tryFetch(url);
-
-  if (res.status === 404 && !base.endsWith("/v1")) {
-    url = base + "/v1/models";
-    res = await tryFetch(url);
-  }
+  const res = await fetch("/api/providers/models", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ baseURL, apiKey }),
+  });
 
   if (!res.ok) {
-    throw new Error(`Failed to fetch models from ${url}: ${res.status} ${res.statusText}`);
+    const errBody = await res.json().catch(() => null);
+    throw new Error(errBody?.error || `Failed to fetch models: ${res.status} ${res.statusText}`);
   }
+
+  const url = baseURL;
   const body = await res.json();
   if (body?.data && Array.isArray(body.data)) {
     const seen = new Set<string>();
@@ -413,9 +423,102 @@ function SwitchToggle({ checked, onCheckedChange }: { checked: boolean; onChecke
   );
 }
 
+const CHATGPT_PROVIDER_ID = "chatgpt";
+const CHATGPT_PROVIDER_NAME = "ChatGPT";
+
+async function fetchChatGPTModels(): Promise<string[]> {
+  const res = await fetch("/api/chatgpt/models", { credentials: "same-origin" });
+  if (!res.ok) throw new Error("Failed to fetch ChatGPT models");
+  const data = await res.json();
+  if (Array.isArray(data.models)) return data.models;
+  if (Array.isArray(data.data)) return data.data.map((m: any) => m.id);
+  return [];
+}
+
+function syncChatGPTProvider(user?: { email?: string; plan?: string }) {
+  void user;
+  let cancelled = false;
+  (async () => {
+    try {
+      const models = await fetchChatGPTModels();
+      if (cancelled || models.length === 0) return;
+
+      const qualifiedModels = models.map((mid, idx) => ({
+        id: `${CHATGPT_PROVIDER_ID}:${mid}`,
+        name: mid,
+        enabled: idx === 0,
+        icon: detectModelIcon(mid, CHATGPT_PROVIDER_ID),
+        imageInput: detectModelImageSupport(mid),
+        reasoning: detectModelThinkingSupport(mid),
+      }));
+
+      const raw = localStorage.getItem("qube-providers");
+      let providers: ProviderConfig[] = [];
+      try {
+        providers = raw ? JSON.parse(raw) : [];
+      } catch {
+        providers = [];
+      }
+      if (providers.length === 0) {
+        providers = DEFAULT_PROVIDERS.filter((p) => p.id !== CHATGPT_PROVIDER_ID);
+      } else {
+        const presentIds = new Set(providers.map((p) => p.id));
+        for (const dp of DEFAULT_PROVIDERS) {
+          if (dp.id !== CHATGPT_PROVIDER_ID && !presentIds.has(dp.id)) {
+            providers = [...providers, dp];
+          }
+        }
+      }
+
+      const existing = providers.find((p) => p.id === CHATGPT_PROVIDER_ID);
+      let updated: ProviderConfig[];
+      if (!existing) {
+        const newProv: ProviderConfig = {
+          id: CHATGPT_PROVIDER_ID,
+          name: CHATGPT_PROVIDER_NAME,
+          baseURL: "/api/chatgpt",
+          enabled: true,
+          hasApiKey: false,
+          models: qualifiedModels,
+        };
+        updated = [...providers, newProv];
+      } else {
+        const existingMap = new Map(existing.models.map((m) => [m.id, m]));
+        const merged = qualifiedModels.map((m) => {
+          const prev = existingMap.get(m.id);
+          return prev ? { ...m, enabled: prev.enabled } : m;
+        });
+        if (merged.length > 0 && !merged.some((m) => m.enabled)) merged[0].enabled = true;
+        updated = providers.map((p) =>
+          p.id === CHATGPT_PROVIDER_ID ? { ...p, enabled: true, models: merged } : p
+        );
+      }
+
+      localStorage.setItem("qube-providers", JSON.stringify(updated));
+      const currentDefault = localStorage.getItem("qube-default-model");
+      if (!currentDefault) {
+        const first = updated.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models.find((m) => m.enabled);
+        if (first) localStorage.setItem("qube-default-model", first.id);
+      }
+      const defaultModelId = localStorage.getItem("qube-default-model") || null;
+      fetch("/api/providers/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providers: updated, defaultModelId }),
+      }).catch(() => {});
+      window.dispatchEvent(new Event("qube-providers-changed"));
+    } catch (e) {
+      console.error("[ChatGPT] sync failed", e);
+    } finally {
+      cancelled = true;
+    }
+  })();
+}
+
 export function SettingsDialog({ children }: { children: ReactNode }) {
   const { setTheme } = useTheme();
   const [themePref, setThemePref] = useState("light");
+  const [appVersion, setAppVersion] = useState("0.0.0");
   const [open, setOpen] = useState(false);
   const [tabValue, setTabValue] = useState("preferences");
 
@@ -447,6 +550,38 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   // Clear confirmation state
   const [clearConfirm, setClearConfirm] = useState<"memories" | "sessions" | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<boolean>(false);
+  const [hardResetConfirm, setHardResetConfirm] = useState<boolean>(false);
+  const [termsOpen, setTermsOpen] = useState<boolean>(false);
+
+  // Updater state (web UI, wired to Tauri via plugin)
+  const [updateConfirmOpen, setUpdateConfirmOpen] = useState<boolean>(false);
+  const [updateChecking, setUpdateChecking] = useState<boolean>(false);
+  const [updateInstalling, setUpdateInstalling] = useState<boolean>(false);
+  const [updateNoUpdate, setUpdateNoUpdate] = useState<boolean>(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const updaterStore = useUpdaterStore();
+  const [showTestPopup, setShowTestPopup] = useState(false);
+
+  // Show test popup button only if specific storage flag is set (not random)
+  // Enable via: localStorage.setItem("qube-dev-enable-update-test", "true")
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("qube-dev-enable-update-test");
+      setShowTestPopup(v === "true");
+    } catch {}
+    const onStorage = () => {
+      try {
+        setShowTestPopup(localStorage.getItem("qube-dev-enable-update-test") === "true");
+      } catch {}
+    };
+    window.addEventListener("storage", onStorage);
+    // also listen for custom event to toggle without reload
+    window.addEventListener("qube-dev-test-toggle" as any, onStorage as any);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("qube-dev-test-toggle" as any, onStorage as any);
+    };
+  }, []);
 
   // Preferences state
   const [defaultModel, setDefaultModel] = useState("");
@@ -458,8 +593,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   // Advanced settings state
   const [runOnStart, setRunOnStart] = useState(false);
-  const [keepAlive, setKeepAlive] = useState(false);
-  const [savedAdvanced, setSavedAdvanced] = useState(false);
+  const [keepAlive, setKeepAlive] = useState(true);
 
   // Computer Use state
   const [computerUseEnabled, setComputerUseEnabled] = useState(false);
@@ -589,6 +723,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [configureProvider, setConfigureProvider] = useState<ProviderConfig | null>(null);
   const [manageProvider, setManageProvider] = useState<ProviderConfig | null>(null);
+  const chatGptForOpenAI = useLoginWithChatGPT();
+  const [chatGptCodeDialogOpen, setChatGptCodeDialogOpen] = useState(false);
   const [browseIconModelId, setBrowseIconModelId] = useState<string | null>(null);
   const [addCustomModelOpen, setAddCustomModelOpen] = useState(false);
   const [customModelName, setCustomModelName] = useState("");
@@ -633,6 +769,34 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [refreshedModels, setRefreshedModels] = useState(false);
+
+  // ChatGPT code dialog for OpenAI popup
+  useEffect(() => {
+    if (chatGptForOpenAI.status === "pending" && chatGptForOpenAI.userCode) {
+      setChatGptCodeDialogOpen(true);
+    } else if (chatGptForOpenAI.status === "authenticated" || chatGptForOpenAI.status === "unauthenticated") {
+      setChatGptCodeDialogOpen(false);
+      if (chatGptForOpenAI.status === "authenticated") {
+        // Sync the ChatGPT provider into localStorage (this hook instance has no
+        // other component doing it on its behalf, unlike chatgpt-preferences /
+        // chatgpt-onboarding which sync themselves).
+        syncChatGPTProvider(chatGptForOpenAI.user);
+      }
+    }
+  }, [chatGptForOpenAI.status, chatGptForOpenAI.userCode]);
+
+  // Keep providers state in sync when this hook instance's session changes
+  // (the shared qube-providers-changed listener below also handles this, but
+  // listening for the local change avoids a re-render gap for the user).
+  useEffect(() => {
+    if (chatGptForOpenAI.status !== "authenticated") return;
+    try {
+      const raw = localStorage.getItem("qube-providers");
+      if (raw) setProviders(JSON.parse(raw));
+      const def = localStorage.getItem("qube-default-model");
+      if (def) setDefaultModel(def);
+    } catch {}
+  }, [chatGptForOpenAI.status, chatGptForOpenAI.user]);
 
   const saveProviders = (updated: ProviderConfig[]) => {
     setProviders(updated);
@@ -682,19 +846,33 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       setSavedConfigure(true);
       await new Promise((r) => setTimeout(r, 600));
 
-      const updated = providers.map((p) => {
-        if (p.id === configureProvider.id) {
-          return {
-            ...p,
-            enabled: true,
-            apiKey: configApiKey,
-            baseURL: configBaseUrl,
-            hasApiKey: configHasApiKey,
-            models: qualifiedModels,
-          };
-        }
-        return p;
-      });
+      const existingIdx = providers.findIndex((p) => p.id === configureProvider.id);
+      let updated: ProviderConfig[];
+      if (existingIdx >= 0) {
+        updated = providers.map((p, i) => {
+          if (i === existingIdx) {
+            return {
+              ...p,
+              enabled: true,
+              apiKey: configApiKey,
+              baseURL: configBaseUrl,
+              hasApiKey: configHasApiKey,
+              models: qualifiedModels,
+            };
+          }
+          return p;
+        });
+      } else {
+        const newProv: ProviderConfig = {
+          ...configureProvider,
+          enabled: true,
+          apiKey: configApiKey,
+          baseURL: configBaseUrl,
+          hasApiKey: configHasApiKey,
+          models: qualifiedModels,
+        } as ProviderConfig;
+        updated = [...providers, newProv];
+      }
       saveProviders(updated);
 
       setSavingConfigure(false);
@@ -732,11 +910,24 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   const handleDeleteProvider = () => {
     if (!manageProvider) return;
+    if ((manageProvider as any).isBuiltIn) return;
     setDeleteConfirm(true);
   };
 
   const handleConfirmDeleteProvider = () => {
     if (!manageProvider) return;
+    const isChatGPT = manageProvider.id === "chatgpt";
+    // Only disconnect ChatGPT if it was the provider and not connected via API (ChatGPT is always via Login, not API)
+    if (isChatGPT) {
+      // Check if ChatGPT was actually connected via Login (has provider enabled) vs API (never for chatgpt id)
+      // We consider it "not via API" if the provider has no apiKey (ChatGPT has hasApiKey=false)
+      const wasConnectedViaLogin = manageProvider.enabled && !manageProvider.apiKey;
+      if (wasConnectedViaLogin) {
+        fetch("/api/chatgpt/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
+        // Also clear localStorage session check — the hook will handle unauthenticated state
+        // We do not need to wait for it
+      }
+    }
     const updated = providers.map((p) => {
       if (p.id === manageProvider.id) {
         return {
@@ -748,8 +939,72 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       return p;
     });
     saveProviders(updated);
+    // If it was ChatGPT, also clear default model if it was a chatgpt: model
+    if (isChatGPT) {
+      const def = localStorage.getItem("qube-default-model");
+      if (def && def.startsWith("chatgpt:")) {
+        localStorage.removeItem("qube-default-model");
+        fetch("/api/providers/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ providers: updated, defaultModelId: null }),
+        }).catch(() => {});
+      }
+      window.dispatchEvent(new Event("qube-providers-changed"));
+    }
     setManageProvider(null);
     setDeleteConfirm(false);
+  };
+
+  const handleHardReset = async () => {
+    setHardResetConfirm(false);
+    // Disconnect ChatGPT (clears server-side session)
+    try { await fetch("/api/chatgpt/logout", { method: "POST", credentials: "same-origin" }); } catch {}
+    // Wipe all server-side data files (providers, chatgpt-sessions, lwc-secret, memories, sessions, etc.)
+    try { await fetch("/api/reset", { method: "POST", credentials: "same-origin" }); } catch {}
+    // Clear all localStorage (providers, models, preferences, sessions metadata, etc.)
+    try { localStorage.clear(); } catch {}
+    setTimeout(() => location.reload(), 300);
+  };
+
+  const handleCheckForUpdate = async () => {
+    setUpdateChecking(true);
+    setUpdateError(null);
+    setUpdateNoUpdate(false);
+    const start = Date.now();
+    const minSpin = 700;
+    try {
+      const res = await checkForUpdates();
+      const elapsed = Date.now() - start;
+      if (elapsed < minSpin) await new Promise((r) => setTimeout(r, minSpin - elapsed));
+      if (res.available) {
+        updaterStore.setAvailable(res.info);
+        setUpdateConfirmOpen(true);
+      } else {
+        // Show white "up to date" popup (same shape as update, auto dismiss after 2s)
+        updaterStore.setShowUpToDate(true);
+      }
+    } catch (e) {
+      const elapsed = Date.now() - start;
+      if (elapsed < minSpin) await new Promise((r) => setTimeout(r, minSpin - elapsed));
+      setUpdateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
+
+  const handleConfirmUpdate = async () => {
+    setUpdateInstalling(true);
+    setUpdateError(null);
+    try {
+      await downloadAndInstall();
+      setUpdateConfirmOpen(false);
+      // In Tauri, relaunch happens automatically; in web, new tab opened
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUpdateInstalling(false);
+    }
   };
 
   const handleSaveCustomModel = async () => {
@@ -886,6 +1141,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           const res = await fetch("/api/settings");
           if (res.ok) {
             const data = await res.json();
+            if (data.version) setAppVersion(data.version);
             const s = data.settings;
             if (s) {
               if (!lsDefaultModel && s.defaultModel) setDefaultModel(s.defaultModel);
@@ -915,7 +1171,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       const storedProviders = localStorage.getItem("qube-providers");
       if (storedProviders) {
         try {
-          setProviders(JSON.parse(storedProviders));
+          const parsed: ProviderConfig[] = JSON.parse(storedProviders);
+          setProviders(parsed);
         } catch {
           setProviders(DEFAULT_PROVIDERS);
         }
@@ -926,9 +1183,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             if (res.ok) {
               const data = await res.json();
               if (data.providers && data.providers.length > 0) {
-                setProviders(data.providers);
+                const providers = data.providers as ProviderConfig[];
+                setProviders(providers);
                 if (data.defaultModelId) setDefaultModel(data.defaultModelId);
-                localStorage.setItem("qube-providers", JSON.stringify(data.providers));
+                localStorage.setItem("qube-providers", JSON.stringify(providers));
                 if (data.defaultModelId) localStorage.setItem("qube-default-model", data.defaultModelId);
                 window.dispatchEvent(new Event("qube-providers-changed"));
                 return;
@@ -942,13 +1200,40 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     }
   }, [open]);
 
+  // Keep providers state in sync with localStorage when other components (e.g. ChatGPT sync)
+  // mutate the provider list. Without this, opening the Add Provider popup after a
+  // background provider change would show stale data.
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const raw = localStorage.getItem("qube-providers");
+        if (!raw) return;
+        const parsed: ProviderConfig[] = JSON.parse(raw);
+        setProviders(parsed);
+        const def = localStorage.getItem("qube-default-model");
+        if (def) setDefaultModel(def);
+      } catch {}
+    };
+    window.addEventListener("qube-providers-changed", handler);
+    return () => window.removeEventListener("qube-providers-changed", handler);
+  }, []);
+
   // Auto-save all settings when dialog closes
   const handleOpenChange = (next: boolean) => {
     const childDialogOpen = clearConfirm !== null
       || addProviderOpen
       || configureProvider !== null
       || manageProvider !== null
-      || customInstructionsOpen;
+      || customInstructionsOpen
+      || hardResetConfirm
+      || termsOpen
+      || deleteConfirm
+      || !!browseIconModelId
+      || addCustomModelOpen
+      || mcpManagerOpen
+      || mcpDeleteConfirm !== null
+      || chatGptCodeDialogOpen
+      || updateConfirmOpen;
 
     if (!next && childDialogOpen) return;
 
@@ -1033,11 +1318,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         style={{ height: "min(660px, 90vh)" }}
       >
         <Tabs value={tabValue} onValueChange={handleTabChange} className="flex flex-col flex-1 overflow-hidden">
-    <div className="flex justify-center px-6 pt-5 pb-0 relative">
-      <DialogClose className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute end-6 top-1/2 -translate-y-1/2 rounded-full opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
-        <XIcon className="size-4" />
-        <span className="sr-only">Close</span>
-      </DialogClose>
+    <div className="flex items-center px-6 py-3">
+      <div className="flex-1" />
       <TabsList variant="pills" className="bg-muted rounded-full p-1">
         <TabsTrigger value="preferences">
           <SlidersIcon className="size-4" />
@@ -1060,6 +1342,12 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           Advanced
         </TabsTrigger>
       </TabsList>
+      <div className="flex flex-1 justify-end">
+        <DialogClose className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground flex size-8 items-center justify-center rounded-full opacity-70 transition-opacity hover:opacity-100 hover:bg-accent focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+          <XIcon className="size-4" />
+          <span className="sr-only">Close</span>
+        </DialogClose>
+      </div>
     </div>
 
           {/* Preferences Tab */}
@@ -1070,11 +1358,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               transition={{ duration: 0.2 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-            <div className="flex-1 overflow-y-auto space-y-6 pr-1">
+            <div className="flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden space-y-6">
               {/* Your Name */}
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-foreground">Your Name</label>
-                <p className="text-xs text-muted-foreground">What Qube should call you.</p>
+                <p className="text-xs text-muted-foreground">What Qube should call you in session conversations.</p>
                 <input
                   type="text"
                   placeholder="Enter your name..."
@@ -1087,9 +1375,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               {/* About You */}
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-foreground">About You</label>
-                <p className="text-xs text-muted-foreground">Tell Qube about yourself for personalized responses.</p>
+                <p className="text-xs text-muted-foreground">Tell Qube about yourself and your preferences for personalized responses.</p>
                 <textarea
-                  placeholder="E.g. I'm a full-stack developer who loves Rust and TypeScript..."
+                  placeholder="E.g. I'm a full-stack developer who loves Rust, React, and TypeScript..."
                   value={userAbout}
                   onChange={(e) => setUserAbout(e.target.value)}
                   rows={4}
@@ -1097,39 +1385,30 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 />
               </div>
 
-              {/* Theme */}
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="text-base font-semibold text-foreground">Theme</label>
-          <p className="text-sm text-muted-foreground">Choose your preferred appearance.</p>
-        </div>
-        <Tabs value={themePref} onValueChange={(v) => setTheme(v)}>
-          <TabsList variant="pills" className="bg-muted rounded-full p-1">
-            <TabsTrigger value="light" className="!size-7 !min-w-7 !p-0 rounded-full flex items-center justify-center"><SunIcon className="size-4" /></TabsTrigger>
-            <TabsTrigger value="dark" className="!size-7 !min-w-7 !p-0 rounded-full flex items-center justify-center"><MoonIcon className="size-4" /></TabsTrigger>
-            <TabsTrigger value="system" className="!size-7 !min-w-7 !p-0 rounded-full flex items-center justify-center"><MonitorIcon className="size-4" /></TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-    </div>
-  </div>
+              <div className="pt-1">
+                <ChatGPTPreferencesCard />
+              </div>
 
-            {/* Save button & Replay Onboarding */}
-            <div className="pt-4 border-t border-border/60 mt-4 flex items-center justify-between shrink-0">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setOpen(false);
-                  setTimeout(() => {
-                    window.dispatchEvent(new Event("qube-open-onboarding"));
-                  }, 150);
-                }}
-                className="rounded-full text-xs font-semibold h-9 px-4 border-border/60 hover:bg-muted/40"
-              >
-                <SparklesIcon className="size-3.5 mr-1.5 text-primary" />
-                Replay Onboarding Flow
-              </Button>
+              {/* Theme */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-base font-semibold text-foreground">Theme</label>
+                    <p className="text-sm text-muted-foreground">Choose your preferred appearance.</p>
+                  </div>
+                  <Tabs value={themePref} onValueChange={(v) => setTheme(v)}>
+                    <TabsList variant="pills" className="bg-muted rounded-full p-1">
+                      <TabsTrigger value="light" className="!size-7 !min-w-7 !p-0 rounded-full flex items-center justify-center"><SunIcon className="size-4" /></TabsTrigger>
+                      <TabsTrigger value="dark" className="!size-7 !min-w-7 !p-0 rounded-full flex items-center justify-center"><MoonIcon className="size-4" /></TabsTrigger>
+                      <TabsTrigger value="system" className="!size-7 !min-w-7 !p-0 rounded-full flex items-center justify-center"><MonitorIcon className="size-4" /></TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+              </div>
+            </div>
+
+            {/* Save button */}
+            <div className="pt-4 border-t border-border/60 mt-4 flex items-center justify-end shrink-0">
               <Button
                 onClick={handleSaveUserPreferences}
                 className={cn("font-semibold px-5 rounded-full transition-all", savedPrefs && "bg-emerald-600 hover:bg-emerald-700")}
@@ -1152,7 +1431,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               transition={{ duration: 0.2 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-            <div className="flex-1 overflow-y-auto space-y-8 pr-1">
+            <div className="flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden space-y-8">
               {/* Long-Term Memories */}
               <div>
                 <SectionHeader
@@ -1304,7 +1583,72 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               transition={{ duration: 0.2 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <div className="flex-1 overflow-y-auto space-y-8 pr-1">
+              <div className="flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden space-y-8">
+                {/* About & Hard Reset — radius in axis with inner buttons (like update popup): outer = button radius (16 for h-8) + container padding (20 for p-5) = 36 */}
+                <div className="rounded-[36px] border border-border/60 bg-muted/10 p-5 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <img src="/logo.png" alt="Qube" className="size-8 rounded-lg" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Qube</p>
+                      <p className="text-xs text-muted-foreground">v{appVersion}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    A desktop AI agent that edits files, runs commands, searches the web, and remembers context across conversations.
+                  </p>
+                  <div className="flex justify-between gap-2 items-center">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={handleCheckForUpdate}
+                        disabled={updateChecking}
+                        className="rounded-full font-semibold h-8 px-4 flex items-center justify-center gap-1.5 min-w-[150px] whitespace-nowrap"
+                        size="sm"
+                      >
+                        {updateChecking ? (
+                          <Loader2Icon className="size-3.5 animate-spin" />
+                        ) : (
+                          <ArrowUpCircleIcon className="size-3.5" />
+                        )}
+                        Check for updates
+                      </Button>
+                      {updateError && (
+                        <span className="text-xs text-red-500 max-w-[140px] truncate" title={updateError}>{updateError}</span>
+                      )}
+                      {showTestPopup && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => window.dispatchEvent(new CustomEvent("qube-show-update-mock", { detail: { version: "9.9.9", currentVersion: appVersion || "0.0.30", body: "Test update — your data will be preserved. The app will restart after updating." } }))}
+                          className="rounded-full h-6 px-2 text-[11px] font-medium"
+                          title="Show test update popup (enabled via qube-dev-enable-update-test)"
+                        >
+                          Test popup
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setTermsOpen(true)}
+                        className="rounded-full font-semibold h-8 px-4"
+                        size="sm"
+                      >
+                        Terms of Service and Privacy Policy
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setHardResetConfirm(true)}
+                        className="rounded-full font-semibold h-8 px-4 text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
+                        size="sm"
+                      >
+                        <Trash2Icon className="size-3.5 mr-1.5" />
+                        Hard Reset
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Providers Section */}
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">
@@ -1340,7 +1684,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                               return true;
                             }));
                           }}
-                          className="flex flex-col items-center justify-center size-20 rounded-3xl border border-border bg-muted/20 hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-xs text-center p-2 gap-1 group relative"
+                          className="flex flex-col items-center justify-center size-20 rounded-3xl ring-1 ring-inset ring-border bg-muted/20 hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-xs text-center p-2 gap-1 group relative"
                         >
                           <div className="size-8 flex items-center justify-center shrink-0">
                             {renderLobeIcon(detectedIcon, 24)}
@@ -1429,14 +1773,17 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                                     </p>
                                   </div>
                                 </div>
-                                <button
-                                  onClick={() => handleDeactivateModel(m.id)}
-                                  type="button"
-                                  className="size-7 flex items-center justify-center rounded-lg transition-colors text-muted-foreground hover:text-red-500 shrink-0 cursor-pointer"
-                                  title="Deactivate model"
-                                >
-                                  <Trash2Icon className="size-3.5" />
-                                </button>
+                                {/* Built-in Qube models have no delete/deactivate button */}
+                                {(m as any).isBuiltIn || (m.provider as any).isBuiltIn ? null : (
+                                  <button
+                                    onClick={() => handleDeactivateModel(m.id)}
+                                    type="button"
+                                    className="size-7 flex items-center justify-center rounded-lg transition-colors text-muted-foreground hover:text-red-500 shrink-0 cursor-pointer"
+                                    title="Deactivate model"
+                                  >
+                                    <Trash2Icon className="size-3.5" />
+                                  </button>
+                                )}
                               </div>
                             );
                           })}
@@ -1533,30 +1880,24 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         <span className="text-sm font-medium text-foreground">Run on start</span>
                         <p className="text-xs text-muted-foreground">Launch Qube automatically when you log in.</p>
                       </div>
-                      <SwitchToggle checked={runOnStart} onCheckedChange={setRunOnStart} />
+                      <SwitchToggle checked={runOnStart} onCheckedChange={(v) => {
+                        setRunOnStart(v);
+                        try { localStorage.setItem("qube-run-on-start", String(v)); } catch {}
+                        syncTauriAutostart(v);
+                        saveSettingsToServer();
+                      }} />
                     </div>
                     <div className="flex items-center justify-between px-4 py-3">
                       <div className="space-y-0.5">
                         <span className="text-sm font-medium text-foreground">Keep server running</span>
                         <p className="text-xs text-muted-foreground">Maintain the background server for scheduled tasks and heartbeat monitoring.</p>
                       </div>
-                      <SwitchToggle checked={keepAlive} onCheckedChange={setKeepAlive} />
-                    </div>
-                  </div>
-                  <div className="flex justify-end pt-2">
-                    <Button
-                      onClick={() => {
-                        localStorage.setItem("qube-run-on-start", String(runOnStart));
-                        localStorage.setItem("qube-keep-alive", String(keepAlive));
-                        syncTauriAutostart(runOnStart);
+                      <SwitchToggle checked={keepAlive} onCheckedChange={(v) => {
+                        setKeepAlive(v);
+                        try { localStorage.setItem("qube-keep-alive", String(v)); } catch {}
                         saveSettingsToServer();
-                        setSavedAdvanced(true);
-                        setTimeout(() => setSavedAdvanced(false), 2000);
-                      }}
-                      className={cn("font-semibold px-5 rounded-full transition-all", savedAdvanced && "bg-emerald-600 hover:bg-emerald-700")}
-                    >
-                      {savedAdvanced ? <CheckIcon className="size-4" /> : "Save"}
-                    </Button>
+                      }} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1621,8 +1962,15 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               />
             </div>
 
-            <div className="grid grid-cols-4 gap-3 max-h-[300px] overflow-y-auto pr-1 py-1">
-              {providers
+            <div className="grid grid-cols-4 gap-3 max-h-[300px] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-1 justify-items-center">
+              {Array.from(new Map(
+                [
+                  ...DEFAULT_PROVIDERS,
+                  ...providers.filter((p) => !(p as any).isBuiltIn && !DEFAULT_PROVIDERS.some((dp) => dp.id === p.id)),
+                ].map((p) => [p.id, p])
+              ).values())
+                .filter((p) => !(p as any).isBuiltIn)
+                .filter((p) => p.id !== "chatgpt")
                 .filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.id.toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((p) => {
                   const detectedIcon = PROVIDER_ID_TO_ICON[p.id] || p.id.charAt(0).toUpperCase() + p.id.slice(1);
@@ -1635,7 +1983,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         setConfigBaseUrl(p.baseURL || "");
                         setConfigHasApiKey(p.hasApiKey !== undefined ? p.hasApiKey : true);
                       }}
-                      className="flex flex-col items-center justify-center size-20 rounded-3xl border border-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
+                      className="flex flex-col items-center justify-center size-20 rounded-3xl ring-1 ring-inset ring-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
                     >
                       <div className="size-8 flex items-center justify-center shrink-0">
                         {renderLobeIcon(detectedIcon, 24)}
@@ -1651,7 +1999,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={configureProvider !== null} onOpenChange={(v) => { if (!v) setConfigureProvider(null); }}>
+      <Dialog open={configureProvider !== null} onOpenChange={(v) => {
+        if (v) return;
+        setConfigureProvider(null);
+        setAddProviderOpen(true);
+      }}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
             <DialogTitle>Configure {configureProvider?.name}</DialogTitle>
@@ -1708,10 +2060,60 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               />
             </div>
 
+            {configureProvider?.id === "openai" && (
+              <>
+                <div className="flex items-center justify-center py-1">
+                  <span className="text-[11px] font-medium text-muted-foreground/60 tracking-wide">or</span>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/5 min-h-[56px] p-3 w-full flex items-center justify-center overflow-hidden">
+                  <div className="flex items-center justify-between gap-4 w-full">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="size-9 flex items-center justify-center shrink-0">
+                        {renderLobeIcon("OpenAI", 22)}
+                      </div>
+                      {chatGptForOpenAI.status === "authenticated" ? (
+                        <div className="space-y-0.5 text-left min-w-0">
+                          <h4 className="text-xs font-semibold text-foreground">ChatGPT</h4>
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {chatGptForOpenAI.user?.email || (chatGptForOpenAI.user?.plan ? `${chatGptForOpenAI.user.plan} plan` : "Connected")}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5 text-left min-w-0">
+                          <h4 className="text-xs font-semibold text-foreground">Connect OpenAI subscription</h4>
+                          <p className="text-[11px] text-muted-foreground">Use your ChatGPT subscription</p>
+                        </div>
+                      )}
+                    </div>
+                    {chatGptForOpenAI.status === "authenticated" ? (
+                      <CheckIcon className="size-4 text-emerald-500 shrink-0" />
+                    ) : (
+                      <Button
+                        onClick={() => chatGptForOpenAI.login()}
+                        disabled={chatGptForOpenAI.isConnecting || chatGptForOpenAI.status === "pending"}
+                        className="rounded-full font-semibold px-5 h-9 flex items-center gap-1.5 shrink-0"
+                        size="sm"
+                      >
+                        {chatGptForOpenAI.isConnecting || chatGptForOpenAI.status === "pending" ? (
+                          <Loader2Icon className="size-4 animate-spin" />
+                        ) : null}
+                        {chatGptForOpenAI.isConnecting || chatGptForOpenAI.status === "pending" ? "Connecting…" : "Connect"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
             {configError && (
               <div className="text-xs text-red-500 bg-red-500/10 rounded-xl px-3 py-2 border border-red-500/20">
                 {configError}
               </div>
+            )}
+            {configureProvider?.id === "openai" && chatGptForOpenAI.error && chatGptForOpenAI.status !== "pending" && (
+              <p className="text-xs text-red-500 bg-red-500/10 rounded-lg px-3 py-2 border border-red-500/20 text-center">
+                {chatGptForOpenAI.error}
+              </p>
             )}
           </div>
 
@@ -1727,6 +2129,36 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
+      {/* ChatGPT code popup for OpenAI connect */}
+      <Dialog open={chatGptCodeDialogOpen} onOpenChange={setChatGptCodeDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Connect ChatGPT</DialogTitle>
+            <DialogDescription>Enter this code in the opened browser tab to authorize Qube.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 flex flex-col items-center gap-4">
+            <div className="group relative flex justify-center items-center w-full">
+              <code className="text-3xl font-mono font-bold tracking-[0.2em] select-all text-center">{chatGptForOpenAI.userCode || "— — — —"}</code>
+            </div>
+            {chatGptForOpenAI.verificationUrl && (
+              <a href={chatGptForOpenAI.verificationUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline font-medium">
+                Open verification page ↗
+              </a>
+            )}
+          </div>
+          <div className="flex justify-end pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setChatGptCodeDialogOpen(false)}
+              className="rounded-full h-8 px-4 text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={manageProvider !== null} onOpenChange={(v) => {
         if (!v && manageProvider) {
           const updated = providers.map((p) => {
@@ -1737,7 +2169,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         }
         if (!v) setManageProvider(null);
       }}>
-        <DialogContent className="sm:max-w-xl rounded-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-xl rounded-3xl max-h-[90vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           <DialogHeader>
             <DialogTitle>{manageProvider?.name} Settings</DialogTitle>
             <DialogDescription>
@@ -1749,32 +2181,36 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             <div className="flex items-center justify-between pb-2 border-b border-border/40">
               <span className="text-sm font-semibold text-foreground">Models</span>
               <div className="flex items-center gap-2">
-                <Button
-                  onClick={handleRefreshModels}
-                  variant="outline"
-                  className="rounded-full h-7 w-7 p-0 flex items-center justify-center"
-                  size="sm"
-                  disabled={refreshingModels || refreshedModels}
-                >
-                  <RefreshCwIcon className={`size-3 ${refreshingModels ? "animate-spin" : ""}`} />
-                </Button>
-                <Button
-                  onClick={() => {
-                    setCustomModelName("");
-                    setCustomModelCode("");
-                    setAddCustomModelOpen(true);
-                  }}
-                  variant="outline"
-                  className="rounded-full font-semibold px-3 h-7 text-xs flex items-center gap-1"
-                  size="sm"
-                >
-                  <PlusIcon className="size-3" />
-                  Add Custom Model
-                </Button>
+                {(manageProvider as any)?.isBuiltIn ? null : (
+                  <Button
+                    onClick={handleRefreshModels}
+                    variant="outline"
+                    className="rounded-full h-7 w-7 p-0 flex items-center justify-center"
+                    size="sm"
+                    disabled={refreshingModels || refreshedModels}
+                  >
+                    <RefreshCwIcon className={`size-3 ${refreshingModels ? "animate-spin" : ""}`} />
+                  </Button>
+                )}
+                {(manageProvider as any)?.isBuiltIn ? null : (
+                  <Button
+                    onClick={() => {
+                      setCustomModelName("");
+                      setCustomModelCode("");
+                      setAddCustomModelOpen(true);
+                    }}
+                    variant="outline"
+                    className="rounded-full font-semibold px-3 h-7 text-xs flex items-center gap-1"
+                    size="sm"
+                  >
+                    <PlusIcon className="size-3" />
+                    Add Custom Model
+                  </Button>
+                )}
               </div>
             </div>
 
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[300px] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {manageModels.map((m) => {
                 const provId = manageProvider?.id || "";
                 const iconName = m.icon || detectModelIcon(m.id, provId);
@@ -1801,7 +2237,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                     </div>
 
                     <div className="flex items-center gap-2.5 shrink-0">
-                      {isCustomModel && (
+                      {/* Built-in Qube models have no delete button */}
+                      {(m as any).isBuiltIn ? null : isCustomModel && (
                         <button
                           onClick={() => {
                             setManageModels((prev) => prev.filter((prevM) => prevM.id !== m.id));
@@ -1831,16 +2268,20 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </div>
 
           <DialogFooter className="pt-2 flex items-center justify-between">
-            <Button
-              onClick={handleDeleteProvider}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
-            >
-              <Trash2Icon className="size-3.5" />
-              Delete
-            </Button>
+            {(manageProvider as any)?.isBuiltIn ? (
+              <div />
+            ) : (
+              <Button
+                onClick={handleDeleteProvider}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
+              >
+                <Trash2Icon className="size-3.5" />
+                Delete
+              </Button>
+            )}
             <ConfirmGroup
               onCancel={() => setManageProvider(null)}
               onConfirm={handleSaveManage}
@@ -1885,7 +2326,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="grid grid-cols-5 gap-3 py-4 max-h-[350px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-5 gap-3 py-4 max-h-[350px] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {Object.keys(LOBE_ICONS_MAP).map((iconName) => (
                   <div
                     key={iconName}
@@ -1897,7 +2338,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         setBrowseIconModelId(null);
                       }
                     }}
-                    className="flex flex-col items-center justify-center size-14 rounded-2xl border border-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
+                    className="flex flex-col items-center justify-center size-14 rounded-2xl ring-1 ring-inset ring-border bg-background hover:bg-muted/40 cursor-pointer transition-all hover:scale-105 active:scale-95 text-center p-2 gap-1 group"
                   >
                     {renderLobeIcon(iconName, 20)}
                   </div>
@@ -1952,6 +2393,102 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </Dialog>
         </DialogContent>
       </Dialog>
+
+          <Dialog open={hardResetConfirm} onOpenChange={setHardResetConfirm}>
+            <DialogContent className="sm:max-w-sm rounded-3xl">
+              <DialogHeader>
+                <DialogTitle>Hard Reset</DialogTitle>
+                <DialogDescription>
+                  This will permanently delete all providers, models, ChatGPT login, memories, sessions, and settings, then reload Qube. This cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <div className="flex items-center gap-2 ml-auto">
+                  <Button variant="outline" size="sm" onClick={() => setHardResetConfirm(false)} className="rounded-full h-8 px-4">
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleHardReset}
+                    className="rounded-full text-red-500 border-red-500/30 hover:bg-red-500/10 flex items-center gap-1.5 px-3 h-8"
+                  >
+                    <Trash2Icon className="size-3.5" />
+                    Hard Reset
+                  </Button>
+                </div>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={updateConfirmOpen} onOpenChange={setUpdateConfirmOpen}>
+            <DialogContent className="sm:max-w-sm rounded-3xl">
+              <DialogHeader>
+                <DialogTitle>Install update</DialogTitle>
+                <DialogDescription>
+                  {updaterStore.info ? (
+                    <>Version <span className="font-semibold text-foreground">v{updaterStore.info.version}</span> is available (you have v{updaterStore.info.currentVersion || appVersion}). Your data in the workspace and settings will be preserved — only the app will be updated and restarted. </>
+                  ) : (
+                    <>An update is available. Your data will be preserved — only the app will be updated and restarted.</>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              {updateError && (
+                <div className="text-xs text-red-500 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                  {updateError}
+                </div>
+              )}
+              <DialogFooter>
+                <div className="flex items-center gap-2 ml-auto">
+                  <Button type="button" variant="outline" size="sm" onClick={() => { setUpdateConfirmOpen(false); setUpdateError(null); }} className="rounded-full h-8 px-4" disabled={updateInstalling}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleConfirmUpdate}
+                    disabled={updateInstalling}
+                    className="rounded-full h-8 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1.5"
+                  >
+                    {updateInstalling ? <Loader2Icon className="size-3.5 animate-spin" /> : <ArrowUpCircleIcon className="size-3.5" />}
+                    {updateInstalling ? "Updating…" : "Update"}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={termsOpen} onOpenChange={setTermsOpen}>
+            <DialogContent className="sm:max-w-2xl max-h-[85vh] !flex flex-col rounded-3xl p-0 overflow-hidden gap-0">
+              <DialogHeader className="px-6 pt-6 pb-0 shrink-0">
+                <DialogTitle>Terms of Service and Privacy Policy</DialogTitle>
+                <DialogDescription className="sr-only">Review and revoke consent</DialogDescription>
+              </DialogHeader>
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 pb-20 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                <div className="p-4 rounded-2xl border border-border/60 bg-muted/20 space-y-3 text-xs text-muted-foreground leading-relaxed">
+                  <TermsPrivacyContent />
+                </div>
+              </div>
+              <div className="absolute bottom-0 left-0 right-0 px-6 py-4 flex justify-end bg-gradient-to-t from-background via-background/95 to-background/0 backdrop-blur-[2px] border-t border-border/20">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    try { localStorage.setItem("qube-terms-accepted", "false"); } catch {}
+                    setTermsOpen(false);
+                    setOpen(false);
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent("qube-revoke-consent"));
+                      window.dispatchEvent(new CustomEvent("qube-open-onboarding", { detail: { stage: 2 } } as any));
+                    }, 100);
+                  }}
+                  className="rounded-full h-8 px-4 text-red-500 border-red-500/30 hover:bg-red-500/10 shadow-lg"
+                >
+                  Revoke consent
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
       <Dialog open={customInstructionsOpen} onOpenChange={handleInstructionsOpenChange}>
         <DialogContent className="sm:max-w-lg rounded-3xl">
@@ -2141,7 +2678,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   No custom MCP servers configured.
                 </div>
               ) : (
-                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-[300px] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                   {mcpServers.map((srv) => (
                     <div key={srv.id} className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10 gap-3">
                       <div className="min-w-0 flex-1">
@@ -2233,6 +2770,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
         </DialogContent>
       </Dialog>
 

@@ -145,7 +145,7 @@ function ToolGroupContent({
     <CollapsibleContent
       data-slot="tool-group-content"
       className={cn(
-        "aui-tool-group-content relative overflow-hidden text-sm outline-none",
+        "aui-tool-group-content relative overflow-hidden text-base outline-none",
         "group/collapsible-content ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:animate-none",
         "data-[state=closed]:animate-collapsible-up",
         "data-[state=open]:animate-collapsible-down",
@@ -159,7 +159,7 @@ function ToolGroupContent({
     >
       <div
         className={cn(
-          "flex flex-col gap-0.5 pb-1",
+          "ml-4 flex flex-col gap-0.5 pb-1",
           "[&>*]:animate-in [&>*]:fade-in-0 [&>*]:blur-in-[2px] [&>*]:slide-in-from-top-1 [&>*]:duration-(--animation-duration) [&>*]:ease-[cubic-bezier(0.32,0.72,0,1)]",
           "[&>*]:motion-reduce:animate-none",
           "[&>*:nth-child(2)]:[animation-delay:40ms]",

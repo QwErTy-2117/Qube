@@ -90,7 +90,7 @@ const defaultComponents = memoizeMarkdownComponents({
     <td className={cn("aui-md-td px-4 py-2", className)} {...props} />
   ),
   pre: ({ className, ...props }) => (
-    <pre className={cn("aui-md-pre mb-4", className)} {...props} />
+    <pre className={cn("aui-md-pre mb-6", className)} {...props} />
   ),
   code: function Code({ className, ...props }) {
     const isCodeBlock = useIsMarkdownCodeBlock();

@@ -79,12 +79,12 @@ export function PermissionBar({
             {pending.description}
           </p>
           {commandArg && (
-            <pre className="mt-2 overflow-auto rounded-md bg-amber-100/80 p-2 font-mono text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+            <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-amber-100/80 p-2 font-mono text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden whitespace-pre-wrap break-words">
               $ {commandArg}
             </pre>
           )}
           {pathArg && (
-            <pre className="mt-2 overflow-auto rounded-md bg-amber-100/80 p-2 font-mono text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+            <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-amber-100/80 p-2 font-mono text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden whitespace-pre-wrap break-words">
               {pathArg}
             </pre>
           )}

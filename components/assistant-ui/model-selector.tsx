@@ -14,7 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { BrainIcon, CheckIcon, ChevronDownIcon } from "lucide-react";
+import { BrainIcon, CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
 import { useAui } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "motion/react";
@@ -77,7 +77,12 @@ function getModelEfforts(
     return [{ id: "off", name: "Off" }];
   }
   if (!model.efforts) return undefined;
-  return model.efforts === true ? DEFAULT_EFFORT_OPTIONS : model.efforts;
+  const base = model.efforts === true ? DEFAULT_EFFORT_OPTIONS : model.efforts;
+  // Always include Off for thinking models as requested
+  if (!base.some((e) => e.id === "off")) {
+    return [{ id: "off", name: "Off" }, ...base] as readonly ModelSelectorEffortOption[];
+  }
+  return base;
 }
 
 function resolveEffort(
@@ -150,7 +155,7 @@ const ModelSelectorContext = createContext<ModelSelectorContextValue | null>(
   null,
 );
 
-function useModelSelectorContext() {
+export function useModelSelectorContext() {
   const ctx = useContext(ModelSelectorContext);
   if (!ctx) {
     throw new Error(
@@ -398,24 +403,26 @@ function ModelSelectorContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        "bg-popover w-72 min-w-(--radix-popover-trigger-width) overflow-hidden rounded-xl p-0 shadow-lg",
+        "bg-popover w-auto min-w-[220px] max-w-[320px] overflow-hidden rounded-xl p-0 shadow-lg",
         className,
       )}
       {...props}
     >
       {/* Seeding cmdk with the selected id makes it the active item, which
           cmdk scrolls into view when the popover opens. */}
-      <Command
-        className="bg-transparent"
-        {...(value !== undefined ? { defaultValue: value } : {})}
-      >
-        {children ?? (
-          <>
-            <ModelSelectorList />
-            <ModelSelectorEffort />
+      <motion.div layout transition={{ type: "spring", stiffness: 500, damping: 30 }}>
+        <Command
+          className="bg-transparent"
+          {...(value !== undefined ? { defaultValue: value } : {})}
+        >
+          {children ?? (
+            <>
+              <ModelSelectorList />
+              <ModelSelectorEffort />
           </>
         )}
-      </Command>
+        </Command>
+      </motion.div>
     </PopoverContent>
   );
 }
@@ -561,6 +568,47 @@ function ModelSelectorItem({
   );
 }
 
+function EffortIndicator({
+  efforts,
+  effort,
+}: {
+  efforts: readonly ModelSelectorEffortOption[];
+  effort: string | undefined;
+}) {
+  const [style, setStyle] = useState<{ left: string; width: string }>({ left: "0px", width: "0px" });
+
+  useEffect(() => {
+    const container = document.querySelector('[data-slot="model-selector-effort"] [role="group"]') as HTMLElement | null;
+    if (!container) return;
+    const update = () => {
+      const active = container.querySelector(`[data-effort="${effort}"]`) as HTMLElement | null;
+      if (active) {
+        setStyle({ left: `${active.offsetLeft}px`, width: `${active.offsetWidth}px` });
+      }
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(container, { attributes: true, subtree: true, attributeFilter: ["data-state"] });
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [efforts, effort]);
+
+  if (style.width === "0px") return null;
+
+  return (
+    <motion.div
+      className="absolute inset-y-0 rounded-md bg-accent shadow-sm"
+      initial={false}
+      animate={{ left: style.left, width: style.width }}
+      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+      style={style}
+    />
+  );
+}
+
 export type ModelSelectorEffortProps = ComponentPropsWithoutRef<"div"> & {
   label?: ReactNode;
 };
@@ -583,55 +631,52 @@ function ModelSelectorEffort({
         className,
       )}
       onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => {
-        // cmdk's root keydown handler claims Enter to select the highlighted
-        // model; stop it from seeing Enter so the focused toggle activates.
         if (e.key === "Enter") e.stopPropagation();
         onKeyDown?.(e);
       }}
       {...props}
     >
-      <span className="text-muted-foreground text-xs">{label}</span>
-      <motion.div
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <BrainIcon className="size-4" />
+      </span>
+      <div
         role="group"
-        aria-label={typeof label === "string" ? label : "Reasoning effort"}
-        className="flex items-center gap-0.5"
-        layout
-        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+        aria-label="Reasoning effort"
+        className="relative flex items-center gap-0.5"
       >
+        {/* Sliding indicator — width/left measured from active button, not fixed percentage */}
+        <EffortIndicator efforts={efforts} effort={effort} />
         <AnimatePresence mode="popLayout">
-        {efforts.map((option) => {
-          const isActive = option.id === effort;
-          const isDisabled = effort === "off";
-          return (
-            <motion.div
-              key={option.id}
-              layout
-              initial={{ opacity: 0, scale: 0.8, x: -8 }}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 0.8, x: 8 }}
-              transition={{ duration: 0.15 }}
-            >
-            <button
-              type="button"
-              aria-pressed={isActive}
-              data-state={isActive ? "on" : "off"}
-              disabled={isDisabled}
-              onClick={() => (isDisabled ? undefined : setEffort(option.id))}
-              className={cn(
-                "focus-visible:ring-ring/50 rounded-md px-2 py-1 text-xs transition-colors outline-none focus-visible:ring-2",
-                isActive
-                  ? "bg-accent text-accent-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground",
-                isDisabled && "opacity-50 cursor-not-allowed",
-              )}
-            >
-              {option.name}
-            </button>
-            </motion.div>
-          );
-        })}
+          {efforts.map((option) => {
+            const isActive = option.id === effort;
+            return (
+              <motion.div
+                key={option.id}
+                layout
+                initial={{ opacity: 0, scale: 0.8, x: -8 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.8, x: 8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={isActive}
+                  data-state={isActive ? "on" : "off"}
+                  data-effort={option.id}
+                  onClick={() => setEffort(option.id)}
+                  className={cn(
+                    "relative z-10 flex items-center justify-center rounded-md px-2.5 py-1 text-xs transition-colors focus-visible:outline-none",
+                    isActive ? "text-accent-foreground font-medium" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {option.name}
+                </button>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
-      </motion.div>
+      </div>
     </div>
   );
 }

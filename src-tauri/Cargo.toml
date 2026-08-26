@@ -1,6 +1,6 @@
 [package]
 name = "qube"
-version = "0.0.31"
+version = "0.0.32"
 description = "Qube Desktop"
 authors = ["you"]
 edition = "2021"

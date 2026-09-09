@@ -248,6 +248,7 @@ export function ThreadSync() {
   useEffect(() => {
     try {
       (window as any).__qubeThreads = {
+        build: "chat-v9-merge",
         thread: () => aui.thread(),
         threads: () => aui.threads(),
         persisted: () =>

@@ -21,8 +21,7 @@ const FILE_ICONS: Record<string, { icon: typeof FileIcon; color: string }> = {
   zip: { icon: FileArchiveIcon, color: "text-amber-600" },
 };
 
-const OPENABLE = new Set(["doc", "docx", "odt", "rtf", "xls", "xlsx", "ods", "csv", "txt", "md", "markdown", "json", "js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "yml", "yaml", "toml", "sh", "sql", "xml", "log"]);
-// Slides (ppt/pptx/odp) and PDFs are download-only — no in-app viewer.
+const OPENABLE = new Set(["doc", "docx", "odt", "rtf", "xls", "xlsx", "ods", "csv", "txt", "md", "markdown", "json", "js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "yml", "yaml", "toml", "sh", "sql", "xml", "log", "pdf", "ppt", "pptx", "odp"]);
 
 export function FileCard({
   filename,

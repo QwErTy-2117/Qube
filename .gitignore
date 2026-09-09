@@ -12,10 +12,10 @@ src-tauri/gen/
 .next.d.ts
 .playwright-mcp/
 .memory/
-sandbox/
-playground/
-workspace/
-temp/
+/sandbox/
+/playground/
+/workspace/
+/temp/
 generate_ppt.*
 *.xlsx
 *.docx

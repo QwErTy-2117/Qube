@@ -1,10 +1,11 @@
 "use client";
 
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { AssistantRuntimeProvider, useRemoteThreadListRuntime } from "@assistant-ui/react";
 import {
   AssistantChatTransport,
   useChatRuntime,
 } from "@assistant-ui/react-ai-sdk";
+import { useQubeThreadListAdapter } from "@/lib/chat/thread-list-adapter";
 import { useAssistantToolUI } from "@assistant-ui/react";
 import {
   WebSearchToolUI,
@@ -27,7 +28,7 @@ import {
 } from "@/components/assistant-ui/tools";
 import { ConnectorToolUI, ConnectServiceToolUI } from "@/components/assistant-ui/tools";
 import { BrowserToolUI } from "@/components/workspace";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 function ToolUIRegistrar() {
   // Pi harness tools — file, shell, web (Pi emits tool calls as tool-input-available / tool-output-available)
@@ -213,7 +214,39 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const runtime = useChatRuntime({
+  const adapter = useQubeThreadListAdapter();
+
+  // Deep-link support: start on the chat from the URL when present.
+  const [initialThreadId] = useState<string | undefined>(() => {
+    try {
+      if (typeof window === "undefined") return undefined;
+      const m = window.location.pathname.match(/^\/chat\/(.+?)\/?$/);
+      return m ? decodeURIComponent(m[1]) : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+
+  const runtime = useRemoteThreadListRuntime({
+    runtimeHook: useQubeChatThread,
+    adapter,
+    ...(initialThreadId ? { threadId: initialThreadId } : {}),
+  });
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <ToolUIRegistrar />
+      <PrefetchManager />
+      {children}
+    </AssistantRuntimeProvider>
+  );
+}
+
+// Per-thread chat runtime. Nested inside the outer remote thread list
+// (allowNesting), so each chat keeps its own live useChat: switching chats
+// never aborts a running one.
+function useQubeChatThread() {
+  return useChatRuntime({
     transport: new AssistantChatTransport({
       api: "/api/chat",
       // body as a function: re-evaluated on every request so settings changes
@@ -258,17 +291,8 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
           if (raw !== null) memoryEnabled = raw === "true";
         } catch {}
 
-        let qubeThreadId: string | undefined;
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { useThreadStore } = require("@/lib/chat/thread-store") as typeof import("@/lib/chat/thread-store");
-          const st = useThreadStore.getState();
-          qubeThreadId = st.selectedId || st.pendingId || undefined;
-        } catch {}
-
         return {
           instanceId,
-          ...(qubeThreadId ? { qubeThreadId } : {}),
           ...(customSystemPrompt ? { customSystemPrompt } : {}),
           ...(temperature !== undefined && !isNaN(temperature) ? { temperature } : {}),
           ...(userName ? { userName } : {}),
@@ -281,12 +305,4 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
       },
     }),
   });
-
-  return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <ToolUIRegistrar />
-      <PrefetchManager />
-      {children}
-    </AssistantRuntimeProvider>
-  );
 }

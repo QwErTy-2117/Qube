@@ -2,9 +2,9 @@
  * Agent-generated chat titles (no tool call).
  *
  * Like ChatGPT/Claude/AssistantCloud: after the first complete user+assistant
- * exchange, a lightweight background model call writes a short title into the
- * thread. Never overwrites a manual rename; heuristic titles get upgraded.
- * All failures are silent — the heuristic title simply stays.
+ * exchange, a lightweight model call writes a short title into the thread.
+ * Never overwrites a manual rename; heuristic titles get upgraded.
+ * All failures resolve to null — callers fall back to a heuristic title.
  */
 
 import { providerStore } from "./provider-store";
@@ -25,8 +25,8 @@ function partText(parts: any): string {
     .trim();
 }
 
-/** First user message + first assistant reply (supports v2 UI-message and legacy repos). */
-function firstExchange(repository: any): { user: string; assistant: string } {
+/** First user message + first assistant reply (v2 UI-message or legacy repos). */
+export function firstExchange(repository: any): { user: string; assistant: string } {
   let user = "";
   let assistant = "";
   try {
@@ -43,7 +43,7 @@ function firstExchange(repository: any): { user: string; assistant: string } {
   return { user, assistant };
 }
 
-function cleanTitle(raw: string): string | null {
+export function cleanTitle(raw: string): string | null {
   let t = (raw || "").trim().replace(/\s+/g, " ");
   t = t.replace(/^["'“”‘’]+|["'“”‘’]+$/g, "").trim();
   t = t.replace(/^(title|chat title|conversation title)\s*[:\-–]\s*/i, "").trim();
@@ -57,28 +57,14 @@ function cleanTitle(raw: string): string | null {
   return t || null;
 }
 
-/** Queue a background title generation. Never throws. */
-export function requestChatTitle(threadId: string): void {
-  void generateChatTitle(threadId).catch(() => {});
-}
-
-async function generateChatTitle(threadId: string): Promise<void> {
-  const { readThreadSnapshot, saveThreadSnapshot } = await import(
-    "@/lib/chat/thread-snapshots"
-  );
-  const snap = await readThreadSnapshot(threadId).catch(() => null);
-  if (!snap || snap.titleSource === "manual" || snap.titleSource === "auto") return;
-
-  const { user, assistant } = firstExchange(snap.repository);
-  if (!user || !assistant) return; // need the first complete exchange
-
+async function generateTitleText(user: string, assistant: string): Promise<string | null> {
   const modelId = providerStore.getDefaultModelId();
-  if (!modelId) return;
+  if (!modelId) return null;
   let model: any;
   try {
     model = createPiModelClient(modelId);
   } catch {
-    return;
+    return null;
   }
 
   // NOTE: must use streamText (not generateText) — model-client forces
@@ -98,13 +84,50 @@ async function generateChatTitle(threadId: string): Promise<void> {
     try {
       await result.consumeStream();
     } catch {}
-    const title = cleanTitle(String((await result.text) ?? ""));
-    if (!title) return;
+    return cleanTitle(String((await result.text) ?? ""));
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Ensure an agent title for a thread. Resolves with the title (existing
+ * final, newly generated, or null). Never overwrites manual renames.
+ */
+export async function ensureThreadTitle(
+  threadId: string,
+  userText?: string,
+  assistantText?: string,
+): Promise<string | null> {
+  try {
+    const { readThreadSnapshot, saveThreadSnapshot } = await import(
+      "@/lib/chat/thread-snapshots"
+    );
+    const snap = await readThreadSnapshot(threadId).catch(() => null);
+    if (snap && (snap.titleSource === "manual" || snap.titleSource === "auto")) {
+      return snap.title || null;
+    }
+
+    let user = (userText || "").trim().slice(0, 500);
+    let assistant = (assistantText || "").trim().slice(0, 500);
+    if ((!user || !assistant) && snap?.repository) {
+      const ex = firstExchange(snap.repository);
+      user = user || ex.user;
+      assistant = assistant || ex.assistant;
+    }
+    if (!user || !assistant) return snap?.title && !isPlaceholder(snap.title) ? snap.title : null;
+
+    const title = await generateTitleText(user, assistant);
+    if (!title) return snap?.title ?? null;
 
     // Re-check: a manual rename meanwhile always wins.
     const fresh = await readThreadSnapshot(threadId).catch(() => null);
-    if (!fresh || fresh.titleSource === "manual" || fresh.titleSource === "auto") return;
-    await saveThreadSnapshot(threadId, fresh.repository, title, "auto");
+    if (fresh && (fresh.titleSource === "manual" || fresh.titleSource === "auto")) {
+      return fresh.title;
+    }
+    await saveThreadSnapshot(threadId, fresh?.repository ?? snap?.repository, title, "auto");
 
     try {
       const { readSession, saveSession } = await import("@/lib/memory/session-store");
@@ -113,9 +136,14 @@ async function generateChatTitle(threadId: string): Promise<void> {
         await saveSession(threadId, title, sess.summary, (sess as any).transcript, sess.hasTranscript);
       }
     } catch {}
+    return title;
   } catch {
-    // Silent: heuristic title stays.
-  } finally {
-    clearTimeout(timeout);
+    return null;
   }
+}
+
+function isPlaceholder(title: string | undefined | null): boolean {
+  if (!title) return true;
+  const t = title.trim().toLowerCase();
+  return t === "" || t === "new chat" || t === "new thread" || t === "conversation" || t === "untitled";
 }

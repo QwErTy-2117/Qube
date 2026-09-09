@@ -14,6 +14,7 @@ import remarkGfm from "remark-gfm";
 import { SyntaxHighlighter } from "./shiki-highlighter";
 import { TooltipIconButton } from "./tooltip-icon-button";
 import { remarkFileRefs, MdFileCardNode, MdFileCardGroupNode } from "./md-file-ref";
+import { renderLatexShortcuts } from "./latex-shortcuts";
 
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const [isCopied, setIsCopied] = useState(false);
@@ -115,7 +116,11 @@ export function MarkdownText() {
       remarkPlugins={[remarkGfm, remarkFileRefs]}
       className="aui-md"
       components={defaultComponents}
-      preprocess={(text) => text.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<script\b[^>]*\/>/gi, "")}
+      preprocess={(text) =>
+        renderLatexShortcuts(
+          text.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<script\b[^>]*\/>/gi, ""),
+        )
+      }
     />
   );
 }

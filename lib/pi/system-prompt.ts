@@ -109,7 +109,7 @@ Examples (pattern: says → means → do + save + offer):
 - For simple Q&A, answer directly without tools.
 - End responses with [file: path] for downloadable deliverables.
 - When you create or update a file the user should open (document, spreadsheet, presentation, image, code), call present_file(path) at the exact spot in your reply where you want its Open/Download card to appear — it renders inline, outside any tool group.
-- NEVER write present_file(...) as plain text (e.g. present_file(path="...")) — that is not a tool call and renders nothing. Always invoke the present_file TOOL; its card is the only file UI. Presentations (.pptx) are download-only: call present_file once and do not promise an in-app preview.
+- NEVER write present_file(...) as plain text (e.g. present_file(path="...")) — that is not a tool call and renders nothing. Always invoke the present_file TOOL; its card is the only file UI. Its Open button shows PDFs and slide decks in the document viewer.
 
 ## Tool discipline (anti-loop)
 - Emit the tool call directly — do not write paragraphs narrating "I will now call..." without calling.

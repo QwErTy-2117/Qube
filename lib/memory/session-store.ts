@@ -13,6 +13,7 @@ export type SessionRecord = {
   createdAt: number;
   updatedAt: number;
   hasTranscript: boolean;
+  status?: "regular" | "archived";
 };
 
 export type SessionWithTranscript = SessionRecord & {
@@ -72,6 +73,7 @@ export async function saveSession(
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now(),
     hasTranscript: !!transcript && storeTranscript,
+    status: existing?.status || "regular",
   };
   if (transcript && storeTranscript) {
     if (transcript.length > MAX_TRANSCRIPT_SIZE) {
@@ -133,6 +135,19 @@ export async function listSessions(): Promise<SessionRecord[]> {
 
 export async function deleteSession(id: string): Promise<void> {
   await unlink(sessionPath(id)).catch(() => {});
+}
+
+export async function setSessionStatus(
+  id: string,
+  status: "regular" | "archived",
+): Promise<SessionRecord | null> {
+  const existing = await readSession(id).catch(() => null);
+  if (!existing) return null;
+  existing.status = status;
+  existing.updatedAt = Date.now();
+  await writeFile(sessionPath(id), JSON.stringify(existing, null, 2), "utf-8");
+  const { transcript: _, ...record } = existing as SessionRecord & { transcript?: string };
+  return record;
 }
 
 export async function renameSession(id: string, title: string): Promise<SessionRecord | null> {

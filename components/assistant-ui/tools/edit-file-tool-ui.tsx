@@ -21,7 +21,7 @@ export const EditFileToolUI: ToolCallMessagePartComponent = ({
   const downloadUrl = data.relativePath ? `/api/files/${data.relativePath.split("/").map((s) => encodeURIComponent(s)).join("/")}` : null;
 
   const ext = displayPath.split(".").pop()?.toLowerCase();
-  const isDownloadable = ["pptx", "docx", "xlsx", "pdf", "csv", "zip", "png", "jpg", "jpeg", "gif", "svg"].includes(ext || "");
+  const isDownloadable = ["pptx", "ppt", "docx", "doc", "xlsx", "xls", "pdf", "csv", "zip", "png", "jpg", "jpeg", "gif", "svg", "md", "txt", "json", "js", "ts", "tsx", "jsx", "py", "html", "css"].includes(ext || "");
 
   const displayName = displayPath.split("/").pop() || displayPath;
 
@@ -29,7 +29,7 @@ export const EditFileToolUI: ToolCallMessagePartComponent = ({
     <div className="px-3 py-1 text-sm">
       {downloadUrl && isDownloadable && (
         <div className="mb-2">
-          <FileCard filename={displayName} downloadUrl={downloadUrl} />
+          <FileCard filename={displayName} filePath={data.relativePath || path} downloadUrl={downloadUrl} />
         </div>
       )}
       {displayPath && (

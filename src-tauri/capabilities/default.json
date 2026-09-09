@@ -30,6 +30,7 @@
     "dialog:default",
     "dialog:allow-message",
     "dialog:allow-confirm",
-    "dialog:allow-ask"
+    "dialog:allow-ask",
+    "dialog:allow-open"
   ]
 }

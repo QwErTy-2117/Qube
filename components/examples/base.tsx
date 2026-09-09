@@ -7,9 +7,6 @@ import {
 } from "@/components/assistant-ui/attachment";
 import {
   MarkdownText,
-  MarkdownTextPrimitive,
-  defaultComponents,
-  remarkGfm,
 } from "@/components/assistant-ui/markdown-text";
 import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
@@ -22,7 +19,7 @@ import {
 } from "@/components/assistant-ui/tool-group";
 
 import { usePermissionPoller, PermissionBar } from "@/components/assistant-ui/permission-prompt";
-import { useAskUserPoller, AskUserBar } from "@/components/assistant-ui/ask-user-prompt";
+import { QuestionPanel } from "@/components/assistant-ui/question-panel";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import {
   Reasoning,
@@ -34,8 +31,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
-import { FileCard } from "@/components/assistant-ui/tools/file-card";
+import { ChangedFiles } from "@/components/assistant-ui/tools/changed-files";
 import { SubagentToolUI } from "@/components/assistant-ui/tools/subagent-tool-ui";
+import { ShowFileToolUI } from "@/components/assistant-ui/tools/show-file-tool-ui";
+import { GoalsPanel } from "@/components/assistant-ui/goals-panel";
 import {
   ComposerQuotePreview,
   QuoteBlock,
@@ -60,10 +59,8 @@ import {
   useAui,
   useAuiState,
   type ToolCallMessagePart,
-  type Unstable_SlashCommand,
 } from "@assistant-ui/react";
 import {
-  ArrowDownToLineIcon,
   ArrowUpIcon,
   ChartColumnIcon,
   CheckIcon,
@@ -73,14 +70,12 @@ import {
   CodeXmlIcon,
   CopyIcon,
   DownloadIcon,
-  FileTextIcon,
   FilesIcon,
   GlobeIcon,
-  HelpCircleIcon,
-  LanguagesIcon,
   LightbulbIcon,
   MicIcon,
   MoreHorizontalIcon,
+  PaperclipIcon,
   PencilIcon,
   PencilLineIcon,
   PlugIcon,
@@ -88,7 +83,6 @@ import {
   RefreshCwIcon,
   Settings as SettingsIcon,
   SlashIcon,
-  SparklesIcon,
   SquareIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -99,7 +93,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import TextRotate from "@/components/fancy/text/text-rotate";
 import Image from "next/image";
-import { useState, useEffect, type FC, type ReactNode } from "react";
+import { useState, useEffect, useCallback, type FC, type ReactNode } from "react";
 import {
   ModelSelector,
   ModelSelectorModelContext,
@@ -108,9 +102,13 @@ import {
 } from "@/components/assistant-ui/model-selector";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from "@/components/shared/settings-dialog";
+import { useTheme } from "next-themes";
 import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
 import { ChatErrorTopPopup, pushChatError, parseChatGPTError } from "@/components/chat/chat-error-popup";
+import { DocumentPopup } from "@/components/workspace";
+import { BrowserPanel } from "@/components/workspace";
+import { openBrowserWorkspace, useWorkspaceStore } from "@/lib/workspace/store";
 
 const baseToolGroupBy = groupPartByType({
   reasoning: ["group-tool", "group-chainOfThought"],
@@ -120,6 +118,8 @@ const baseToolGroupBy = groupPartByType({
 
 const messageGroupBy = (part: any, context: any) => {
   if (part.type === "tool-call" && part.toolName === "subagent") return [];
+  if (part.type === "tool-call" && part.toolName === "TodoWrite") return [];
+  if (part.type === "tool-call" && part.toolName === "present_file") return [];
   return baseToolGroupBy(part as any, context as any);
 };
 
@@ -129,50 +129,14 @@ const DESTRUCTIVE_KEYWORDS = [
   "update", "edit", "modify", "upload", "transfer",
 ];
 
-const Sidebar: FC = () => {
-  return (
-    <aside className="flex h-full w-12 flex-col overflow-hidden">
-      <OnboardingModal />
-      <div className="mt-2 flex h-12 shrink-0 items-center px-3.5">
-        <Image
-          src={logoPng}
-          alt="logo"
-          className="size-5 shrink-0"
-        />
-      </div>
-      <ThreadListPrimitive.New asChild>
-        <TooltipIconButton
-          tooltip="New thread"
-          side="right"
-          variant="ghost"
-          size="icon"
-          className="mt-1 ml-2 size-8 transition-all duration-200 hover:[transform:translateY(-3px)_rotate(-5deg)]"
-        >
-          <PlusIcon className="size-4" />
-        </TooltipIconButton>
-      </ThreadListPrimitive.New>
-      <div className="mt-auto mb-2 flex flex-col items-center gap-1">
-        <AnimatedThemeToggler
-          variant="circle"
-          className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:size-4"
-        />
-        <SettingsDialog>
-          <div>
-            <TooltipIconButton
-              tooltip="Settings"
-              side="right"
-              variant="ghost"
-              size="icon"
-              className="size-8 rounded-full text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            >
-              <SettingsIcon className="size-4" />
-            </TooltipIconButton>
-          </div>
-        </SettingsDialog>
-      </div>
-    </aside>
-  );
-};
+import { QubeSidebar } from "@/components/chat/qube-sidebar";
+import { ChatSearchDialog } from "@/components/chat/chat-search-dialog";
+import { ChatTitle } from "@/components/chat/chat-title";
+import { ThreadSync } from "@/components/chat/thread-sync";
+
+// Sidebar lives in components/chat/qube-sidebar.tsx (expandable w/ curtain
+// reveal, thread list, search). Kept here only as a thin alias.
+const Sidebar: FC = () => <QubeSidebar />;
 
 
 import type { ModelOption } from "@/components/assistant-ui/model-selector";
@@ -376,9 +340,11 @@ const Thread: FC = () => {
             </ThreadPrimitive.Messages>
           </div>
           <ThreadPrimitive.ViewportFooter
-            className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
+            className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-2 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
           >
             <ThreadScrollToBottom />
+            <GoalsPanel />
+            <QuestionPanel />
             <Composer />
           </ThreadPrimitive.ViewportFooter>
         </AuiIf>
@@ -390,15 +356,28 @@ const Thread: FC = () => {
 };
 
 const ThreadScrollToBottom: FC = () => {
+  const isRunning = useAuiState((s) => s.thread.isRunning);
   return (
     <ThreadPrimitive.ScrollToBottom asChild>
-      <TooltipIconButton
-        tooltip="Scroll to bottom"
-        variant="outline"
-        className="aui-thread-scroll-to-bottom border-border bg-background hover:bg-accent absolute -top-12 z-10 self-center !size-9 rounded-full disabled:invisible"
+      <button
+        aria-label="Scroll to bottom"
+        title="Scroll to bottom"
+        className={
+          isRunning
+            ? "absolute -top-12 z-10 flex h-9 w-auto min-w-9 cursor-pointer items-center justify-center self-center rounded-full border border-border bg-popover/85 px-3 text-foreground shadow-lg backdrop-blur-xl transition hover:bg-popover disabled:invisible"
+            : "absolute -top-12 z-10 flex size-9 cursor-pointer items-center justify-center self-center rounded-full border border-border bg-popover/85 text-foreground shadow-lg backdrop-blur-xl transition hover:bg-popover disabled:invisible"
+        }
       >
-        <ArrowDownToLineIcon className="size-4 text-muted-foreground/70" />
-      </TooltipIconButton>
+        {isRunning ? (
+          <span className="typing-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        ) : (
+          <ArrowUpIcon className="size-4 rotate-180 text-muted-foreground/70" />
+        )}
+      </button>
     </ThreadPrimitive.ScrollToBottom>
   );
 };
@@ -599,39 +578,32 @@ const ThreadSuggestions: FC = () => {
   );
 };
 
-const slashCommands: readonly Unstable_SlashCommand[] = [
-  {
-    id: "summarize",
-    description: "Summarize the conversation",
-    icon: "FileText",
-    execute: () => console.log("[base example] /summarize invoked"),
-  },
-  {
-    id: "translate",
-    description: "Translate text to another language",
-    icon: "Languages",
-    execute: () => console.log("[base example] /translate invoked"),
-  },
-  {
-    id: "search",
-    description: "Search the web for information",
-    icon: "Globe",
-    execute: () => console.log("[base example] /search invoked"),
-  },
-  {
-    id: "help",
-    description: "List available commands",
-    icon: "HelpCircle",
-    execute: () => console.log("[base example] /help invoked"),
-  },
-];
-
 const slashIconMap: Record<string, FC<{ className?: string }>> = {
-  FileText: FileTextIcon,
-  Languages: LanguagesIcon,
-  Globe: GlobeIcon,
-  HelpCircle: HelpCircleIcon,
+  Attach: PaperclipIcon,
+  None: () => null,
 };
+
+type SlashSkill = { name: string; description: string };
+
+function loadSlashSkills(): SlashSkill[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw =
+      localStorage.getItem("qube-skills") ||
+      localStorage.getItem("qube-skills-cache");
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((s: any) => s && typeof s.name === "string" && s.userInvocable !== false)
+      .map((s: any) => ({
+        name: String(s.name),
+        description: typeof s.description === "string" ? s.description : "",
+      }));
+  } catch {
+    return [];
+  }
+}
 
 function DirectiveChip(props: DirectiveChipProps) {
   const { directiveId, directiveType, label } = props;
@@ -654,15 +626,8 @@ function DirectiveChip(props: DirectiveChipProps) {
 
 const PermissionBlocker: FC<{
   permissionPending: any;
-  askUserPending: any;
-  onRespondPermission: (approved: boolean) => void;
-  onRespondAskUser: (answer: string) => void;
-}> = ({
-  permissionPending,
-  askUserPending,
-  onRespondPermission,
-  onRespondAskUser,
-}) => {
+  onRespondPermission: (approved: boolean, always?: boolean) => void;
+}> = ({ permissionPending, onRespondPermission }) => {
   if (permissionPending) {
     return (
       <div data-slot="aui-permission-blocker" className="mb-2 w-full">
@@ -671,16 +636,12 @@ const PermissionBlocker: FC<{
     );
   }
 
-  if (askUserPending) {
-    return (
-      <div data-slot="aui-ask-user-blocker" className="mb-2 w-full">
-        <AskUserBar question={askUserPending} onRespond={onRespondAskUser} />
-      </div>
-    );
-  }
-
   return null;
 };
+
+// Pasted text at or above this length becomes a .txt attachment
+// instead of being dumped raw into the composer input.
+const PASTE_AS_FILE_THRESHOLD = 2000;
 
 const PLACEHOLDERS = [
   "Draft an email or summarize notes...",
@@ -694,6 +655,31 @@ const PLACEHOLDERS = [
 const Composer: FC = () => {
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const [showAnimated, setShowAnimated] = useState(true);
+  const aui = useAui();
+
+  // Large pastes become .txt attachments instead of flooding the input.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest?.("[data-slot='aui_composer-shell']")) return;
+      const dt = e.clipboardData;
+      if (!dt) return;
+      // Real file pastes (images, etc.) take the default path.
+      if (dt.files && dt.files.length > 0) return;
+      const text = dt.getData("text/plain");
+      if (!text || text.length < PASTE_AS_FILE_THRESHOLD) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const file = new File([text], `paste-${Date.now().toString(36)}.txt`, {
+        type: "text/plain",
+      });
+      aui.composer().addAttachment(file).catch((err) => {
+        console.error("[composer] failed to attach pasted text", err);
+      });
+    };
+    document.addEventListener("paste", onPaste, true);
+    return () => document.removeEventListener("paste", onPaste, true);
+  }, [aui]);
 
   useEffect(() => {
     const shell = document.querySelector(
@@ -723,25 +709,107 @@ const Composer: FC = () => {
   }, []);
 
   const mention = unstable_useMentionAdapter({ fallbackIcon: WrenchIcon });
+
+  // Installed skills (system + custom + marketplace) as / commands.
+  // Selecting one inserts "/name " so the user keeps typing the task;
+  // the Pi harness auto-applies the skill from its description.
+  const [slashSkills, setSlashSkills] = useState<SlashSkill[]>(() => loadSlashSkills());
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/skills/sync")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data || !Array.isArray(data.skills)) return;
+        const list = data.skills
+          .filter((s: any) => s && typeof s.name === "string" && s.userInvocable !== false)
+          .map((s: any) => ({
+            name: String(s.name),
+            description: typeof s.description === "string" ? s.description : "",
+          }));
+        setSlashSkills(list);
+        try {
+          localStorage.setItem("qube-skills-cache", JSON.stringify(data.skills));
+        } catch {}
+      })
+      .catch(() => {});
+    const onChange = () => setSlashSkills(loadSlashSkills());
+    window.addEventListener("qube-skills-changed", onChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("qube-skills-changed", onChange);
+    };
+  }, []);
+
+  const insertSkillCommand = useCallback(
+    (name: string) => {
+      try {
+        aui.composer().setText(`/${name} `);
+      } catch (e) {
+        console.error("[slash] failed to insert skill command", e);
+      }
+    },
+    [aui],
+  );
+
+  const attachFiles = useCallback(() => {
+    try {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.multiple = true;
+      input.accept = "image/*,.pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
+      input.hidden = true;
+      document.body.appendChild(input);
+      input.onchange = () => {
+        const files = input.files;
+        if (files) {
+          for (const file of files) {
+            aui.composer().addAttachment(file).catch(console.error);
+          }
+        }
+        document.body.removeChild(input);
+      };
+      input.oncancel = () => {
+        if (!input.files || input.files.length === 0) {
+          try { document.body.removeChild(input); } catch {}
+        }
+      };
+      input.click();
+    } catch (e) {
+      console.error("[slash] failed to open file picker", e);
+    }
+  }, [aui]);
+
   const slash = unstable_useSlashCommandAdapter({
-    commands: slashCommands,
+    commands: [
+      {
+        id: "add-files",
+        label: "Add files",
+        description: "Attach files from your computer to this message",
+        icon: "Attach",
+        execute: () => attachFiles(),
+      },
+      ...slashSkills.map((s) => ({
+        id: s.name,
+        label: s.name,
+        description: s.description || "Skill",
+        icon: "None",
+        execute: () => insertSkillCommand(s.name),
+      })),
+    ],
     iconMap: slashIconMap,
     fallbackIcon: SlashIcon,
+    removeOnExecute: true,
   });
 
   const { pending: permissionPending, respond: respondPermission } =
     usePermissionPoller();
-  const { pending: askUserPending, respond: respondAskUser } =
-    useAskUserPoller();
 
   return (
     <ComposerPrimitive.Unstable_TriggerPopoverRoot>
       <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
         <PermissionBlocker
           permissionPending={permissionPending}
-          askUserPending={askUserPending}
           onRespondPermission={respondPermission}
-          onRespondAskUser={respondAskUser}
         />
         <ComposerPrimitive.AttachmentDropzone asChild>
           <div
@@ -796,7 +864,13 @@ const Composer: FC = () => {
         <ComposerTriggerPopover
           char="/"
           {...slash}
-          emptyItemsLabel="No matching commands"
+          className="w-max min-w-56 max-w-80 rounded-2xl p-1.5"
+          listClassName="flex max-h-64 flex-col gap-0.5 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          itemClassName="hover:bg-accent focus:bg-accent data-[highlighted]:bg-accent relative flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-start whitespace-nowrap transition-colors outline-none"
+          emptyItemsLabel="No matching skills"
+          hideItemDescriptions
+          showTooltips
+          overflowVisible
         />
       </ComposerPrimitive.Root>
     </ComposerPrimitive.Unstable_TriggerPopoverRoot>
@@ -907,6 +981,7 @@ const TOOL_GROUP_TITLES: Record<string, string> = {
   read_session: "Reading the tea leaves",
   read_memory: "Scratching the brain",
   ask_user: "Poking the human",
+  ask_question: "Asking you",
 
   gmail: "Fiddling with your inbox",
   slack: "Slacking off",
@@ -1038,41 +1113,9 @@ const AssistantMessage: FC = () => {
                 );
               }
               case "text": {
-                const rawText = (part as { text?: string }).text || "";
-                const fileRefs = [...rawText.matchAll(new RegExp(`\\[file:\\s*(.+?)\\]`, "gi"))];
-                if (!fileRefs.length) return <MarkdownText />;
-
-                return (
-                  <>
-                    <MarkdownTextPrimitive
-                      remarkPlugins={[remarkGfm]}
-                      components={defaultComponents}
-                      preprocess={(t: string) => t
-                        .replace(/<script[\s\S]*?<\/script>/gi, "")
-                        .replace(/<script\b[^>]*\/>/gi, "")
-                        .replace(new RegExp(`\\[file:\\s*.+?\\]`, "gi"), "").trim()}
-                    />
-                    <div className="my-2 flex flex-wrap items-center gap-2">
-                      {fileRefs.map(([, path], i) => {
-                        const filePath = path.trim();
-                        const filename = filePath.split("/").pop() || filePath;
-                        const isExternal = filePath.startsWith("/") || filePath.startsWith("~");
-                        const encodePath = (p: string) => p.split("/").map((s) => encodeURIComponent(s)).join("/");
-                        const downloadUrl = isExternal
-                          ? `/api/external-files/${encodePath(filePath.replace(/^\//, "").replace(/^~\//, ""))}`
-                          : `/api/files/${encodePath(filePath)}`;
-                        return (
-                          <FileCard
-                            key={i}
-                            filename={filename}
-                            filePath={filePath}
-                            downloadUrl={downloadUrl}
-                          />
-                        );
-                      })}
-                    </div>
-                  </>
-                );
+                // [file: path] markers and literal present_file(path="...")
+                // render inline as cards via remarkFileRefs (exact position).
+                return <MarkdownText />;
               }
               case "reasoning": {
                 // Render reasoning as a tool-group-like compressed component
@@ -1103,6 +1146,21 @@ const AssistantMessage: FC = () => {
                     />
                   );
                 }
+                // TodoWrite renders in the docked GoalsPanel above the composer, not inline.
+                if (part.toolName === "TodoWrite") {
+                  return null;
+                }
+                // present_file renders its card bare (never in a tool group)
+                // so the agent can place Open/Download exactly where it wants.
+                if (part.toolName === "present_file") {
+                  const toolProps = {
+                    toolCallId: part.toolCallId,
+                    args: part.args,
+                    result: part.result,
+                    status: part.status,
+                  } as unknown as React.ComponentProps<typeof ShowFileToolUI>;
+                  return <ShowFileToolUI {...toolProps} />;
+                }
                 const isDestructive = DESTRUCTIVE_KEYWORDS.some(kw =>
                   part.toolName.toLowerCase().includes(kw)
                 );
@@ -1129,6 +1187,7 @@ const AssistantMessage: FC = () => {
             }
           }}
         </MessagePrimitive.GroupedParts>
+        <ChangedFiles />
         <MessageError />
       </div>
 
@@ -1351,24 +1410,70 @@ const ChatErrorWatcher: FC = () => {
   return null;
 };
 
+// Opens the browser side panel when the agent uses browser tools.
+// Never closes it automatically — the window stays open after the run;
+// only the panel X (or app shutdown) ends the session.
+// Opens the browser side panel when the agent uses browser tools.
+// Opens ONCE per tool call (tracked by toolCallId): closing the panel
+// dismisses it until a NEW browser call arrives — it never reopens
+// itself on re-renders, and nothing auto-closes the window.
+const openedBrowserCallIds = new Set<string>();
+const BrowserAutoOpener: FC = () => {
+  const messages = useAuiState((s) => s.thread.messages);
+  useEffect(() => {
+    try {
+      const ids: string[] = [];
+      for (const m of messages as unknown as Array<{
+        content?: Array<{ type?: string; toolName?: string; toolCallId?: string }>;
+        parts?: Array<{ type?: string; toolName?: string; toolCallId?: string }>;
+      }>) {
+        const parts = m?.content || m?.parts || [];
+        for (const p of parts) {
+          if (p?.type === "tool-call" && typeof p?.toolName === "string" && p.toolName.startsWith("browser_")) {
+            ids.push(typeof p.toolCallId === "string" && p.toolCallId ? p.toolCallId : `${p.toolName}`);
+          }
+        }
+      }
+      const fresh = ids.filter((id) => !openedBrowserCallIds.has(id));
+      if (fresh.length > 0) {
+        fresh.forEach((id) => openedBrowserCallIds.add(id));
+        // Bound memory: forget calls from long-finished threads.
+        if (openedBrowserCallIds.size > 200) {
+          const arr = [...openedBrowserCallIds];
+          arr.slice(0, arr.length - 200).forEach((id) => openedBrowserCallIds.delete(id));
+        }
+        const st = useWorkspaceStore.getState();
+        if (!st.open || st.artifact?.kind !== "browser") openBrowserWorkspace();
+      }
+    } catch {}
+  }, [messages]);
+  return null;
+};
+
 export const Base: FC = () => {
   return (
     <div className="bg-muted relative flex h-full w-full pl-2">
       <ChatErrorTopPopup />
       <ChatErrorWatcher />
+      <BrowserAutoOpener />
+      <ThreadSync />
+      <ChatSearchDialog />
       <div data-tauri-no-drag-region>
         <Sidebar />
       </div>
-      <div data-tauri-no-drag-region className="flex flex-1 flex-col overflow-hidden md:pl-0 relative">
-        <div className="flex flex-1 flex-col overflow-hidden p-2">
-          <div className="bg-background flex flex-1 flex-col overflow-hidden rounded-2xl [&_main]:overflow-hidden relative"
+      <div data-tauri-no-drag-region className="flex min-w-0 flex-1 flex-col overflow-hidden md:pl-0 relative">
+        <div className="flex min-w-0 flex-1 gap-2 overflow-hidden p-2">
+          <div className="bg-background flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl [&_main]:overflow-hidden relative"
           >
-            <main className="flex-1">
+            <ChatTitle />
+            <main className="min-h-0 flex-1">
               <Thread />
             </main>
           </div>
+          <BrowserPanel />
         </div>
       </div>
+      <DocumentPopup />
       <ConnectorConnectDialog />
     </div>
   );

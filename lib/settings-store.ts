@@ -12,9 +12,12 @@ export interface AppSettings {
   userAbout?: string;
   runOnStart?: boolean;
   keepAlive?: boolean;
+  memoryEnabled?: boolean;
 }
 
-const defaults: AppSettings = {};
+const defaults: AppSettings = {
+  memoryEnabled: true,
+};
 
 class SettingsStore {
   private settings: AppSettings = { ...defaults };

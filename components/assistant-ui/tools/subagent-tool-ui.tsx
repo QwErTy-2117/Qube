@@ -1,13 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import {
-  ChevronDownIcon,
-  CheckIcon,
-  XIcon,
-  Loader2Icon,
-} from "lucide-react";
+import { Loader2Icon } from "lucide-react";
+import { EchoRing } from "@/components/assistant-ui/echo-ring";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -26,10 +21,16 @@ import { ListDirectoryToolUI } from "@/components/assistant-ui/tools/list-direct
 import { RunCommandToolUI } from "@/components/assistant-ui/tools/run-command-tool-ui";
 import { WebSearchToolUI } from "@/components/assistant-ui/tools/web-search-tool-ui";
 import { WebFetchToolUI } from "@/components/assistant-ui/tools/web-fetch-tool-ui";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // Standalone markdown renderer for tool UI contexts (outside MessagePartText)
-function StaticMarkdown({ text }: { text: string }) {
-  const clean = text.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<script\b[^>]*\/>/gi, "");
+function StaticMarkdown({ text }: { text: unknown }) {
+  const str = typeof text === "string" ? text : String(text ?? "");
+  const clean = str.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<script\b[^>]*\/>/gi, "");
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -152,16 +153,24 @@ const DESTRUCTIVE_KEYWORDS = [
   "update", "edit", "modify", "upload", "transfer",
 ];
 
-function getToolLabel(toolName: string, args: any): string {
+const AGENT_VERB: Record<string, string> = {
+  Explore: "Exploring",
+  researcher: "Researching",
+  reviewer: "Reviewing",
+  general: "Working",
+};
+
+function getToolLabel(toolName: unknown, args: any): string {
+  const name = typeof toolName === "string" ? toolName : "tool";
   const label = (args as any)?.label;
-  if (label) return label;
-  const title = TOOL_GROUP_TITLES[toolName];
+  if (typeof label === "string" && label) return label;
+  const title = TOOL_GROUP_TITLES[name];
   if (title) return title;
-  const lower = toolName.toLowerCase();
+  const lower = name.toLowerCase();
   for (const [prefix, t] of Object.entries(TOOL_GROUP_TITLES)) {
     if (lower.startsWith(prefix)) return t;
   }
-  return toolName;
+  return name;
 }
 
 const TOOL_UI_MAP: Record<string, React.ComponentType<any>> = {
@@ -182,7 +191,9 @@ interface SubagentToolUIProps {
   args?: {
     title?: string;
     description?: string;
-    subagentType?: "coder" | "researcher" | "reviewer" | "architect" | "general";
+    prompt?: string;
+    agentType?: string;
+    subagentType?: "coder" | "researcher" | "reviewer" | "architect" | "general" | string;
     task?: string;
     label?: string;
   };
@@ -201,12 +212,93 @@ interface SubagentToolUIProps {
       args?: any;
       result?: any;
     }>;
+    usage?: { reads: number; searches: number; tools: number };
   } | string;
   isExecuting?: boolean;
 }
 
+function SubagentSteps({ steps, isExecuting }: { steps: any[]; isExecuting?: boolean }) {
+  if (steps.length === 0) {
+    if (!isExecuting) return null;
+    return (
+      <div className="flex items-center gap-2 py-2 text-muted-foreground italic">
+        <Loader2Icon className="size-3.5 animate-spin text-foreground" />
+        <span>Worker is analyzing context and carrying out steps...</span>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      {steps.map((step: any, idx: number) => {
+        if (step.type === "thought") {
+          return (
+            <ToolGroupRoot key={idx} variant="ghost" defaultOpen={false}>
+              <ToolGroupTrigger count={1} active={false} label="Thinking" />
+              <ToolGroupContent>
+                <div className="px-3 py-2 text-xs italic leading-relaxed text-muted-foreground">
+                  {typeof step.content === "string" ? step.content : String(step.content ?? "")}
+                </div>
+              </ToolGroupContent>
+            </ToolGroupRoot>
+          );
+        }
+        if (step.type === "tool") {
+          const toolName: string = typeof step.toolName === "string" ? step.toolName : "tool";
+          const ToolComponent = TOOL_UI_MAP[toolName] || ToolFallback;
+          const isDestructive = DESTRUCTIVE_KEYWORDS.some((kw) =>
+            toolName.toLowerCase().includes(kw)
+          );
+          const label = getToolLabel(toolName, step.args);
+          let normalizedResult: any = step.result;
+          if (normalizedResult != null && typeof normalizedResult !== "string") {
+            try {
+              normalizedResult = JSON.stringify(normalizedResult);
+            } catch {
+              try {
+                normalizedResult = String(normalizedResult);
+              } catch {
+                normalizedResult = "[unserializable result]";
+              }
+            }
+          }
+          const argsForUI =
+            step.args ??
+            (() => {
+              try {
+                return JSON.parse(typeof step.content === "string" ? step.content : "{}");
+              } catch {
+                return { label: typeof step.content === "string" ? step.content : String(step.content ?? "") };
+              }
+            })();
+          return (
+            <ToolGroupRoot key={idx} variant="ghost" defaultOpen={isDestructive}>
+              <ToolGroupTrigger count={1} active={false} label={label} />
+              <ToolGroupContent>
+                <ToolComponent
+                  toolName={toolName}
+                  args={argsForUI}
+                  result={normalizedResult ?? step.result}
+                  status={{ type: "complete" }}
+                />
+              </ToolGroupContent>
+            </ToolGroupRoot>
+          );
+        }
+        if (step.type === "text") {
+          return (
+            <div key={idx} className="prose dark:prose-invert max-w-none px-1 text-sm">
+              <StaticMarkdown text={step.content} />
+            </div>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
 export function SubagentToolUI({ args, result, isExecuting }: SubagentToolUIProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
 
   let parsedResult: any = null;
   if (typeof result === "string") {
@@ -219,146 +311,125 @@ export function SubagentToolUI({ args, result, isExecuting }: SubagentToolUIProp
     parsedResult = result;
   }
 
-  const title = args?.title || parsedResult?.title || "Subagent Task";
-  const description = args?.description || parsedResult?.description || "Executing task autonomously...";
-  const summary = parsedResult?.summary || "";
-  const error = parsedResult?.error || "";
+  // New backend shape: description + prompt + agentType; legacy: title + task + subagentType
+  // Coerce everything to strings — model args can arrive as non-strings and
+  // must never reach a .trim()/.replace() call as an object.
+  const asStr = (v: unknown, fallback = ""): string =>
+    typeof v === "string" ? v : v == null ? fallback : String(v);
+  const agentType: string =
+    asStr((args as any)?.agentType) ||
+    asStr((args as any)?.subagentType) ||
+    asStr(parsedResult?.subagentType) ||
+    asStr(parsedResult?.title) ||
+    "general";
+  const displayType = agentType === "general" ? "Explore" : agentType;
+  const description =
+    asStr(args?.description) || asStr(parsedResult?.description) || asStr(args?.label) || "Subagent task";
+  const taskPrompt =
+    asStr((args as any)?.prompt) || asStr((args as any)?.task) || asStr(parsedResult?.task);
+  const summary = asStr(parsedResult?.summary);
+  const error = asStr(parsedResult?.error);
   const isFailed = parsedResult?.status === "failed" || !!error;
-  const steps = parsedResult?.steps || [];
+  const steps = Array.isArray(parsedResult?.steps) ? parsedResult.steps : [];
+  const usage = parsedResult?.usage as { reads: number; searches: number; tools: number } | undefined;
+
+  const reads = usage?.reads ?? steps.filter((s: any) => s.type === "tool" && (s.toolName === "read_file" || s.toolName === "list_directory")).length;
+  const searches = usage?.searches ?? steps.filter((s: any) => s.type === "tool" && (s.toolName === "web_search" || s.toolName === "web_fetch")).length;
+  const verb = AGENT_VERB[agentType] || AGENT_VERB[displayType] || "Working";
 
   return (
-    <div className="my-2.5 rounded-2xl border border-border/60 bg-muted/10 shadow-none overflow-hidden transition-all">
-      {/* Compressed Rectangle Header */}
-      <div
-        onClick={() => setExpanded((prev) => !prev)}
-        className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+    <>
+      {/* Pill in main chat — small component showing the subagent is working */}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        data-slot="aui_subagent-pill"
+        className="my-1 flex w-fit max-w-full items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-left transition-colors hover:bg-muted"
       >
-        <div className="flex-1 min-w-0">
-          <h4 className="text-xs font-semibold text-foreground truncate tracking-tight">
-            {title}
-          </h4>
-          <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-            {description}
-          </p>
-        </div>
+        <span className="flex shrink-0 items-center">
+          <EchoRing tone={isExecuting ? "working" : isFailed ? "error" : "done"} size={16} />
+        </span>
+        <span className="flex min-w-0 items-baseline gap-3 text-sm">
+          <span className="shrink-0 font-semibold text-foreground">{displayType}</span>
+          <span className="truncate text-muted-foreground">{description}</span>
+        </span>
+      </button>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <ChevronDownIcon
-            className={cn(
-              "size-4 text-muted-foreground/70 transition-transform duration-200 shrink-0",
-              expanded && "rotate-180"
+      {/* Popup with the subagent working — same UI components as the main agent */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-0 overflow-hidden rounded-3xl border border-border bg-background p-0 shadow-2xl sm:max-w-2xl">
+          <div className="flex items-center justify-between gap-3 border-b border-border/40 bg-background px-5 py-3">
+            <DialogTitle className="flex min-w-0 items-center gap-3 text-sm font-semibold">
+              <span className="flex shrink-0 items-center">
+                <EchoRing tone={isExecuting ? "working" : isFailed ? "error" : "done"} size={18} />
+              </span>
+              <span className="flex min-w-0 items-baseline gap-3 truncate">
+                <span className="shrink-0">{displayType}</span>
+                <span className="truncate font-normal text-muted-foreground">{description}</span>
+              </span>
+            </DialogTitle>
+          </div>
+
+          <div className="flex-1 space-y-4 overflow-y-auto bg-background px-5 py-4">
+            {/* Original prompt bubble */}
+            {taskPrompt && (
+              <div className="rounded-xl bg-muted px-4 py-2.5 text-sm leading-relaxed text-foreground">
+                {taskPrompt}
+              </div>
             )}
-          />
-          {isExecuting ? (
-            <Loader2Icon className="size-4 animate-spin text-foreground shrink-0" />
-          ) : isFailed ? (
-            <XIcon className="size-4 text-red-500 shrink-0" />
-          ) : (
-            <CheckIcon className="size-4 text-emerald-500 shrink-0" />
-          )}
-        </div>
-      </div>
 
-      {/* Expanded Details Panel: Inner UI identical to main agent (except outer subagent container) */}
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="border-t border-border/40 bg-background/50 px-4 py-3.5 text-xs space-y-3"
-          >
-            {/* Steps rendered with same components as main agent */}
-            {steps.length > 0 ? (
-              <div className="space-y-1">
-                {steps.map((step: any, idx: number) => {
-                  if (step.type === "thought") {
-                    return (
-                      <ToolGroupRoot key={idx} variant="ghost" defaultOpen={false}>
-                        <ToolGroupTrigger count={1} active={false} label="Thinking" />
-                        <ToolGroupContent>
-                          <div className="px-3 py-2 text-xs text-muted-foreground italic leading-relaxed">
-                            {step.content}
-                          </div>
-                        </ToolGroupContent>
-                      </ToolGroupRoot>
-                    );
-                  }
-                  if (step.type === "tool") {
-                    const toolName: string = step.toolName || "tool";
-                    const ToolComponent = TOOL_UI_MAP[toolName] || ToolFallback;
-                    const isDestructive = DESTRUCTIVE_KEYWORDS.some(kw =>
-                      toolName.toLowerCase().includes(kw)
-                    );
-                    const label = getToolLabel(toolName, step.args);
-                    // Normalize result to string for ToolFallback compatibility
-                    let normalizedResult: any = step.result;
-                    if (normalizedResult != null && typeof normalizedResult !== "string") {
-                      try {
-                        normalizedResult = JSON.stringify(normalizedResult);
-                      } catch {
-                        normalizedResult = String(normalizedResult);
-                      }
-                    }
-                    const argsForUI = step.args ?? (() => {
-                      try {
-                        return JSON.parse(step.content);
-                      } catch {
-                        return { label: step.content };
-                      }
-                    })();
-                    return (
-                      <ToolGroupRoot key={idx} variant="ghost" defaultOpen={isDestructive}>
-                        <ToolGroupTrigger
-                          count={1}
-                          active={false}
-                          label={label}
-                        />
-                        <ToolGroupContent>
-                          <ToolComponent
-                            toolName={toolName}
-                            args={argsForUI}
-                            result={normalizedResult ?? step.result}
-                            status={{ type: "complete" }}
-                          />
-                        </ToolGroupContent>
-                      </ToolGroupRoot>
-                    );
-                  }
-                  if (step.type === "text") {
-                    return (
-                      <div key={idx} className="prose dark:prose-invert text-xs max-w-none px-1">
-                        <StaticMarkdown text={step.content} />
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
-            ) : isExecuting ? (
-              <div className="flex items-center gap-2 text-muted-foreground italic py-2">
-                <Loader2Icon className="size-3.5 animate-spin text-foreground" />
-                <span>Worker is analyzing context and carrying out steps...</span>
-              </div>
-            ) : null}
+            {/* Live status line like "Exploring  24 reads, 5 searches" */}
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              {isExecuting && <Loader2Icon className="size-3.5 animate-spin" />}
+              <span>
+                {verb}
+                {(reads > 0 || searches > 0) && (
+                  <>
+                    {"  "}
+                    {reads > 0 && `${reads} read${reads === 1 ? "" : "s"}`}
+                    {reads > 0 && searches > 0 && ", "}
+                    {searches > 0 && `${searches} search${searches === 1 ? "" : "es"}`}
+                  </>
+                )}
+              </span>
+            </div>
 
-            {/* Error Output */}
+            {/* Transcript with the same components as the main agent */}
+            <SubagentSteps steps={steps} isExecuting={isExecuting} />
+
             {isFailed && error && (
-              <div className="p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400 text-xs leading-relaxed">
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs leading-relaxed text-red-600 dark:text-red-400">
                 {error}
               </div>
             )}
 
-            {/* Final summary — shown after steps (if any), no inner container/title, just markdown */}
             {summary && (
-              <div className={cn(steps.length > 0 ? "pt-2 border-t border-border/20" : "", "text-xs leading-relaxed prose dark:prose-invert max-w-none")}>
+              <div
+                className={cn(
+                  steps.length > 0 ? "border-t border-border/20 pt-3" : "",
+                  "prose dark:prose-invert max-w-none text-sm leading-relaxed"
+                )}
+              >
                 <StaticMarkdown text={summary} />
               </div>
             )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+          </div>
+
+          {/* Disabled composer footer */}
+          <div className="border-t border-border/40 bg-background px-5 py-3">
+            <div className="rounded-2xl bg-muted px-4 py-3 text-center text-sm text-muted-foreground">
+              Subagent sessions cannot be prompted.{" "}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+              >
+                Back to main session.
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

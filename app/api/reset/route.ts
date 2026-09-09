@@ -11,7 +11,7 @@ const DATA_FILES = [
   "chatgpt-sessions.json",
   "lwc-secret.txt",
   "app-settings.json",
-  "computer-use.json",
+  "browser-session.json",
   "scheduled-tasks.json",
   "semantic-memory.json",
   "session-tracker.json",

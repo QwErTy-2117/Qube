@@ -5,7 +5,6 @@ export type TaskPermissions = {
   destructiveCommands: boolean;
   externalFiles: boolean;
   webAccess: boolean;
-  browserAccess: boolean;
 };
 
 export type ScheduledTask = {
@@ -56,7 +55,6 @@ export function getDefaultHeartbeatTask(): ScheduledTask {
       destructiveCommands: false,
       externalFiles: false,
       webAccess: true,
-      browserAccess: false,
     },
     createdAt: now,
     updatedAt: now,
@@ -70,5 +68,4 @@ export const DEFAULT_TASK_PERMISSIONS: TaskPermissions = {
   destructiveCommands: false,
   externalFiles: false,
   webAccess: false,
-  browserAccess: false,
 };

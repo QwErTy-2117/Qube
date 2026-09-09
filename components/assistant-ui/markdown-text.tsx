@@ -13,6 +13,7 @@ import { useState, type FC, useCallback } from "react";
 import remarkGfm from "remark-gfm";
 import { SyntaxHighlighter } from "./shiki-highlighter";
 import { TooltipIconButton } from "./tooltip-icon-button";
+import { remarkFileRefs, MdFileCardNode, MdFileCardGroupNode } from "./md-file-ref";
 
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const [isCopied, setIsCopied] = useState(false);
@@ -34,7 +35,7 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   );
 };
 
-const defaultComponents = memoizeMarkdownComponents({
+const baseComponents = memoizeMarkdownComponents({
   SyntaxHighlighter,
   CodeHeader,
   h1: ({ className, ...props }) => (
@@ -68,7 +69,7 @@ const defaultComponents = memoizeMarkdownComponents({
     <hr className={cn("aui-md-hr my-6 border-border/50", className)} {...props} />
   ),
   table: ({ className, ...props }) => (
-    <div className="mb-4 overflow-hidden rounded-lg border">
+    <div className="mb-4 mt-6 overflow-hidden rounded-lg border">
       <div className="overflow-x-auto">
         <table className={cn("aui-md-table w-full border-collapse text-sm", className)} {...props} />
       </div>
@@ -106,10 +107,12 @@ const defaultComponents = memoizeMarkdownComponents({
   },
 });
 
+const defaultComponents: any = { ...baseComponents, fileCard: MdFileCardNode, fileCardGroup: MdFileCardGroupNode };
+
 export function MarkdownText() {
   return (
     <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkFileRefs]}
       className="aui-md"
       components={defaultComponents}
       preprocess={(text) => text.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<script\b[^>]*\/>/gi, "")}

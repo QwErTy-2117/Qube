@@ -1,5 +1,6 @@
 import { resolve, relative } from "node:path";
 import { getWorkspacePath, isDestructiveCommand } from "./workspace";
+import { allowedDirsStore, toAbsoluteDir, type DirAccess } from "@/lib/permissions/allowed-dirs";
 import type { TaskPermissions } from "@/lib/scheduler/types";
 
 export type PermissionRequest = {
@@ -25,12 +26,25 @@ export function generateRequestId(): string {
   return `perm_${Date.now()}_${++requestCounter}`;
 }
 
+const PERM_STALE_MS = 30 * 60 * 1000;
+
+function purgeStalePermissions() {
+  const now = Date.now();
+  for (const [id, req] of permissionStore) {
+    if (req.approved !== null || now - req.createdAt > PERM_STALE_MS) {
+      permissionStore.delete(id);
+      pendingPermissions.delete(id);
+    }
+  }
+}
+
 export function createPermissionRequest(
   toolName: string,
   args: Record<string, unknown>,
   description: string,
   threadId: string,
 ): { requestId: string; promise: Promise<{ approved: boolean }> } {
+  purgeStalePermissions();
   const requestId = generateRequestId();
 
   const permissionRequest: PermissionRequest = {
@@ -80,10 +94,42 @@ export function getPendingPermissions(
   return all;
 }
 
+/** Peek at a pending request without resolving (for allow-always scoping). */
+export function getPermissionRequest(requestId: string): PermissionRequest | null {
+  purgeStalePermissions();
+  return permissionStore.get(requestId) ?? null;
+}
+
 type ToolCheckResult = {
   needsPermission: boolean;
   description: string;
 };
+
+const WRITE_TOOLS = new Set(["write_file", "edit_file", "delete_file"]);
+
+/** Access level a tool needs on an outside-workspace path. */
+export function requiredAccessForTool(toolName: string): DirAccess {
+  return WRITE_TOOLS.has(toolName) || toolName === "run_command" ? "write" : "read";
+}
+
+/** True when the target resolves inside a user-approved directory. */
+function coveredByAllowedDir(
+  toolName: string,
+  pathArg: string,
+  workspacePath: string,
+): boolean {
+  if (!pathArg) return false;
+  try {
+    const abs = toAbsoluteDir(pathArg, workspacePath);
+    if (!abs) return false;
+    // Inside the workspace is governed by workspace rules, not this list
+    const rel = relative(workspacePath, abs);
+    if (rel !== "" && !rel.startsWith("..")) return false;
+    return allowedDirsStore.isAllowed(abs, requiredAccessForTool(toolName));
+  } catch {
+    return false;
+  }
+}
 
 export function evaluateToolCall(
   toolName: string,
@@ -112,6 +158,9 @@ export function evaluateToolCall(
     const resolvedCwd = resolve(workspacePath, args.cwd);
     const rel = relative(workspacePath, resolvedCwd);
     if (rel.startsWith("..")) {
+      if (coveredByAllowedDir(toolName, args.cwd, workspacePath)) {
+        return { needsPermission: false, description: "" };
+      }
       return {
         needsPermission: true,
         description: `The agent wants to run a command outside the workspace: ${commandArg}`,
@@ -123,11 +172,32 @@ export function evaluateToolCall(
     const resolvedPath = resolve(workspacePath, pathArg);
     const rel = relative(workspacePath, resolvedPath);
     if (rel.startsWith("..")) {
+      if (coveredByAllowedDir(toolName, pathArg, workspacePath)) {
+        return { needsPermission: false, description: "" };
+      }
       return {
         needsPermission: true,
         description: `The agent wants to access a path outside the workspace: ${pathArg}`,
       };
     }
+  }
+
+  // Web search/fetch leaves the workspace (public internet) — always
+  // confirm in interactive sessions. Background/task runners never route
+  // through withPermissionCheck for these (see createTaskPermissionChecker).
+  if (toolName === "web_search") {
+    const q = typeof args.query === "string" ? args.query : "";
+    return {
+      needsPermission: true,
+      description: `The agent wants to search the web for: ${q.slice(0, 200)}`,
+    };
+  }
+
+  if (toolName === "web_fetch") {
+    return {
+      needsPermission: true,
+      description: `The agent wants to fetch an external page: ${urlArg || "(unknown URL)"}`,
+    };
   }
 
   if (
@@ -138,9 +208,23 @@ export function evaluateToolCall(
     const resolvedPath = resolve(workspacePath, pathArg);
     const rel = relative(workspacePath, resolvedPath);
     if (rel.startsWith("..")) {
+      if (coveredByAllowedDir(toolName, pathArg, workspacePath)) {
+        return { needsPermission: false, description: "" };
+      }
       return {
         needsPermission: true,
         description: `The agent wants to modify a file outside the workspace: ${pathArg}`,
+      };
+    }
+  }
+
+  if (toolName === "list_directory" && pathArg) {
+    const resolvedPath = resolve(workspacePath, pathArg);
+    const rel = relative(workspacePath, resolvedPath);
+    if (rel.startsWith("..") && !coveredByAllowedDir(toolName, pathArg, workspacePath)) {
+      return {
+        needsPermission: true,
+        description: `The agent wants to list a directory outside the workspace: ${pathArg}`,
       };
     }
   }
@@ -235,12 +319,7 @@ export function createTaskPermissionChecker(permissions: TaskPermissions) {
       };
     }
 
-    if (toolName.startsWith("browser_") && !permissions.browserAccess) {
-      return {
-        allowed: false,
-        reason: "Task does not have permission to use the browser.",
-      };
-    }
+
 
     if (
       (toolName === "write_file" ||

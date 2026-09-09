@@ -37,13 +37,13 @@ export function usePermissionPoller(threadId?: string) {
   }, [check]);
 
   const respond = useCallback(
-    async (approved: boolean) => {
+    async (approved: boolean, always?: boolean) => {
       if (!pending) return;
       try {
         await fetch("/api/permission/respond", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ requestId: pending.requestId, approved }),
+          body: JSON.stringify({ requestId: pending.requestId, approved, ...(always ? { always: true } : {}) }),
         });
       } catch {}
       setPending(null);
@@ -59,7 +59,7 @@ export function PermissionBar({
   onRespond,
 }: {
   pending: PermissionRequest;
-  onRespond: (approved: boolean) => void;
+  onRespond: (approved: boolean, always?: boolean) => void;
 }) {
   const commandArg = pending.args?.command as string | undefined;
   const pathArg =
@@ -100,6 +100,18 @@ export function PermissionBar({
           <ShieldXIcon className="size-3.5" />
           Deny
         </Button>
+        {pathArg && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onRespond(true, true)}
+            title="Always allow this directory (saved in Preferences → Allowed directories)"
+            className="h-8 gap-1.5 rounded-full"
+          >
+            <ShieldCheckIcon className="size-3.5" />
+            Always allow
+          </Button>
+        )}
         <Button
           variant="default"
           size="sm"

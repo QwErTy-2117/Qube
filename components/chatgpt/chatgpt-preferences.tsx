@@ -228,7 +228,16 @@ export function ChatGPTPreferencesCard() {
         <p className="text-xs text-red-500 bg-red-500/10 rounded-lg px-3 py-2 border border-red-500/20 mt-2 text-center">{chatgpt.error}</p>
       )}
 
-      <Dialog open={codeDialogOpen} onOpenChange={setCodeDialogOpen}>
+      <Dialog open={codeDialogOpen} onOpenChange={(open) => {
+        if (!open && (chatgpt.status === "pending" || (chatgpt as any).status === "connecting")) {
+          try { chatgpt.logout(); } catch {}
+          try {
+            const w = window.open("", "login-with-chatgpt");
+            if (w && !w.closed) w.close();
+          } catch {}
+        }
+        setCodeDialogOpen(open);
+      }}>
         <DialogContent className="sm:max-w-md rounded-3xl">
           <DialogHeader>
             <DialogTitle>Connect ChatGPT</DialogTitle>
@@ -248,7 +257,14 @@ export function ChatGPTPreferencesCard() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCodeDialogOpen(false)}
+              onClick={() => {
+                try { chatgpt.logout(); } catch {}
+                try {
+                  const w = window.open("", "login-with-chatgpt");
+                  if (w && !w.closed) w.close();
+                } catch {}
+                setCodeDialogOpen(false);
+              }}
               className="rounded-full h-8 px-4 text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
             >
               Cancel

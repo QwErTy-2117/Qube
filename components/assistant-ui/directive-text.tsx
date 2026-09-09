@@ -24,14 +24,42 @@ export function createDirectiveText(
   const fallbackIcon = options?.fallbackIcon;
 
   const Component: TextMessagePartComponent = ({ text }) => {
-    const segments = formatter.parse(text);
+    // Leading "[workspace kind path]" context header (sent by the document
+    // popup composer) renders as a file badge instead of raw text.
+    let badge: string | null = null;
+    let rest = text;
+    const m = /^\[workspace ([^\]\n]+)\]\s*\n?/.exec(text);
+    if (m) {
+      badge = m[1].replace(/\s+id=\S+$/, "").trim();
+      rest = text.slice(m[0].length);
+    }
+
+    const segments = formatter.parse(rest);
+
+    const badgeEl = badge ? (
+      <Badge
+        variant="info"
+        size="sm"
+        data-slot="workspace-context-badge"
+        className="mb-1.5"
+        aria-label={`Workspace context: ${badge}`}
+      >
+        {badge}
+      </Badge>
+    ) : null;
 
     if (segments.length === 1 && segments[0]!.kind === "text") {
-      return <>{text}</>;
+      return (
+        <>
+          {badgeEl}
+          {rest}
+        </>
+      );
     }
 
     return (
       <>
+        {badgeEl}
         {segments.map((seg, i) => {
           if (seg.kind === "text") {
             return (

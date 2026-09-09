@@ -398,6 +398,13 @@ export function OnboardingModal() {
     handleSaveProfile();
     localStorage.setItem("qube-onboarding-completed", "true");
     localStorage.setItem("qube-terms-accepted", "true");
+    // Fresh users start with a compressed sidebar.
+    try {
+      localStorage.setItem("qube-sidebar-expanded", "0");
+    } catch {}
+    try {
+      window.dispatchEvent(new CustomEvent("qube-sidebar-expanded-changed", { detail: false }));
+    } catch {}
     setOpen(false);
   };
 
@@ -536,17 +543,15 @@ export function OnboardingModal() {
                         <Highlighter action="highlight" color="#f59e0b80">
                           personal AI worker
                         </Highlighter>{" "}
-                        — a helper that lives on your desktop, ready to get complex tasks done for
-                        you. You describe what you need, and Qube autonomously figures out how to make
-                        it happen using subagents and tools.
+                        — describe the outcome you want, and it figures out the how: researching a topic,
+                        drafting a report, cleaning up your inbox, prepping for meetings, or editing files.
                       </p>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Your worker understands your workspace context, connects
-                        to services like{" "}
+                        It can run errands on a schedule, use your connected apps like{" "}
                         <Highlighter action="underline" color="#10b981">
                           Google, GitHub, and Slack
                         </Highlighter>
-                        , and works alongside you — organizing, writing, and executing code end-to-end.
+                        , drive a real browser when a site needs clicking, and ask you when a decision is truly yours.
                       </p>
                     </div>
                   )}
@@ -637,11 +642,10 @@ export function OnboardingModal() {
                           Your worker's brain
                         </h2>
                         <p className="text-sm text-muted-foreground leading-relaxed">
-                          Every AI worker relies on an AI provider and model to think, reason, and solve problems.
-                          Think of the provider as the engine that powers your assistant, and the model as the specific intelligence inside it.
-                          You can connect online services like OpenAI, Anthropic, or DeepSeek, or run models locally right on your computer.
-                          You don't need any technical setup — simply pick a provider you already use and select your preferred model below.
-                          Qube will automatically handle all background configurations and keep your connections safe.
+                          Pick the AI engine behind your worker — the model that will research for you,
+                          write your drafts, and reason through problems. Connect a provider you already
+                          use like OpenAI, Anthropic, or DeepSeek, run models locally, or sign in with
+                          ChatGPT. You can switch brains any time in Settings.
                         </p>
                       </div>
 
@@ -743,7 +747,9 @@ export function OnboardingModal() {
                           <Highlighter action="box" color="#3b82f680">
                             tools your AI worker can use
                           </Highlighter>
-                          . Connect the services you already use.
+                          . Connect the services you already use — then put them to work: a morning
+                          briefing from your calendar and inbox, a weekly report it drafts on its own,
+                          or files it keeps organized while you focus elsewhere.
                         </p>
                       </div>
                       <div className="flex flex-col flex-1 min-h-0 pt-8">
@@ -825,7 +831,7 @@ export function OnboardingModal() {
                           Qube is ready
                         </h2>
                         <p className="text-sm text-muted-foreground">
-                          Your AI worker is set up and ready to get to work.
+                          Try: “Summarize my inbox”, “Draft a weekly report”, or “Organize my downloads.”
                         </p>
                       </div>
                     </div>
@@ -1133,7 +1139,7 @@ export function OnboardingModal() {
 
           {connectorDetail && (
             <>
-              <div className="rounded-2xl border border-border bg-muted/10 p-4 flex gap-3 items-start">
+              <div className="flex gap-3 items-start px-1 pt-1">
                 <div
                   className="size-12 rounded-xl bg-background border border-border/60 flex items-center justify-center shrink-0 shadow-sm"
                   style={{ color: (connectorDetail as any).brandColor || undefined }}

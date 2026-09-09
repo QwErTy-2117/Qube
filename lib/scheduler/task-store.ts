@@ -144,15 +144,82 @@ export async function updateTaskRunTime(id: string, success: boolean) {
   const tasks = await getTasks();
   const task = tasks.find((t) => t.id === id);
   if (!task) return;
-  task.lastRunAt = Date.now();
+  const now = Date.now();
+  task.lastRunAt = now;
   if (task.schedule.kind === "once") {
     task.enabled = false;
-  } else if (
-    task.schedule.kind === "interval" &&
-    task.schedule.intervalMinutes
-  ) {
-    task.nextRunAt = Date.now() + task.schedule.intervalMinutes * 60_000;
+    // For once tasks, nextRunAt stays as runAt but disabled ensures no repeat
+  } else if (task.schedule.kind === "interval" && task.schedule.intervalMinutes) {
+    // Timezone-aware scheduling: if hour/minute set, compute next occurrence in local time
+    if (task.schedule.hour !== undefined && task.schedule.minute !== undefined) {
+      const next = computeNextDailyOccurrence(task.schedule.hour, task.schedule.minute, task.schedule.weekdays, task.schedule.monthDay);
+      task.nextRunAt = next;
+    } else {
+      // Interval-based: nextRunAt = now + interval, but handle missed executions by not drifting
+      // If we were very late (missed by > interval), schedule from now, not from old nextRunAt, to avoid burst
+      task.nextRunAt = now + task.schedule.intervalMinutes * 60_000;
+    }
+    // On failure, retry sooner? No — keep same interval to avoid hammering; scheduler handles retry via missed logic
+    // But we still persist success/failure for observability
   }
-  task.updatedAt = Date.now();
+  task.updatedAt = now;
   await persist(tasks);
+
+  // Persist heartbeat state as well if this is heartbeat
+  if (id === "heartbeat") {
+    try {
+      const { recordHeartbeatTick } = await import("./heartbeat-state");
+      await recordHeartbeatTick({ hadAction: success, success, actionDescription: success ? "heartbeat completed" : "heartbeat failed", taskId: id });
+    } catch {}
+  }
+}
+
+function computeNextDailyOccurrence(hour: number, minute: number, weekdays?: number[], monthDay?: number): number {
+  const now = new Date();
+  // Start from tomorrow if today's occurrence already passed
+  let candidate = new Date(now);
+  candidate.setSeconds(0, 0);
+  candidate.setHours(hour, minute, 0, 0);
+  if (candidate.getTime() <= now.getTime()) {
+    candidate.setDate(candidate.getDate() + 1);
+  }
+  // Handle weekdays filter (0=Sun ... 6=Sat)
+  if (weekdays && weekdays.length > 0) {
+    let tries = 0;
+    while (!weekdays.includes(candidate.getDay()) && tries < 14) {
+      candidate.setDate(candidate.getDate() + 1);
+      tries++;
+    }
+  }
+  // Handle monthDay filter (e.g., 15th of month)
+  if (monthDay !== undefined) {
+    // If candidate day != monthDay, advance to next month's monthDay
+    if (candidate.getDate() !== monthDay) {
+      // Move to next month's monthDay, handling overflow
+      candidate.setDate(1);
+      candidate.setMonth(candidate.getMonth() + 1);
+      // Clamp to valid days in month
+      const daysInMonth = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate();
+      candidate.setDate(Math.min(monthDay, daysInMonth));
+      candidate.setHours(hour, minute, 0, 0);
+      // Ensure still in future
+      if (candidate.getTime() <= now.getTime()) {
+        candidate.setMonth(candidate.getMonth() + 1);
+        const dim2 = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate();
+        candidate.setDate(Math.min(monthDay, dim2));
+      }
+    }
+  }
+  return candidate.getTime();
+}
+
+export function computeNextRunAtForSchedule(schedule: ScheduledTask["schedule"]): number {
+  if (schedule.kind === "once" && schedule.runAt) return schedule.runAt;
+  if (schedule.kind === "interval" && schedule.hour !== undefined && schedule.minute !== undefined) {
+    return computeNextDailyOccurrence(schedule.hour, schedule.minute, schedule.weekdays, schedule.monthDay);
+  }
+  if (schedule.kind === "interval" && schedule.intervalMinutes) {
+    return Date.now() + schedule.intervalMinutes * 60_000;
+  }
+  return Date.now() + 30 * 60_000;
 }

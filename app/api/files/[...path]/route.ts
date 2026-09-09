@@ -29,11 +29,14 @@ function normalizePath(segments: string[]): string {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
   try {
     const { path: pathSegments } = await params;
+    // ?inline=1 serves Content-Disposition: inline so PDFs (and other
+    // previewable files) render inside iframes instead of downloading.
+    const inline = new URL(req.url).searchParams.get("inline") === "1";
     const filePath = normalizePath(pathSegments);
     const resolved = resolve(getWorkspacePath(), filePath);
     const rel = relative(getWorkspacePath(), resolved);
@@ -53,7 +56,7 @@ export async function GET(
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${filename}"; filename*=UTF-8''${encodedFilename}`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${filename}"; filename*=UTF-8''${encodedFilename}`,
         "Content-Length": String(buffer.length),
         "Cache-Control": "private, max-age=0, must-revalidate",
       },

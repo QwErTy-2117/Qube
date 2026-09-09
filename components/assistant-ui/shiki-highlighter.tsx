@@ -34,7 +34,7 @@ export const SyntaxHighlighter: FC<HighlighterProps> = ({
         className,
       )}
     >
-      {code.trim()}
+      {(typeof code === "string" ? code : String(code ?? "")).trim()}
     </ShikiHighlighter>
   );
 };

@@ -1,6 +1,8 @@
 "use client";
 
-import { FileTextIcon, FileSpreadsheetIcon, FileImageIcon, FileArchiveIcon, FileIcon } from "lucide-react";
+import { FileTextIcon, FileSpreadsheetIcon, FileImageIcon, FileArchiveIcon, FileIcon, SquareArrowOutUpRightIcon } from "lucide-react";
+import { openDocumentWorkspace } from "@/lib/workspace/store";
+import { DownloadButton } from "./download-button";
 
 const FILE_ICONS: Record<string, { icon: typeof FileIcon; color: string }> = {
   pptx: { icon: FileTextIcon, color: "text-orange-500" },
@@ -19,8 +21,12 @@ const FILE_ICONS: Record<string, { icon: typeof FileIcon; color: string }> = {
   zip: { icon: FileArchiveIcon, color: "text-amber-600" },
 };
 
+const OPENABLE = new Set(["doc", "docx", "odt", "rtf", "xls", "xlsx", "ods", "csv", "txt", "md", "markdown", "json", "js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "yml", "yaml", "toml", "sh", "sql", "xml", "log"]);
+// Slides (ppt/pptx/odp) and PDFs are download-only — no in-app viewer.
+
 export function FileCard({
   filename,
+  filePath,
   downloadUrl,
 }: {
   filename: string;
@@ -31,44 +37,30 @@ export function FileCard({
   const entry = FILE_ICONS[ext];
   const Icon = entry?.icon || FileIcon;
   const color = entry?.color || "text-muted-foreground";
+  const canOpen = OPENABLE.has(ext) && !!filePath;
 
-  const handleDownload = async (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(downloadUrl);
-      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
-    } catch (err) {
-      console.error("[FileCard] download failed, falling back to direct link", err);
-      // Fallback: open in new tab - server sends attachment so browser will still download
-      window.open(downloadUrl, "_blank", "noopener,noreferrer");
-    }
+  const handleOpen = () => {
+    if (!filePath) return;
+    openDocumentWorkspace({ filePath, filename, downloadUrl });
   };
 
   return (
-    <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background p-1.5 text-sm shadow-xs">
-      <Icon className={`size-4 shrink-0 ${color}`} />
-      <span className="truncate font-medium text-foreground max-w-[180px]">{filename}</span>
-      <a
-        href={downloadUrl}
-        download={filename}
-        onClick={handleDownload}
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 rounded-sm bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 cursor-pointer"
-      >
-        <svg className="size-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-        </svg>
-        Download
-      </a>
+    <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-background py-1 pr-1 pl-3 text-sm shadow-xs">
+      <Icon className={`size-4 shrink-0 ${color}`} aria-hidden="true" />
+      <span className="max-w-[180px] truncate font-medium text-foreground">{filename}</span>
+      <div className="flex shrink-0 items-center">
+        {canOpen && (
+          <button
+            onClick={handleOpen}
+            title="Open"
+            aria-label={`Open ${filename}`}
+            className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          >
+            <SquareArrowOutUpRightIcon className="size-4" />
+          </button>
+        )}
+        <DownloadButton filename={filename} downloadUrl={downloadUrl} />
+      </div>
     </div>
   );
 }

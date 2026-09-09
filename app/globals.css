@@ -109,36 +109,27 @@
   }
 }
 
+/* Typing bar: animated light line rendered *under* the composer shell.
+   Shell is solid (--composer-bg) with transparent border. Light line is
+   a masked conic ring in ::after placed behind the shell (z -1) so it
+   never covers input text. Glow removed per request — keep only line.
+*/
 .rainbow-border {
   position: relative;
+  z-index: 0;
   isolation: isolate;
-  background:
-    linear-gradient(var(--composer-bg, var(--color-background)), var(--composer-bg, var(--color-background))) padding-box,
-    conic-gradient(from var(--border-angle),
-      transparent 60%,
-      #6366f1 68%,
-      #a5b4fc 72%,
-      #ec4899 76%,
-      #22d3ee 80%,
-      #6366f1 84%,
-      transparent 92%
-    ) border-box;
+  background: linear-gradient(var(--composer-bg, var(--color-background)), var(--composer-bg, var(--color-background))) padding-box;
   border: 1px solid transparent;
-  animation: border-rotate 8s linear infinite;
+  border-radius: var(--composer-radius);
+  overflow: visible;
 }
 
-.rainbow-border-active {
-  animation-duration: 3s;
-  position: relative;
-  isolation: isolate;
-}
-
-.rainbow-border-active::before,
-.rainbow-border::before {
+.rainbow-border::after {
   content: "";
   position: absolute;
-  inset: -6px;
+  inset: 0;
   border-radius: inherit;
+  padding: 1px;
   background: conic-gradient(from var(--border-angle),
     transparent 60%,
     #6366f1 68%,
@@ -148,32 +139,24 @@
     #6366f1 84%,
     transparent 92%
   );
-  filter: blur(12px);
-  opacity: 0;
+  /* border-only ring: mask out center so cone fill doesn't show inside */
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
   z-index: -1;
   pointer-events: none;
   animation: border-rotate 8s linear infinite;
-  transition: opacity 0.3s ease;
 }
 
-.rainbow-border::before {
-  opacity: 0.12;
-  filter: blur(10px);
+.rainbow-border-active {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
 }
 
-.rainbow-border-active::before {
-  opacity: 0.35;
-  filter: blur(12px);
+.rainbow-border-active::after {
   animation-duration: 3s;
-}
-
-.dark .rainbow-border::before {
-  opacity: 0.18;
-}
-
-.dark .rainbow-border-active::before {
-  opacity: 0.45;
-  filter: blur(14px);
 }
 
 :focus-visible {
@@ -215,3 +198,14 @@ html[data-magicui-theme-vt="active"]::view-transition-new(root) {
     z-index: 2147483646;
     clip-path: var(--magicui-theme-vt-clip-from, circle(0px at 50% 50%));
 }
+
+/* Typing indicator: three bouncing dots (chat scroll button, doc composer) */
+@keyframes typing-dots-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+.typing-dots { display: inline-flex; align-items: center; gap: 5px; padding: 4px 2px; }
+.typing-dots > span { width: 6px; height: 6px; border-radius: 9999px; background: currentColor; opacity: 0.35; animation: typing-dots-bounce 1.1s ease-in-out infinite; }
+.typing-dots > span:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots > span:nth-child(3) { animation-delay: 0.3s; }
+@media (prefers-reduced-motion: reduce) { .typing-dots > span { animation: none; opacity: 0.7; } }

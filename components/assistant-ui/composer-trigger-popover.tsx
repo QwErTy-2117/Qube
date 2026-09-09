@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useRef, type ComponentPropsWithoutRef, type FC } from "react";
+import { memo, useRef, useState, type ComponentPropsWithoutRef, type FC, type ReactNode } from "react";
 import {
   ComposerPrimitive,
   unstable_defaultDirectiveFormatter,
@@ -48,6 +48,20 @@ type ComposerTriggerPopoverBaseProps = Omit<
   emptyItemsLabel?: string;
   /** Label shown while an async adapter is resolving items. @default "Loading…" */
   loadingLabel?: string;
+  /** Extra classes merged onto each item button (e.g. bordered container look). */
+  itemClassName?: string;
+  /** Extra classes for the items list container. */
+  listClassName?: string;
+  /** Footer rendered at the bottom of the popover (e.g. "/ Type to filter"). */
+  footer?: ReactNode;
+  /** Hide per-item icons (Claude-style skill list shows names only). */
+  hideItemIcons?: boolean;
+  /** Hide per-item descriptions (shown in hover tooltip instead). */
+  hideItemDescriptions?: boolean;
+  /** Show the full description in a hover tooltip (Claude-style). */
+  showTooltips?: boolean;
+  /** Allow content (tooltips) to overflow the panel bounds. */
+  overflowVisible?: boolean;
 };
 
 type ComposerTriggerPopoverProps = ComposerTriggerPopoverBaseProps &
@@ -122,7 +136,15 @@ type ItemsProps = {
   backLabel: string;
   emptyLabel: string;
   loadingLabel: string;
+  itemClassName: string | undefined;
+  listClassName: string | undefined;
+  hideIcons: boolean;
+  hideDescriptions: boolean;
+  showTooltips: boolean;
 };
+
+const DEFAULT_ITEM_CLASS =
+  "hover:bg-accent focus:bg-accent data-[highlighted]:bg-accent flex w-full cursor-pointer flex-col items-start gap-0.5 px-3 py-2 text-start transition-colors outline-none";
 
 const Items: FC<ItemsProps> = ({
   iconMap,
@@ -130,8 +152,14 @@ const Items: FC<ItemsProps> = ({
   backLabel,
   emptyLabel,
   loadingLabel,
+  itemClassName,
+  listClassName,
+  hideIcons,
+  hideDescriptions,
+  showTooltips,
 }) => {
   const { isLoading } = unstable_useTriggerPopoverScopeContext();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   return (
     <ComposerPrimitive.Unstable_TriggerPopoverItems>
       {(items) => (
@@ -144,7 +172,7 @@ const Items: FC<ItemsProps> = ({
             {backLabel}
           </ComposerPrimitive.Unstable_TriggerPopoverBack>
 
-          <div className="py-1">
+          <div className={listClassName ?? "py-1"}>
             {items.map((item, index) => {
               const iconKey =
                 typeof item.metadata?.icon === "string"
@@ -156,14 +184,23 @@ const Items: FC<ItemsProps> = ({
                   key={item.id}
                   item={item}
                   index={index}
-                  className="hover:bg-accent focus:bg-accent data-[highlighted]:bg-accent flex w-full cursor-pointer flex-col items-start gap-0.5 px-3 py-2 text-start transition-colors outline-none"
+                  className={itemClassName ?? DEFAULT_ITEM_CLASS}
+                  onMouseEnter={() => {
+                    if (showTooltips && item.description) setHoveredId(item.id);
+                  }}
+                  onMouseLeave={() => setHoveredId(null)}
                 >
                   <span className="flex items-center gap-2 text-sm font-medium">
-                    <Icon className="text-primary size-3.5" />
+                    {!hideIcons && <Icon className="text-primary size-3.5" />}
                     {item.label}
                   </span>
-                  {item.description && (
+                  {!hideDescriptions && item.description && (
                     <span className="text-muted-foreground ms-5.5 text-xs leading-tight">
+                      {item.description}
+                    </span>
+                  )}
+                  {showTooltips && hoveredId === item.id && item.description && (
+                    <span className="bg-popover text-popover-foreground pointer-events-none absolute top-0 left-full z-50 ml-2 max-h-48 w-60 overflow-y-auto rounded-xl border p-3 text-xs leading-relaxed font-normal whitespace-normal shadow-xl">
                       {item.description}
                     </span>
                   )}
@@ -193,6 +230,13 @@ const ComposerTriggerPopoverImpl: FC<ComposerTriggerPopoverProps> = ({
   emptyCategoriesLabel = "No items available",
   emptyItemsLabel = "No matching items",
   loadingLabel = "Loading…",
+  itemClassName,
+  listClassName,
+  footer,
+  hideItemIcons = false,
+  hideItemDescriptions = false,
+  showTooltips = false,
+  overflowVisible = false,
   className,
   directive,
   action,
@@ -214,7 +258,8 @@ const ComposerTriggerPopoverImpl: FC<ComposerTriggerPopoverProps> = ({
     <ComposerPrimitive.Unstable_TriggerPopover
       data-slot="composer-trigger-popover"
       className={cn(
-        "aui-composer-trigger-popover bg-popover text-popover-foreground absolute start-0 bottom-full z-50 mb-2 w-64 overflow-hidden rounded-xl border shadow-lg",
+        "aui-composer-trigger-popover bg-popover text-popover-foreground absolute start-0 bottom-full z-50 mb-2 w-64 rounded-xl border shadow-lg",
+        overflowVisible ? "overflow-visible" : "overflow-hidden",
         className,
       )}
       {...props}
@@ -242,7 +287,13 @@ const ComposerTriggerPopoverImpl: FC<ComposerTriggerPopoverProps> = ({
         backLabel={backLabel}
         emptyLabel={emptyItemsLabel}
         loadingLabel={loadingLabel}
+        itemClassName={itemClassName}
+        listClassName={listClassName}
+        hideIcons={hideItemIcons}
+        hideDescriptions={hideItemDescriptions}
+        showTooltips={showTooltips}
       />
+      {footer}
     </ComposerPrimitive.Unstable_TriggerPopover>
   );
 };

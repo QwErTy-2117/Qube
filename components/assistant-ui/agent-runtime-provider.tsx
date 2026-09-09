@@ -20,19 +20,17 @@ import {
   ReadSessionToolUI,
   ReadMemoryToolUI,
   AskUserToolUI,
-  BrowserNavigateToolUI,
-  BrowserScreenshotToolUI,
-  BrowserToolUI,
-  AppStateToolUI,
-  ListAppsToolUI,
-  ComputerToolUI,
   ScheduleTaskToolUI,
   UpdateHeartbeatToolUI,
+  GoalToolUI,
+  ShowFileToolUI,
 } from "@/components/assistant-ui/tools";
 import { ConnectorToolUI, ConnectServiceToolUI } from "@/components/assistant-ui/tools";
+import { BrowserToolUI } from "@/components/workspace";
 import { type ReactNode, useEffect } from "react";
 
 function ToolUIRegistrar() {
+  // Pi harness tools — file, shell, web (Pi emits tool calls as tool-input-available / tool-output-available)
   useAssistantToolUI({ toolName: "web_search", render: WebSearchToolUI });
   useAssistantToolUI({ toolName: "web_fetch", render: WebFetchToolUI });
   useAssistantToolUI({ toolName: "read_file", render: ReadFileToolUI });
@@ -41,53 +39,127 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "delete_file", render: DeleteFileToolUI });
   useAssistantToolUI({ toolName: "list_directory", render: ListDirectoryToolUI });
   useAssistantToolUI({ toolName: "run_command", render: RunCommandToolUI });
+  useAssistantToolUI({ toolName: "present_file", render: ShowFileToolUI });
+  useAssistantToolUI({ toolName: "ask_question", render: AskUserToolUI });
+  useAssistantToolUI({ toolName: "ask_user", render: AskUserToolUI });
+  useAssistantToolUI({ toolName: "ask_user", render: AskUserToolUI });
+  // Pi automation tools — schedules, heartbeat
+  useAssistantToolUI({ toolName: "schedule_task", render: ScheduleTaskToolUI });
+  useAssistantToolUI({ toolName: "update_heartbeat", render: UpdateHeartbeatToolUI });
+  // Browser Use MCP tools (live browser; panel renders the real page)
+  useAssistantToolUI({ toolName: "browser_navigate", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_navigate_back", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_navigate_forward", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_search", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_read", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_snapshot", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_screenshot", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_click", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_hover", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_drag", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_type", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_find", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_fill", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_fill_form", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_press_key", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_select_option", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_file_upload", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_handle_dialog", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_back", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_wait_for", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_evaluate", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_console_messages", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_network_requests", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_tabs", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_close", render: BrowserToolUI });
+  // Legacy Codex native events kept for forward compat (if old sessions contain them)
+  useAssistantToolUI({ toolName: "command_execution", render: RunCommandToolUI });
+  useAssistantToolUI({ toolName: "file_change", render: WriteFileToolUI });
+  useAssistantToolUI({ toolName: "mcp_tool_call", render: ConnectorToolUI });
+
+  // Keep lightweight session connectors for history
   useAssistantToolUI({ toolName: "list_sessions", render: ListSessionsToolUI });
   useAssistantToolUI({ toolName: "read_session_summary", render: ReadSessionSummaryToolUI });
   useAssistantToolUI({ toolName: "read_session", render: ReadSessionToolUI });
   useAssistantToolUI({ toolName: "read_memory", render: ReadMemoryToolUI });
-  useAssistantToolUI({ toolName: "ask_user", render: AskUserToolUI });
-  useAssistantToolUI({ toolName: "schedule_task", render: ScheduleTaskToolUI });
-  useAssistantToolUI({ toolName: "update_heartbeat", render: UpdateHeartbeatToolUI });
-
+  useAssistantToolUI({ toolName: "save_memory", render: ReadMemoryToolUI });
   useAssistantToolUI({ toolName: "connect_service", render: ConnectServiceToolUI });
   useAssistantToolUI({ toolName: "composio_search_tools", render: ConnectorToolUI });
   useAssistantToolUI({ toolName: "composio_multi_execute_tool", render: ConnectorToolUI });
-
-  useAssistantToolUI({ toolName: "get_app_state", render: AppStateToolUI });
-  useAssistantToolUI({ toolName: "list_apps", render: ListAppsToolUI });
-  useAssistantToolUI({ toolName: "click", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "type_text", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "press_key", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "scroll", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "drag", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "set_value", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "perform_secondary_action", render: ComputerToolUI });
-
-  // Browser-use (https://github.com/browser-use/browser-use) — replaces legacy Playwright browser_* tools
-  useAssistantToolUI({ toolName: "browser_navigate", render: BrowserNavigateToolUI });
-  useAssistantToolUI({ toolName: "browser_click", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_type", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_get_state", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_scroll", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_go_back", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_list_tabs", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_switch_tab", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_close_tab", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_extract_content", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_list_sessions", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_close_session", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_close_all", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "retry_with_browser_use_agent", render: BrowserToolUI });
 
   return null;
 }
 
 
+function PrefetchManager() {
+  // VoiceMem-style speculative prefetch: while user still typing, start memory search at 6 chars so full query is 0-300ms when they hit send
+  useEffect(() => {
+    let lastPrefetch = "";
+    let timer: any = null;
+    const handler = () => {
+      try {
+        // Skip speculative memory prefetch when long-term memory is disabled.
+        try {
+          if (localStorage.getItem("qube-memory-enabled") === "false") return;
+        } catch {}
+        // Find composer input — assistant-ui stores it in runtime, but we can also query DOM
+        const composer = document.querySelector('[data-composer-input]') as HTMLTextAreaElement | HTMLInputElement | null;
+        const text = composer?.value?.trim() || "";
+        if (text.length < 6) return;
+        if (text === lastPrefetch) return;
+        if (text.length < lastPrefetch.length && !text.startsWith(lastPrefetch.slice(0, 6))) {
+          // user cleared or changed topic, still prefetch
+        }
+        lastPrefetch = text;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          fetch("/api/memory/prefetch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ partial: text }),
+          }).catch(()=>{});
+        }, 80); // debounce 80ms like VoiceMem gamble
+      } catch {}
+    };
+    // Poll for composer changes (assistant-ui doesn't expose composer observable easily)
+    const interval = setInterval(handler, 250);
+    // Also listen to input events
+    document.addEventListener("input", handler, true);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("input", handler, true);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+  return null;
+}
+
 export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
-    // Trigger background installs for Cua + browser-use at launch / first steer
-    // Fire-and-forget, never blocks UI — agent stays backend-agnostic
+    // Pi harness setup (MCP enabled)
     fetch("/api/setup", { method: "POST" }).catch(() => {});
+    // Hydrate skills cache so the first chat already carries system skills
+    fetch("/api/skills/sync")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.skills) && data.skills.length > 0) {
+          try {
+            localStorage.setItem("qube-skills", JSON.stringify(data.skills));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+    // Hydrate allowed-directories cache for the chat pipeline
+    fetch("/api/permissions/dirs")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.dirs)) {
+          try {
+            localStorage.setItem("qube-allowed-directories", JSON.stringify(data.dirs));
+          } catch {}
+        }
+      })
+      .catch(() => {});
     if (typeof window !== "undefined") {
       let instanceId = localStorage.getItem("qube-instance-id");
       if (!instanceId) {
@@ -126,6 +198,7 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
             if (s.defaultModel) localStorage.setItem("qube-default-model", s.defaultModel);
             if (s.runOnStart !== undefined) localStorage.setItem("qube-run-on-start", String(s.runOnStart));
             if (s.keepAlive !== undefined) localStorage.setItem("qube-keep-alive", String(s.keepAlive));
+            if (s.memoryEnabled !== undefined) localStorage.setItem("qube-memory-enabled", String(s.memoryEnabled !== false));
             if (s.runOnStart) {
               fetch("/api/scheduler/tasks").catch(() => {});
             }
@@ -154,13 +227,56 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
         const userAbout = localStorage.getItem("qube-user-about") || undefined;
 
         const instanceId = localStorage.getItem("qube-instance-id") || undefined;
+        let mcpServers: any[] | undefined;
+        try {
+          const raw = localStorage.getItem("qube-custom-mcp-servers");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) mcpServers = parsed;
+          }
+        } catch {}
+        let skills: any[] | undefined;
+        try {
+          const raw = localStorage.getItem("qube-skills");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) skills = parsed;
+          }
+        } catch {}
+        let allowedDirs: any[] | undefined;
+        try {
+          const raw = localStorage.getItem("qube-allowed-directories");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) allowedDirs = parsed;
+          }
+        } catch {}
+        // Long-term memory toggle (Advanced settings). Default ON; only explicit "false" disables.
+        let memoryEnabled: boolean | undefined;
+        try {
+          const raw = localStorage.getItem("qube-memory-enabled");
+          if (raw !== null) memoryEnabled = raw === "true";
+        } catch {}
+
+        let qubeThreadId: string | undefined;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { useThreadStore } = require("@/lib/chat/thread-store") as typeof import("@/lib/chat/thread-store");
+          const st = useThreadStore.getState();
+          qubeThreadId = st.selectedId || st.pendingId || undefined;
+        } catch {}
 
         return {
           instanceId,
+          ...(qubeThreadId ? { qubeThreadId } : {}),
           ...(customSystemPrompt ? { customSystemPrompt } : {}),
           ...(temperature !== undefined && !isNaN(temperature) ? { temperature } : {}),
           ...(userName ? { userName } : {}),
           ...(userAbout ? { userAbout } : {}),
+          ...(mcpServers ? { mcpServers } : {}),
+          ...(skills ? { skills } : {}),
+          ...(allowedDirs ? { allowedDirs } : {}),
+          ...(memoryEnabled !== undefined ? { memoryEnabled } : {}),
         };
       },
     }),
@@ -169,6 +285,7 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ToolUIRegistrar />
+      <PrefetchManager />
       {children}
     </AssistantRuntimeProvider>
   );

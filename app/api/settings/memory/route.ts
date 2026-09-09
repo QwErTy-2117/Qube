@@ -1,10 +1,22 @@
 import { NextResponse } from "next/server";
 import { getMemoryEntries, addMemoryEntry, deleteMemoryEntry, clearMemory } from "@/lib/memory/memory-store";
+import { getDualStore, isWarmedUp, getPrefetchCacheSize } from "@/lib/memory/voicemem-core";
 
 export async function GET() {
   try {
-    const entries = await getMemoryEntries();
-    return NextResponse.json({ entries });
+    const [entries, dual] = await Promise.all([getMemoryEntries(), getDualStore().catch(()=>null)]);
+    const stats = dual ? {
+      left: dual.left.length,
+      right: dual.right.length,
+      cross: dual.cross.length,
+      total: dual.left.length + dual.right.length + dual.cross.length,
+      warmedUp: isWarmedUp(),
+      prefetchCache: getPrefetchCacheSize(),
+      // hierarchical: hot is STM recent, cold is rest
+      stm: [...dual.left, ...dual.right, ...dual.cross].filter(e=>e.stm).length,
+      ltm: [...dual.left, ...dual.right, ...dual.cross].filter(e=>!e.stm).length,
+    } : null;
+    return NextResponse.json({ entries, stats });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -38,8 +50,16 @@ export async function DELETE(req: Request) {
       await clearMemory();
     }
 
-    const entries = await getMemoryEntries();
-    return NextResponse.json({ entries });
+    const [entries, dual] = await Promise.all([getMemoryEntries(), import("@/lib/memory/voicemem-core").then(m=>m.getDualStore().catch(()=>null))]);
+    const stats = dual ? {
+      left: dual.left.length, right: dual.right.length, cross: dual.cross.length,
+      total: dual.left.length+dual.right.length+dual.cross.length,
+      warmedUp: (await import("@/lib/memory/voicemem-core")).isWarmedUp(),
+      prefetchCache: (await import("@/lib/memory/voicemem-core")).getPrefetchCacheSize(),
+      stm: [...dual.left, ...dual.right, ...dual.cross].filter(e=>e.stm).length,
+      ltm: [...dual.left, ...dual.right, ...dual.cross].filter(e=>!e.stm).length,
+    } : null;
+    return NextResponse.json({ entries, stats });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

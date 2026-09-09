@@ -134,3 +134,23 @@ export async function listSessions(): Promise<SessionRecord[]> {
 export async function deleteSession(id: string): Promise<void> {
   await unlink(sessionPath(id)).catch(() => {});
 }
+
+export async function renameSession(id: string, title: string): Promise<SessionRecord | null> {
+  const existing = await readSession(id).catch(() => null);
+  if (!existing) return null;
+  const clean = title.trim().slice(0, 120) || existing.title;
+  const record: SessionRecord & { transcript?: string } = {
+    id: existing.id,
+    title: clean,
+    summary: existing.summary,
+    createdAt: existing.createdAt,
+    updatedAt: Date.now(),
+    hasTranscript: existing.hasTranscript,
+  };
+  if (existing.hasTranscript && typeof (existing as any).transcript === "string") {
+    (record as any).transcript = (existing as any).transcript;
+  }
+  await writeFile(sessionPath(id), JSON.stringify(record, null, 2), "utf-8");
+  const { transcript: _, ...rest } = record as SessionRecord & { transcript?: string };
+  return rest;
+}

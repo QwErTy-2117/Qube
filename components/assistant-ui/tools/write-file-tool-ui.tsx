@@ -19,14 +19,14 @@ export const WriteFileToolUI: ToolCallMessagePartComponent = ({
   const filePath = data.path || filename;
 
   const ext = filename.split(".").pop()?.toLowerCase();
-  const isDownloadable = ["pptx", "docx", "xlsx", "pdf", "csv", "zip", "png", "jpg", "jpeg", "gif", "svg"].includes(ext || "");
+  const isDownloadable = ["pptx", "ppt", "docx", "doc", "xlsx", "xls", "pdf", "csv", "zip", "png", "jpg", "jpeg", "gif", "svg", "md", "txt", "json", "js", "ts", "tsx", "jsx", "py", "html", "css"].includes(ext || "");
 
   const displayName = filePath.split("/").pop() || filePath;
 
   if (data.status === "written" && downloadUrl && isDownloadable) {
     return (
       <div className="px-1 py-0.5">
-        <FileCard filename={displayName} filePath={filePath} downloadUrl={downloadUrl} />
+        <FileCard filename={displayName} filePath={relativePath || filename} downloadUrl={downloadUrl} />
       </div>
     );
   }

@@ -50,7 +50,6 @@ interface ScheduledTask {
     destructiveCommands: boolean;
     externalFiles: boolean;
     webAccess: boolean;
-    browserAccess: boolean;
   };
   lastRunAt: number | null;
   nextRunAt: number;
@@ -72,7 +71,6 @@ const PERMISSION_LABELS: Record<PermissionKey, string> = {
   destructiveCommands: "Destructive commands",
   externalFiles: "Access external files",
   webAccess: "Web search & fetch",
-  browserAccess: "Browser automation",
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -533,7 +531,6 @@ function TaskFormDialog({
       destructiveCommands: false,
       externalFiles: false,
       webAccess: false,
-      browserAccess: false,
     }
   );
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -559,7 +556,6 @@ function TaskFormDialog({
           destructiveCommands: false,
           externalFiles: false,
           webAccess: false,
-          browserAccess: false,
         }
       );
       setSaving(false);

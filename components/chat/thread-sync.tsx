@@ -92,15 +92,31 @@ function toPersistedRepository(exported: any, stateMessages?: any[]): any {
   // Merge visible messages missing from the export. The runtime's export()
   // skips messages still flagged optimistic, and that flag goes stale on
   // just-finished replies — without this merge, responses are silently
-  // dropped from snapshots.
+  // dropped from snapshots. Skip same-role/same-text/same-parent twins:
+  // those are client/server id swaps of one logical message, not new ones.
+  const textSig = (tm: any): string => {
+    const content = Array.isArray(tm?.content) ? tm.content : [];
+    return content
+      .map((p: any) => (p?.type === "text" || p?.type === "reasoning") && typeof p?.text === "string" ? p.text : "")
+      .join("\n");
+  };
   if (Array.isArray(stateMessages)) {
     const exportedIds = new Set(
       (exported?.messages ?? []).map((i: any) => i?.message?.id),
+    );
+    const exportedSigParent = new Set(
+      (exported?.messages ?? []).map((i: any) => {
+        const tm = i?.message;
+        return `${tm?.role ?? ""}\n${textSig(tm)}\n${i?.parentId ?? ""}`;
+      }),
     );
     let tail: string | null =
       expanded.length > 0 ? idOf(expanded[expanded.length - 1].message) : null;
     for (const tm of stateMessages) {
       if (!tm || typeof tm.id !== "string" || exportedIds.has(tm.id)) continue;
+      // Twin check against the would-be parent linkage.
+      const twinKey = `${tm?.role ?? ""}\n${textSig(tm)}\n${tail ?? ""}`;
+      if (exportedSigParent.has(twinKey)) continue;
       const before = expanded.length;
       const newTail = pushResolved(tail, tm);
       if (expanded.length > before) {
@@ -217,6 +233,10 @@ export function ThreadSync() {
   const selectedId = useThreadStore((s) => s.selectedId);
 
   const importingRef = useRef(false);
+  // Which chat id this viewport's content provably belongs to (set on
+  // import / adoption / successful save). Unmount saves are skipped for any
+  // other id, so navigation races can never persist one chat under another.
+  const ownedRef = useRef<string | null>(null);
   const lastSavedRef = useRef<{ sel: string; count: number; at: number } | null>(null);
   const prevSelRef = useRef<string | null>(null);
   const agentTitleRequestedRef = useRef<Set<string>>(new Set());
@@ -273,6 +293,9 @@ export function ThreadSync() {
       try {
         const sel = selRef.current;
         if (!sel || importingRef.current) return;
+        if (sel !== ownedRef.current) return;
+        // Don't resurrect deleted threads.
+        if (useThreadStore.getState().tombstones.includes(sel)) return;
         let repo: any = null;
         try {
           repo = toPersistedRepository(
@@ -321,6 +344,7 @@ export function ThreadSync() {
           }
         }
         const repo = aui.thread().export() as any;
+        ownedRef.current = selectedId;
         lastSavedRef.current = {
           sel: selectedId,
           count: Array.isArray(repo?.messages) ? repo.messages.length : 0,
@@ -341,16 +365,21 @@ export function ThreadSync() {
 
   // Lazy chat adoption: when the first message is sent with no selection,
   // adopt the pending id. No server row exists yet — it materializes with
-  // the first real save, so empty chats are never stored.
+  // the first real save, so empty chats are never stored. Only on "/": on a
+  // chat URL the route owns selection (adopting here would fork a copy).
   useEffect(() => {
     if (selectedId) return;
     if (msgCount === 0) return;
+    try {
+      if (window.location.pathname !== "/") return;
+    } catch {}
     const store = useThreadStore.getState();
     const pid = store.ensurePendingId();
     // Viewport already holds this chat's messages: skip the import,
     // but leave lastSavedRef alone so the save effect persists them.
     tlog("lazy-adopt", pid);
     prevSelRef.current = pid;
+    ownedRef.current = pid;
     store.setSelectedId(pid);
     store.clearPendingId();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -363,6 +392,7 @@ export function ThreadSync() {
     if (!selectedId) return;
     if (importingRef.current) return;
     if (isRunning) return;
+    if (useThreadStore.getState().tombstones.includes(selectedId)) return;
     try {
       const path = window.location.pathname;
       if (path !== "/" && path !== `/chat/${selectedId}`) return;
@@ -390,6 +420,7 @@ export function ThreadSync() {
         const known = store.threads.find((x) => x.id === selectedId);
         const saved = await saveThreadRepository(selectedId, repo, known?.title || "New Chat");
         tlog("saved", selectedId, "msgs=", persistedMessageCount(repo), "title=", saved?.title);
+        ownedRef.current = selectedId;
         lastSavedRef.current = { sel: selectedId, count: msgCount, at: Date.now() };
         savedOnceRef.current.add(selectedId);
         // A pending "/" → chat navigation may now proceed safely.

@@ -27,6 +27,8 @@ type ThreadStore = {
   renamingId: string | null;
   /** Server thread id currently shown in the chat viewport. */
   selectedId: string | null;
+  /** Ids deleted this session — unmount saves must not resurrect them. */
+  tombstones: string[];
   /**
    * Pre-allocated id for the chat being composed. No server row exists until
    * the first real save, so empty chats are never persisted.
@@ -58,6 +60,7 @@ export const useThreadStore = create<ThreadStore>((set, get) => ({
   renamingId: null,
   selectedId: null,
   pendingId: null,
+  tombstones: [],
 
   load: async () => {
     if (get().loading) return;
@@ -128,7 +131,10 @@ export const useThreadStore = create<ThreadStore>((set, get) => ({
 
   remove: async (id: string) => {
     const wasSelected = get().selectedId === id;
-    set((s) => ({ threads: s.threads.filter((t) => t.id !== id) }));
+    set((s) => ({
+      threads: s.threads.filter((t) => t.id !== id),
+      tombstones: s.tombstones.includes(id) ? s.tombstones : [...s.tombstones, id],
+    }));
     try {
       await deleteThreadServer(id);
     } catch {

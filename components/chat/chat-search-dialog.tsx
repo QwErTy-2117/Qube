@@ -9,7 +9,6 @@ import { PencilIcon, Trash2Icon, CheckIcon, XIcon, SearchIcon } from "lucide-rea
 export function ChatSearchDialog() {
   const open = useThreadStore((s) => s.searchOpen);
   const setOpen = useThreadStore((s) => s.setSearchOpen);
-  const requestOpen = useThreadStore((s) => s.requestOpen);
   const rename = useThreadStore((s) => s.rename);
   const remove = useThreadStore((s) => s.remove);
 
@@ -24,9 +23,10 @@ export function ChatSearchDialog() {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Navigation is push-only: the mounted route derives selection from the
+  // URL, so priming the store first can only save one chat under another's id.
   const openChat = (id: string) => {
     setOpen(false);
-    requestOpen(id);
     if (pathname !== `/chat/${id}`) router.push(`/chat/${id}`);
   };
 

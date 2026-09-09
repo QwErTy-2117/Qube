@@ -6,8 +6,6 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAui } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
-import { useTheme } from "next-themes";
-import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { SettingsDialog } from "@/components/shared/settings-dialog";
 import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { useThreadStore, loadExpanded } from "@/lib/chat/thread-store";
@@ -95,21 +93,6 @@ const RenameInput: FC<{
 
 export const QubeSidebar: FC = () => {
   const [logoHover, setLogoHover] = useState(false);
-  const { theme, resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  const isDark = mounted
-    ? theme === "dark"
-      ? true
-      : theme === "light"
-        ? false
-        : theme === "system"
-          ? resolvedTheme === "dark"
-          : typeof document !== "undefined"
-            ? document.documentElement.classList.contains("dark")
-            : false
-    : false;
 
   // Apply the persisted expand preference after mount (kept out of the
   // initial render so SSR and hydration output match).
@@ -138,7 +121,6 @@ export const QubeSidebar: FC = () => {
   const threads = useThreadStore((s) => s.threads);
   const renamingId = useThreadStore((s) => s.renamingId);
   const setRenamingId = useThreadStore((s) => s.setRenamingId);
-  const requestOpen = useThreadStore((s) => s.requestOpen);
   const setSearchOpen = useThreadStore((s) => s.setSearchOpen);
   const rename = useThreadStore((s) => s.rename);
   const remove = useThreadStore((s) => s.remove);
@@ -149,8 +131,9 @@ export const QubeSidebar: FC = () => {
   const pathname = usePathname();
   const aui = useAui();
 
+  // Navigation is push-only: the mounted route derives selection from the
+  // URL, so priming the store first can only save one chat under another's id.
   const openChat = (id: string) => {
-    requestOpen(id);
     if (pathname !== `/chat/${id}`) router.push(`/chat/${id}`);
   };
 
@@ -190,6 +173,8 @@ export const QubeSidebar: FC = () => {
 
   const onLogoClick = (e: MouseEvent) => {
     e.stopPropagation();
+    // Always fall back to the logo itself after toggling.
+    setLogoHover(false);
     setExpanded(!expanded);
   };
 
@@ -352,23 +337,8 @@ export const QubeSidebar: FC = () => {
       {/* Separation between the chat list and the bottom buttons */}
       <div className="mx-2 mt-2 mb-2 border-t border-border/70" aria-hidden />
 
-      {/* Bottom: theme + settings ride the sidebar with the same row style */}
+      {/* Bottom: settings rides the sidebar with the same row style */}
       <div className="mb-2 flex shrink-0 flex-col gap-0.5 px-2">
-        <div
-          role="button"
-          aria-label="Toggle theme"
-          title="Toggle theme"
-          onClick={() => setTheme(isDark ? "light" : "dark")}
-          className={ROW}
-        >
-          <AnimatedThemeToggler
-            variant="circle"
-            theme={isDark ? "dark" : "light"}
-            onThemeChange={(newTheme) => setTheme(newTheme)}
-            className="pointer-events-none flex size-4 shrink-0 items-center justify-center [&_svg]:size-4"
-          />
-          <CurtainText show={expanded}>Theme</CurtainText>
-        </div>
         <SettingsDialog>
           <button title="Settings" className={ROW}>
             <SettingsIcon className={ROW_ICON} />

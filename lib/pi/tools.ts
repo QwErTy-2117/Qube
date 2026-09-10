@@ -209,7 +209,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
   return {
     ...extraTools,
     present_file: tool({
-      description: "Surface a workspace file in chat as an Open/Download card, rendered exactly where you call it. Call this when you create or update a deliverable (document, spreadsheet, presentation, image, code) so the user can open it in the document popup right from that point in your reply. Prefer this over the [file: path] marker when you want the card placed deliberately.",
+      description: "Surface a workspace file in chat as an Open/Download card, rendered exactly where you call it. Call this when you create or update a deliverable (document, spreadsheet, presentation, image, code) so the user can open it in the document popup right from that point in your reply. Prefer this over the [file: path] marker when you want the card placed deliberately. For presentations always present the real presentations/*.pptx file (python-pptx), never an .md outline.",
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path of an existing file"),
       }),

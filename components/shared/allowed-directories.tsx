@@ -34,6 +34,7 @@ export function AllowedDirectoriesSection({ onDialogOpenChange }: { onDialogOpen
   const [managerOpen, setManagerOpen] = useState(false);
   const [newPath, setNewPath] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AllowedDirEntry | null>(null);
 
   const notify = useCallback(
@@ -108,6 +109,31 @@ export function AllowedDirectoriesSection({ onDialogOpenChange }: { onDialogOpen
     })();
   }, []);
 
+  /** Validate a candidate folder against the server: must exist AND be a directory. Returns the normalized absolute path. */
+  const validateDirectory = async (raw: string): Promise<string | null> => {
+    let data: { ok?: boolean; isDirectory?: boolean | null; path?: string; error?: string } | null = null;
+    try {
+      const res = await fetch(`/api/permissions/dirs?check=${encodeURIComponent(raw)}`);
+      data = await res.json().catch(() => null);
+    } catch {
+      setError("Could not verify the folder — check the path and try again.");
+      return null;
+    }
+    if (!data) {
+      setError("Could not verify the folder — check the path and try again.");
+      return null;
+    }
+    if (data.isDirectory === false) {
+      setError(data.error || `"${raw}" is a file, not a folder — pick a folder.`);
+      return null;
+    }
+    if (data.isDirectory !== true || !data.path) {
+      setError(`"${raw}" is not a valid folder — enter an existing directory (e.g. ~/Documents).`);
+      return null;
+    }
+    return data.path;
+  };
+
   const handleAdd = async () => {
     const raw = newPath.trim();
     if (!raw) {
@@ -118,79 +144,53 @@ export function AllowedDirectoriesSection({ onDialogOpenChange }: { onDialogOpen
       setError("Use an absolute path or ~/ (e.g. ~/Documents).");
       return;
     }
+    if (checking) return;
+    setChecking(true);
     try {
-      const res = await fetch(`/api/permissions/dirs?check=${encodeURIComponent(raw)}`);
-      const data = await res.json().catch(() => null);
-      if (data && data.isDirectory === false) {
-        setError(data.error || "That is a file, not a folder.");
-        return;
-      }
-    } catch {}
-    setError(null);
-    persist([
-      ...dirs,
-      {
-        id: `dir_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-        path: raw,
-        access: "write",
-        addedAt: Date.now(),
-        source: "settings",
-      },
-    ]);
-    setNewPath("");
+      const abs = await validateDirectory(raw);
+      if (!abs) return;
+      setError(null);
+      await persist([
+        ...dirs,
+        {
+          id: `dir_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+          path: abs,
+          access: "write",
+          addedAt: Date.now(),
+          source: "settings",
+        },
+      ]);
+      setNewPath("");
+    } finally {
+      setChecking(false);
+    }
   };
 
   const handleBrowse = async () => {
-    const verifyFolder = async (picked: string): Promise<boolean> => {
-      try {
-        const res = await fetch(`/api/permissions/dirs?check=${encodeURIComponent(picked)}`);
-        const data = await res.json().catch(() => null);
-        if (data && data.isDirectory === false) {
-          setError(data.error || "That is a file, not a folder — pick a folder.");
-          return false;
-        }
-      } catch {}
-      return true;
-    };
-    // Native folder picker (Tauri desktop)…
+    if (checking) return;
+    setChecking(true);
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({ directory: true, multiple: false, title: "Choose a folder" });
-      if (typeof selected === "string" && selected.trim()) {
-        const ok = await verifyFolder(selected.trim());
-        if (!ok) return;
-        setNewPath(selected.trim());
-        setError(null);
+      // Native folder picker (Tauri desktop only — directory:true never lets
+      // the user pick a file). Web browsers cannot reveal absolute folder
+      // paths, so there is intentionally no web fallback that fabricates
+      // `~/<name>` from the picked folder name — type the full path instead.
+      let selected: string | string[] | null = null;
+      try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        selected = await open({ directory: true, multiple: false, title: "Choose a folder" });
+      } catch {
+        setError("Folder browsing needs the desktop app — type the full folder path instead (e.g. ~/Documents).");
         return;
       }
-      if (selected) return;
-    } catch {
-      // …fall through to the web fallback below when not in Tauri.
-    }
-    try {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.hidden = true;
-      input.setAttribute("webkitdirectory", "");
-      document.body.appendChild(input);
-      input.onchange = () => {
-        const files = input.files;
-        const first = files?.[0] as (File & { webkitRelativePath?: string }) | undefined;
-        const rel = first?.webkitRelativePath || "";
-        const root = rel.split("/")[0] || "";
-        document.body.removeChild(input);
-        if (root) {
-          // Browsers don't reveal absolute paths — anchor at home for review.
-          setNewPath(`~/${root}`);
-          setError(null);
-        }
-      };
-      input.oncancel = () => {
-        try { document.body.removeChild(input); } catch {}
-      };
-      input.click();
-    } catch {
-      setError("Could not open the folder picker — type the path instead.");
+      const picked = Array.isArray(selected) ? selected[0] : selected;
+      if (typeof picked !== "string" || !picked.trim()) return; // cancelled
+      const abs = await validateDirectory(picked.trim());
+      if (!abs) return;
+      // Use the server-normalized absolute directory — never just the folder name.
+      setNewPath(abs);
+      setError(null);
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -261,17 +261,19 @@ export function AllowedDirectoriesSection({ onDialogOpenChange }: { onDialogOpen
               <button
                 onClick={handleAdd}
                 title="Add directory"
-                className="absolute right-1 top-1/2 -translate-y-1/2 size-7 flex items-center justify-center rounded-full bg-foreground text-background transition hover:opacity-90 cursor-pointer"
+                disabled={checking}
+                className="absolute right-1 top-1/2 -translate-y-1/2 size-7 flex items-center justify-center rounded-full bg-foreground text-background transition hover:opacity-90 cursor-pointer disabled:opacity-50"
               >
-                <PlusIcon className="size-4" />
+                {checking ? <Loader2Icon className="size-4 animate-spin" /> : <PlusIcon className="size-4" />}
               </button>
             </div>
             <button
               onClick={handleBrowse}
-              title="Browse for a folder"
-              className="size-9 shrink-0 flex items-center justify-center rounded-full border border-border bg-background hover:bg-muted/60 transition-colors cursor-pointer"
+              title="Browse for a folder (desktop app)"
+              disabled={checking}
+              className="size-9 shrink-0 flex items-center justify-center rounded-full border border-border bg-background hover:bg-muted/60 transition-colors cursor-pointer disabled:opacity-50"
             >
-              <FolderIcon className="size-4" />
+              {checking ? <Loader2Icon className="size-4 animate-spin" /> : <FolderIcon className="size-4" />}
             </button>
           </div>
           {error && (

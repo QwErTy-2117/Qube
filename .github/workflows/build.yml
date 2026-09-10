@@ -35,7 +35,10 @@ jobs:
             librsvg2-dev \
             libxtst-dev \
             patchelf \
-            rpm
+            rpm \
+            libfuse2t64 \
+            file \
+            zsync
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -55,6 +58,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # linuxdeploy/appimagetool need this on runners without FUSE
+          APPIMAGE_EXTRACT_AND_RUN: 1
         with:
           tagName: v__VERSION__
           releaseName: "Qube v__VERSION__"

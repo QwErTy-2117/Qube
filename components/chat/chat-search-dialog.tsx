@@ -218,7 +218,7 @@ export function ChatSearchDialog() {
                             }}
                           aria-label="Delete chat"
                           title="Delete"
-                          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:text-destructive"
+                          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive"
                         >
                           <Trash2Icon className="size-3" />
                         </button>

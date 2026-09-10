@@ -25,7 +25,7 @@ export const WriteFileToolUI: ToolCallMessagePartComponent = ({
 
   if (data.status === "written" && downloadUrl && isDownloadable) {
     return (
-      <div className="px-1 py-0.5">
+      <div className="my-3 flex flex-col gap-2" data-slot="file-card-inline">
         <FileCard filename={displayName} filePath={relativePath || filename} downloadUrl={downloadUrl} />
       </div>
     );
@@ -33,7 +33,7 @@ export const WriteFileToolUI: ToolCallMessagePartComponent = ({
 
   if (data.status === "written") {
     return (
-      <div className="flex items-center gap-1.5 px-1 py-0.5 text-sm text-green-600 dark:text-green-400">
+      <div className="my-2 flex items-center gap-1.5 px-1 text-sm text-green-600 dark:text-green-400">
         <span className="size-1.5 rounded-full bg-green-500" />
         <span className="font-medium">{displayName}</span>
         <span className="text-muted-foreground">written</span>

@@ -44,8 +44,16 @@ export function BrowserPanel() {
   const [health, setHealth] = useState<Health>(null);
   const [restarting, setRestarting] = useState(false);
   const [esKey, setEsKey] = useState(0);
+  const [live, setLive] = useState(true);
   const hasFrameRef = useRef(false);
+  const lastActivityRef = useRef(0);
+  const lastReconnectRef = useRef(0);
   const show = open && artifact?.kind === "browser";
+
+  const noteActivity = () => {
+    lastActivityRef.current = Date.now();
+    setLive(true);
+  };
 
   const onDrag = useCallback((e: MouseEvent) => {
     const d = dragRef.current;
@@ -75,6 +83,23 @@ export function BrowserPanel() {
     document.removeEventListener("mouseup", endDrag);
   }, [onDrag, endDrag]);
 
+  // Freshness watchdog: if nothing (frame or URL tick) arrives for a
+  // while, force a stream reconnect — a wedged pipe otherwise freezes the
+  // panel on a stale screenshot with no indication. At most once per 15s.
+  useEffect(() => {
+    if (!show) return;
+    lastActivityRef.current = Date.now();
+    const timer = setInterval(() => {
+      const idleMs = Date.now() - lastActivityRef.current;
+      setLive(idleMs < 10000);
+      if (idleMs > 15000 && Date.now() - lastReconnectRef.current > 15000) {
+        lastReconnectRef.current = Date.now();
+        setEsKey((k) => k + 1);
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [show, esKey]);
+
   // Stream live frames while the panel is visible.
   useEffect(() => {
     if (!show) return;
@@ -88,9 +113,13 @@ export function BrowserPanel() {
       es.addEventListener("frame", (ev) => {
         try {
           const data = JSON.parse((ev as MessageEvent).data) as { jpg?: string; url?: string };
-          if (typeof data.url === "string" && data.url) setLiveUrl(data.url);
+          if (typeof data.url === "string" && data.url) {
+            setLiveUrl(data.url);
+            noteActivity();
+          }
           // Ignore trivial/empty captures — only real frames clear waiting UI.
           if (typeof data.jpg === "string" && data.jpg.length >= MIN_FRAME_LEN) {
+            noteActivity();
             setImg(`data:image/jpeg;base64,${data.jpg}`);
             if (!hasFrameRef.current) {
               hasFrameRef.current = true;
@@ -104,7 +133,10 @@ export function BrowserPanel() {
       es.addEventListener("url", (ev) => {
         try {
           const data = JSON.parse((ev as MessageEvent).data) as { url?: string };
-          if (typeof data.url === "string" && data.url) setLiveUrl(data.url);
+          if (typeof data.url === "string" && data.url) {
+            setLiveUrl(data.url);
+            noteActivity();
+          }
         } catch {}
       });
       es.addEventListener("error", (ev) => {
@@ -206,6 +238,11 @@ export function BrowserPanel() {
           {/* Header (no tabs — browser only) */}
           <div className="flex items-center gap-2 border-b border-border/60 px-2.5 py-2">
             <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />
+            <span
+              title={live ? "Live view" : "View may be stale — reconnecting"}
+              aria-label={live ? "Live view" : "View may be stale"}
+              className={`size-1.5 shrink-0 rounded-full transition-colors ${live ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`}
+            />
             <span className="truncate text-[13px] font-semibold text-foreground">
               {liveUrl || "Browser"}
             </span>

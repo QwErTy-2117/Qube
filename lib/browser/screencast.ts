@@ -35,6 +35,14 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Snapshot cadence when the screencast goes quiet (static pages). */
 const SNAPSHOT_IDLE_MS = 2500;
+/** Consecutive dead snapshots before forcing a reattach. */
+const DEAD_SNAPSHOT_LIMIT = 3;
+/** Broadcast the current URL this often even without frames. */
+const URL_TICK_MS = 5000;
+
+let deadSnapshots = 0;
+let lastUrlTickAt = 0;
+let lastBroadcastUrl = "";
 
 /** Last real page seen — restored if the agent's tab vanishes. */
 let lastHttpUrl = "";
@@ -142,15 +150,18 @@ function teardown() {
 function captureOnce(): void {
   if (!ws || ws.readyState !== 1) return;
   const id = ++msgId;
+  let settled = false;
   const onMsg = (raw: Buffer) => {
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.id === id) {
+        settled = true;
         try { ws?.off("message", onMsg); } catch {}
         if (typeof msg.result?.data === "string") {
           framesDelivered++;
           lastFrameAt = Date.now();
           lastPipeError = null;
+          deadSnapshots = 0;
           broadcast(msg.result.data, currentUrl, currentMeta);
         }
       }
@@ -167,6 +178,21 @@ function captureOnce(): void {
     );
     setTimeout(() => {
       try { ws?.off("message", onMsg); } catch {}
+      // No answer on a live-looking socket = half-open pipe: force a fresh
+      // attach instead of freezing the panel on a stale frame.
+      if (!settled && listeners.size > 0) {
+        deadSnapshots++;
+        if (deadSnapshots >= DEAD_SNAPSHOT_LIMIT) {
+          deadSnapshots = 0;
+          try {
+            ws?.removeAllListeners();
+            ws?.close();
+          } catch {}
+          ws = null;
+          wsTargetId = null;
+          scheduleReattach();
+        }
+      }
     }, 10000);
   } catch {}
 }
@@ -180,10 +206,34 @@ function startHeartbeat(): void {
   if (heartbeatTimer) return;
   heartbeatTimer = setInterval(() => {
     if (listeners.size === 0) return;
+    // Pipe health is verified actively: a half-open socket never errors on
+    // its own, so without this the panel would freeze on a stale frame.
+    if (!ws || ws.readyState !== 1 || !wsTargetId) {
+      deadSnapshots = 0;
+      void ensurePipe();
+      return;
+    }
     // Screencast covers motion; snapshot only when the picture went stale
     // (static pages, throttled compositor) — the panel stays live.
     if (lastFrameAt === null || Date.now() - lastFrameAt > SNAPSHOT_IDLE_MS) {
       captureOnce();
+    }
+    // URL freshness tick: the header follows navigation even when frames
+    // stall. Cheap HTTP check, broadcast only on change.
+    if (Date.now() - lastUrlTickAt > URL_TICK_MS) {
+      lastUrlTickAt = Date.now();
+      void (async () => {
+        try {
+          const pages = await listPageTargets();
+          const http = pages.filter((p) => /^https?:\/\//i.test(p.url));
+          const best = http.length > 0 ? http[http.length - 1] : pages[pages.length - 1];
+          if (best && best.url && best.url !== lastBroadcastUrl) {
+            lastBroadcastUrl = best.url;
+            currentUrl = best.url;
+            broadcast("", best.url, currentMeta);
+          }
+        } catch {}
+      })();
     }
   }, 1000);
   try { (heartbeatTimer as unknown as { unref?: () => void }).unref?.(); } catch {}

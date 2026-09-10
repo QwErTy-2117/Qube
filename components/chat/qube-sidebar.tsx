@@ -91,6 +91,7 @@ const RenameInput: FC<{
 
 export const QubeSidebar: FC = () => {
   const [logoHover, setLogoHover] = useState(false);
+  const [hoverId, setHoverId] = useState<string | null>(null);
 
   // Apply the persisted expand preference after mount (kept out of the
   // initial render so SSR and hydration output match).
@@ -270,12 +271,14 @@ export const QubeSidebar: FC = () => {
               return (
                 <div
                   key={t.id}
+                  data-thread-row={t.id}
                   onClick={() => {
                     if (!renaming) openChat(t);
                   }}
+                  onMouseEnter={() => setHoverId(t.id)}
+                  onMouseLeave={() => setHoverId((h) => (h === t.id ? null : h))}
                   className={cn(
                     ROW,
-                    "group",
                     active && "bg-accent text-accent-foreground",
                   )}
                   title={title}
@@ -296,7 +299,15 @@ export const QubeSidebar: FC = () => {
                   ) : (
                     <>
                       <span className="min-w-0 flex-1 truncate">{title}</span>
-                      <span className="hidden shrink-0 items-center gap-0.5 pl-1 group-hover:flex">
+                      {/* Hover-only reveal (active or not): buttons stay hidden
+                          until the row itself is hovered. */}
+                      <span
+                        className="flex shrink-0 items-center gap-0.5 pl-1 transition-opacity duration-150"
+                        style={{
+                          opacity: hoverId === t.id ? 1 : 0,
+                          pointerEvents: hoverId === t.id ? "auto" : "none",
+                        }}
+                      >
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -304,7 +315,7 @@ export const QubeSidebar: FC = () => {
                           }}
                           aria-label="Rename chat"
                           title="Rename"
-                          className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
+                          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                         >
                           <PencilIcon className="size-3" />
                         </button>
@@ -319,7 +330,7 @@ export const QubeSidebar: FC = () => {
                           }}
                           aria-label="Delete chat"
                           title="Delete"
-                          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:text-destructive"
+                          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive"
                         >
                           <Trash2Icon className="size-3" />
                         </button>

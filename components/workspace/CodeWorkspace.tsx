@@ -27,6 +27,7 @@ export function CodeWorkspace({ filePath, downloadUrl }: { filePath: string; dow
 
   const shown = draft ?? content;
   const lines = useMemo(() => shown.split("\n"), [shown]);
+  const maxLineLen = useMemo(() => lines.reduce((n, l) => Math.max(n, l.length), 0), [lines]);
 
   const save = async (value?: string) => {
     const next = value ?? draft;
@@ -77,10 +78,10 @@ export function CodeWorkspace({ filePath, downloadUrl }: { filePath: string; dow
         {loading ? <p className="p-4 text-xs text-muted-foreground">Loading code…</p>
         : error ? <p className="p-4 text-xs text-red-400">{error}</p>
         : (
-          <div className="flex min-h-full w-max min-w-full items-stretch p-3 font-mono text-[12px] leading-5">
-            <div aria-hidden="true" className="w-8 shrink-0 select-none pr-3 text-right text-muted-foreground/50">
+          <div className="flex min-h-full w-max min-w-full items-start p-3 font-mono text-[12px] leading-5">
+            <div aria-hidden="true" className="sticky left-0 w-10 shrink-0 bg-[#0d0d10] pr-3 text-right text-muted-foreground/50 select-none dark:bg-black/40">
               {lines.map((_, i) => (
-                <div key={i}>{i + 1}</div>
+                <div key={i} className="h-5">{i + 1}</div>
               ))}
             </div>
             <textarea
@@ -102,8 +103,9 @@ export function CodeWorkspace({ filePath, downloadUrl }: { filePath: string; dow
               spellCheck={false}
               aria-label="Edit code"
               rows={Math.max(lines.length, 1)}
+              cols={Math.max(maxLineLen + 4, 80)}
               wrap="off"
-              className="min-w-[60ch] flex-1 resize-none overflow-x-auto overflow-y-hidden whitespace-pre bg-transparent text-zinc-200 outline-none"
+              className="w-max min-w-[calc(100%-2.5rem)] resize-none overflow-hidden bg-transparent whitespace-pre text-zinc-200 outline-none"
             />
           </div>
         )}

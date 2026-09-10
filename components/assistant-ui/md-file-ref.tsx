@@ -107,7 +107,7 @@ export function MdFileCardGroupNode({ node }: any) {
   const cards = Array.isArray(node?.children) ? node.children : [];
   if (cards.length === 0) return null;
   return (
-    <div className="my-2 flex flex-wrap items-center gap-2">
+    <div className="my-3 flex flex-col gap-2" data-slot="file-card-inline">
       {cards.map((c: any, i: number) => (
         <MdFileCardNode key={i} node={c} />
       ))}

@@ -112,8 +112,8 @@ export function ThreadUrlSync() {
   // URL follows the main thread — but only on genuine main *changes*.
   // First runs, re-renders and StrictMode repeats never navigate, so deep
   // links and fresh landings are never clobbered (ChatRoute owns those).
-  // landingMainRef tracks the "/" landing's own thread so only user-created
-  // threads navigate away from it.
+  // landingMainRef tracks the "/" landing's own thread so pristine landings
+  // stay put while initialized chats navigate to their URL.
   const prevMainRef = useRef<string | undefined>(undefined);
   const landingMainRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
@@ -126,14 +126,16 @@ export function ThreadUrlSync() {
       return;
     }
     if (pathname === "/") {
-      // Seed the landing thread on first sight; stay while it is pristine,
-      // navigate once it holds a real (initialized) chat or the user moved
-      // to a different (created) thread.
       if (landingMainRef.current === undefined) {
         landingMainRef.current = mainId;
         return;
       }
+      // Stay only while the landing composer is pristine (its own new
+      // thread). Anything initialized — or any other thread — gets a URL.
       if (mainId === landingMainRef.current && mainItem?.status === "new") return;
+      landingMainRef.current = mainId;
+      router.push(want);
+      return;
     }
     if (prev === undefined || prev === mainId) return;
     landingMainRef.current = mainId;

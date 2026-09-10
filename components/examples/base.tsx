@@ -33,7 +33,6 @@ import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
 import { ChangedFiles } from "@/components/assistant-ui/tools/changed-files";
 import { SubagentToolUI } from "@/components/assistant-ui/tools/subagent-tool-ui";
-import { ShowFileToolUI } from "@/components/assistant-ui/tools/show-file-tool-ui";
 import { GoalsPanel } from "@/components/assistant-ui/goals-panel";
 import {
   ComposerQuotePreview,
@@ -47,7 +46,6 @@ import {
   ActionBarPrimitive,
   AuiIf,
   type AssistantState,
-  BranchPickerPrimitive,
   ComposerPrimitive,
   ErrorPrimitive,
   groupPartByType,
@@ -64,8 +62,6 @@ import {
   ArrowUpIcon,
   ChartColumnIcon,
   CheckIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
   CloudSunIcon,
   CodeXmlIcon,
   CopyIcon,
@@ -119,7 +115,11 @@ const baseToolGroupBy = groupPartByType({
 const messageGroupBy = (part: any, context: any) => {
   if (part.type === "tool-call" && part.toolName === "subagent") return [];
   if (part.type === "tool-call" && part.toolName === "TodoWrite") return [];
+  // Document deliverables always render standalone, exactly where the agent
+  // called them (never collapsed inside a tool group on top of the reply).
   if (part.type === "tool-call" && part.toolName === "present_file") return [];
+  if (part.type === "tool-call" && part.toolName === "write_file") return [];
+  if (part.type === "tool-call" && part.toolName === "edit_file") return [];
   return baseToolGroupBy(part as any, context as any);
 };
 
@@ -1150,16 +1150,15 @@ const AssistantMessage: FC = () => {
                 if (part.toolName === "TodoWrite") {
                   return null;
                 }
-                // present_file renders its card bare (never in a tool group)
-                // so the agent can place Open/Download exactly where it wants.
-                if (part.toolName === "present_file") {
-                  const toolProps = {
-                    toolCallId: part.toolCallId,
-                    args: part.args,
-                    result: part.result,
-                    status: part.status,
-                  } as unknown as React.ComponentProps<typeof ShowFileToolUI>;
-                  return <ShowFileToolUI {...toolProps} />;
+                // present_file + write_file + edit_file render their cards bare
+                // (never in a tool group) so the agent can place Open/Download
+                // exactly where it wants — mid-paragraph, with padding.
+                if (
+                  part.toolName === "present_file" ||
+                  part.toolName === "write_file" ||
+                  part.toolName === "edit_file"
+                ) {
+                  return part.toolUI ?? <ToolFallback {...part} />;
                 }
                 const isDestructive = DESTRUCTIVE_KEYWORDS.some(kw =>
                   part.toolName.toLowerCase().includes(kw)
@@ -1195,7 +1194,6 @@ const AssistantMessage: FC = () => {
         data-slot="aui_assistant-message-footer"
         className={cn("ml-2 flex items-center", ACTION_BAR_HEIGHT)}
       >
-        <BranchPicker />
         <AssistantActionBar />
       </div>
     </MessagePrimitive.Root>
@@ -1286,11 +1284,6 @@ const UserMessage: FC = () => {
           <UserActionBar />
         </div>
       </div>
-
-      <BranchPicker
-        data-slot="aui_user-branch-picker"
-        className="col-span-full col-start-1 row-start-3 -mr-1 justify-end"
-      />
     </MessagePrimitive.Root>
   );
 };
@@ -1343,36 +1336,6 @@ const EditComposer: FC = () => {
         </ComposerPrimitive.Root>
       </ComposerPrimitive.Unstable_TriggerPopoverRoot>
     </MessagePrimitive.Root>
-  );
-};
-
-const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
-  className,
-  ...rest
-}) => {
-  return (
-    <BranchPickerPrimitive.Root
-      hideWhenSingleBranch
-      className={cn(
-        "aui-branch-picker-root text-muted-foreground mr-2 -ml-2 inline-flex items-center text-xs",
-        className,
-      )}
-      {...rest}
-    >
-      <BranchPickerPrimitive.Previous asChild>
-        <TooltipIconButton tooltip="Previous">
-          <ChevronLeftIcon />
-        </TooltipIconButton>
-      </BranchPickerPrimitive.Previous>
-      <span className="aui-branch-picker-state font-medium">
-        <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
-      </span>
-      <BranchPickerPrimitive.Next asChild>
-        <TooltipIconButton tooltip="Next">
-          <ChevronRightIcon />
-        </TooltipIconButton>
-      </BranchPickerPrimitive.Next>
-    </BranchPickerPrimitive.Root>
   );
 };
 
@@ -1462,6 +1425,18 @@ const BrowserAutoOpener: FC = () => {
   return null;
 };
 
+// TEMPORARY live-test handle (removed before release).
+const DebugSend: FC = () => {
+  const aui = useAui();
+  useEffect(() => {
+    try {
+      (window as any).__qubeSend = (text: string) =>
+        aui.thread().append({ content: [{ type: "text", text }] } as any);
+    } catch {}
+  });
+  return null;
+};
+
 export const Base: FC = () => {
   return (
     <div className="bg-muted relative flex h-full w-full pl-2">
@@ -1469,6 +1444,7 @@ export const Base: FC = () => {
       <ChatErrorWatcher />
       <BrowserAutoOpener />
       <ThreadUrlSync />
+      <DebugSend />
       <ChatSearchDialog />
       <div data-tauri-no-drag-region>
         <Sidebar />

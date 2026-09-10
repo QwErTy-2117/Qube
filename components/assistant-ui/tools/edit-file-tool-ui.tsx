@@ -25,31 +25,31 @@ export const EditFileToolUI: ToolCallMessagePartComponent = ({
 
   const displayName = displayPath.split("/").pop() || displayPath;
 
+  // Standalone inline rendering (never inside a collapsed tool group):
+  // file card gets breathing room; diff details stay in a bordered block.
+  if (!downloadUrl || !isDownloadable) {
+    // Non-downloadable edits keep a compact status row (no card to splash).
+    if (!data.status && !oldString) return null;
+  }
   return (
-    <div className="px-3 py-1 text-sm">
+    <div className="my-3 flex flex-col gap-2 text-sm" data-slot="file-card-inline">
       {downloadUrl && isDownloadable && (
-        <div className="mb-2">
-          <FileCard filename={displayName} filePath={data.relativePath || path} downloadUrl={downloadUrl} />
-        </div>
+        <FileCard filename={displayName} filePath={data.relativePath || path} downloadUrl={downloadUrl} />
       )}
-      {displayPath && (
-        <div className="mb-2 font-mono text-sm text-muted-foreground">
-          {displayPath}
-        </div>
-      )}
-      {data.status === "edited" ? (
-        <div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
+      {data.status === "edited" && !downloadUrl ? (
+        <div className="flex items-center gap-1.5 px-1 text-sm text-green-600 dark:text-green-400">
           <span className="size-1.5 rounded-full bg-green-500" />
-          Edited
+          <span className="font-medium">{displayName}</span>
+          <span className="text-muted-foreground">edited</span>
         </div>
       ) : data.status === "failed" ? (
-        <div className="flex items-center gap-1.5 text-sm text-red-600 dark:text-red-400">
+        <div className="flex items-center gap-1.5 px-1 text-sm text-red-600 dark:text-red-400">
           <span className="size-1.5 rounded-full bg-red-500" />
           Edit failed
         </div>
       ) : null}
       {oldString && newString && (
-        <div className="mt-2">
+        <div className="overflow-hidden rounded-xl border border-border/60">
           <DiffView oldContent={oldString} newContent={newString} />
         </div>
       )}

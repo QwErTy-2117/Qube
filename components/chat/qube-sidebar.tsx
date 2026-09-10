@@ -2,14 +2,12 @@
 
 import { useEffect, useState, type FC, type MouseEvent } from "react";
 import Image from "next/image";
-import { useRouter, usePathname } from "next/navigation";
-import { useAui } from "@assistant-ui/react";
+import { useAui, useAuiState } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
 import { SettingsDialog } from "@/components/shared/settings-dialog";
 import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { useThreadStore, loadExpanded } from "@/lib/chat/thread-store";
-import { isPlaceholderTitle } from "@/lib/chat/threads-client";
 import {
   PanelLeftIcon,
   PlusIcon,
@@ -118,44 +116,42 @@ export const QubeSidebar: FC = () => {
 
   const expanded = useThreadStore((s) => s.expanded);
   const setExpanded = useThreadStore((s) => s.setExpanded);
-  const threads = useThreadStore((s) => s.threads);
   const renamingId = useThreadStore((s) => s.renamingId);
   const setRenamingId = useThreadStore((s) => s.setRenamingId);
   const setSearchOpen = useThreadStore((s) => s.setSearchOpen);
-  const rename = useThreadStore((s) => s.rename);
-  const remove = useThreadStore((s) => s.remove);
 
-  const selectedId = useThreadStore((s) => s.selectedId);
-
-  const router = useRouter();
-  const pathname = usePathname();
   const aui = useAui();
 
-  // Navigation is push-only: the mounted route derives selection from the
-  // URL, so priming the store first can only save one chat under another's id.
-  const openChat = (id: string) => {
-    if (pathname !== `/chat/${id}`) router.push(`/chat/${id}`);
+  // Runtime thread list (server-persisted via the thread-list adapter).
+  // Unstarted local threads stay hidden until their first message.
+  const threadItems = useAuiState(
+    (s) => ((s.threads as any)?.threadItems ?? []) as Array<{
+      id: string;
+      remoteId?: string;
+      title?: string;
+      status?: string;
+    }>,
+  );
+  const mainThreadId = useAuiState(
+    (s) => (s.threads as any)?.mainThreadId as string | undefined,
+  );
+  const visibleThreads = threadItems.filter(
+    (t) => t && t.status !== "new" && t.status !== "archived" && t.status !== "deleted",
+  );
+
+  // The URL follows the main thread reactively (ThreadUrlSync) — actions
+  // only switch; never read ids imperatively (those snapshots go stale).
+  const openChat = (t: { id: string; remoteId?: string }) => {
+    try {
+      aui.threads().switchToThread(t.id);
+    } catch {}
   };
 
   const newChat = () => {
-    if (pathname !== "/") {
-      router.push("/");
-    } else {
-      // Already home: stop any run and clear the viewport in place.
-      try {
-        aui.thread().cancelRun();
-      } catch {}
-      try {
-        aui.thread().import({ headId: null, messages: [] } as any);
-      } catch {}
-      useThreadStore.getState().setSelectedId(null);
-    }
+    try {
+      aui.threads().switchToNewThread();
+    } catch {}
   };
-
-  // Hide stale empty rows (placeholder title, no messages) unless selected.
-  const visibleThreads = threads.filter(
-    (t) => t.id === selectedId || t.hasMessages || !isPlaceholderTitle(t.title),
-  );
 
   const expand = () => setExpanded(true);
 
@@ -268,33 +264,38 @@ export const QubeSidebar: FC = () => {
         {expanded && (
           <div className="flex flex-col gap-0.5 pb-2">
             {visibleThreads.map((t) => {
-              const active = t.id === selectedId;
+              const active = t.id === mainThreadId;
               const renaming = renamingId === t.id;
+              const title = t.title || "New Chat";
               return (
                 <div
                   key={t.id}
                   onClick={() => {
-                    if (!renaming) openChat(t.id);
+                    if (!renaming) openChat(t);
                   }}
                   className={cn(
                     ROW,
                     "group",
                     active && "bg-accent text-accent-foreground",
                   )}
-                  title={t.title}
+                  title={title}
                 >
                   {renaming ? (
                     <RenameInput
-                      initial={t.title}
+                      initial={title}
                       onCommit={(v) => {
-                        if (v.trim() && v.trim() !== t.title) rename(t.id, v);
-                        else setRenamingId(null);
+                        try {
+                          if (v.trim() && v.trim() !== title) {
+                            aui.threads().item({ id: t.id }).rename(v.trim().slice(0, 120));
+                          }
+                        } catch {}
+                        setRenamingId(null);
                       }}
                       onCancel={() => setRenamingId(null)}
                     />
                   ) : (
                     <>
-                      <span className="min-w-0 flex-1 truncate">{t.title || "New Chat"}</span>
+                      <span className="min-w-0 flex-1 truncate">{title}</span>
                       <span className="hidden shrink-0 items-center gap-0.5 pl-1 group-hover:flex">
                         <button
                           onClick={(e) => {
@@ -310,12 +311,11 @@ export const QubeSidebar: FC = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            void (async () => {
-                              await remove(t.id);
-                              const sel = useThreadStore.getState().selectedId;
-                              const want = sel ? `/chat/${sel}` : "/";
-                              if (pathname !== want) router.push(want);
-                            })();
+                            // The fallback effect re-homes main; the URL
+                            // follows reactively.
+                            try {
+                              aui.threads().item({ id: t.id }).delete();
+                            } catch {}
                           }}
                           aria-label="Delete chat"
                           title="Delete"

@@ -93,7 +93,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import TextRotate from "@/components/fancy/text/text-rotate";
 import Image from "next/image";
-import { useState, useEffect, useCallback, type FC, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, type FC, type ReactNode } from "react";
 import {
   ModelSelector,
   ModelSelectorModelContext,
@@ -132,7 +132,7 @@ const DESTRUCTIVE_KEYWORDS = [
 import { QubeSidebar } from "@/components/chat/qube-sidebar";
 import { ChatSearchDialog } from "@/components/chat/chat-search-dialog";
 import { ChatTitle } from "@/components/chat/chat-title";
-import { ThreadSync } from "@/components/chat/thread-sync";
+import { ThreadUrlSync } from "@/components/chat/chat-route";
 
 // Sidebar lives in components/chat/qube-sidebar.tsx (expandable w/ curtain
 // reveal, thread list, search). Kept here only as a thin alias.
@@ -1420,6 +1420,7 @@ const ChatErrorWatcher: FC = () => {
 const openedBrowserCallIds = new Set<string>();
 const BrowserAutoOpener: FC = () => {
   const messages = useAuiState((s) => s.thread.messages);
+  const mountedRef = useRef(false);
   useEffect(() => {
     try {
       const ids: string[] = [];
@@ -1432,6 +1433,17 @@ const BrowserAutoOpener: FC = () => {
           if (p?.type === "tool-call" && typeof p?.toolName === "string" && p.toolName.startsWith("browser_")) {
             ids.push(typeof p.toolCallId === "string" && p.toolCallId ? p.toolCallId : `${p.toolName}`);
           }
+        }
+      }
+      // On (re)mount, follow an already browser-active thread: the panel
+      // shows the shared live browser, so reopen to keep following it.
+      if (!mountedRef.current) {
+        mountedRef.current = true;
+        ids.forEach((id) => openedBrowserCallIds.add(id));
+        if (ids.length > 0) {
+          const st = useWorkspaceStore.getState();
+          if (!st.open || st.artifact?.kind !== "browser") openBrowserWorkspace();
+          return;
         }
       }
       const fresh = ids.filter((id) => !openedBrowserCallIds.has(id));
@@ -1456,7 +1468,7 @@ export const Base: FC = () => {
       <ChatErrorTopPopup />
       <ChatErrorWatcher />
       <BrowserAutoOpener />
-      <ThreadSync />
+      <ThreadUrlSync />
       <ChatSearchDialog />
       <div data-tauri-no-drag-region>
         <Sidebar />

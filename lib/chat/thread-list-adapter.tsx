@@ -5,11 +5,19 @@ import {
   RuntimeAdapterProvider,
   useAui,
   type RemoteThreadListAdapter,
-  type RemoteThreadMetadata,
 } from "@assistant-ui/react";
 import { createAssistantStream } from "assistant-stream";
 import { createQubeHistoryAdapter } from "./history-adapter";
 import { messageText } from "./message-convert";
+
+type RemoteThreadMetadata = {
+  readonly status: "regular" | "archived";
+  readonly remoteId: string;
+  readonly externalId?: string | undefined;
+  readonly title?: string | undefined;
+  readonly lastMessageAt?: Date | undefined;
+  readonly custom?: Record<string, unknown> | undefined;
+};
 
 type ServerThread = {
   id: string;
@@ -72,14 +80,10 @@ function heuristicTitle(messages: readonly any[]): string {
 }
 
 /** Per-thread provider: injects this thread's history adapter. */
-function QubeThreadProvider({ children }: { children: React.ReactNode }) {
+function QubeThreadProvider({ children }: { children?: React.ReactNode }) {
   const aui = useAui();
   const history = useMemo(
-    () =>
-      createQubeHistoryAdapter({
-        initialize: () => aui.threadListItem().initialize(),
-        getState: () => aui.threadListItem().getState(),
-      }),
+    () => createQubeHistoryAdapter(() => aui.threadListItem()),
     [aui],
   );
   const adapters = useMemo(() => ({ history }), [history]);
@@ -88,7 +92,7 @@ function QubeThreadProvider({ children }: { children: React.ReactNode }) {
 
 export function useQubeThreadListAdapter(): RemoteThreadListAdapter {
   const Provider = useCallback(
-    function Provider({ children }: { children: React.ReactNode }) {
+    function Provider({ children }: { children?: React.ReactNode }) {
       return <QubeThreadProvider>{children}</QubeThreadProvider>;
     },
     [],

@@ -1,16 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useAui } from "@assistant-ui/react";
 import { useThreadStore } from "@/lib/chat/thread-store";
 import { searchThreads, type ThreadMeta } from "@/lib/chat/threads-client";
 import { PencilIcon, Trash2Icon, CheckIcon, XIcon, SearchIcon } from "lucide-react";
 
 export function ChatSearchDialog() {
+  const aui = useAui();
   const open = useThreadStore((s) => s.searchOpen);
   const setOpen = useThreadStore((s) => s.setSearchOpen);
-  const rename = useThreadStore((s) => s.rename);
-  const remove = useThreadStore((s) => s.remove);
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ThreadMeta[]>([]);
@@ -20,14 +19,21 @@ export function ChatSearchDialog() {
   const [editValue, setEditValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const router = useRouter();
-  const pathname = usePathname();
 
-  // Navigation is push-only: the mounted route derives selection from the
-  // URL, so priming the store first can only save one chat under another's id.
+  const itemApi = (id: string) => {
+    try {
+      return aui.threads().item({ id });
+    } catch {
+      return null;
+    }
+  };
+
+  // The URL follows the main thread reactively (ThreadUrlSync).
   const openChat = (id: string) => {
     setOpen(false);
-    if (pathname !== `/chat/${id}`) router.push(`/chat/${id}`);
+    try {
+      aui.threads().switchToThread(id);
+    } catch {}
   };
 
   // Cmd+K / Ctrl+K toggles.
@@ -80,7 +86,9 @@ export function ChatSearchDialog() {
 
   const commitEdit = (t: ThreadMeta) => {
     if (editValue.trim() && editValue.trim() !== t.title) {
-      rename(t.id, editValue);
+      try {
+        itemApi(t.id)?.rename(editValue.trim().slice(0, 120));
+      } catch {}
       setResults((rs) => rs.map((r) => (r.id === t.id ? { ...r, title: editValue.trim() } : r)));
     }
     setEditingId(null);
@@ -201,16 +209,12 @@ export function ChatSearchDialog() {
                         <button
                           onClick={(e) => {
                               e.stopPropagation();
-                              void (async () => {
-                                await remove(t.id);
-                                setResults((rs) => rs.filter((r) => r.id !== t.id));
-                                const sel = useThreadStore.getState().selectedId;
-                                const want = sel ? `/chat/${sel}` : "/";
-                                if (pathname !== want) {
-                                  setOpen(false);
-                                  router.push(want);
-                                }
-                              })();
+                              // The fallback effect re-homes main; the URL
+                              // follows reactively.
+                              try {
+                                itemApi(t.id)?.delete();
+                              } catch {}
+                              setResults((rs) => rs.filter((r) => r.id !== t.id));
                             }}
                           aria-label="Delete chat"
                           title="Delete"

@@ -35,12 +35,14 @@ export async function POST(req: Request) {
   console.log("[chat] POST /api/chat start (Pi harness)", { url: req.url });
   try {
     const body = await req.json();
-    const { messages, threadId, qubeThreadId, memoryEnabled, config, customSystemPrompt, temperature, instanceId, mcpServers, skills, allowedDirs, userName, userAbout } = body;
+    const { messages, id, threadId, qubeThreadId, memoryEnabled, config, customSystemPrompt, temperature, instanceId, mcpServers, skills, allowedDirs, userName, userAbout } = body;
     const modelName = config?.modelName;
     const reasoningEffort = config?.reasoningEffort;
-    // Prefer the app-level chat id so sessions accumulate per chat (same id
-    // space as /api/threads snapshots); fall back to the transport id.
+    // Prefer the transport thread id (the remote thread id in the
+    // adapter model) so sessions accumulate per chat; fall back to the
+    // legacy app-level id, then to a fresh id.
     const currentThreadId =
+      (typeof id === "string" && id) ||
       (typeof qubeThreadId === "string" && qubeThreadId) ||
       threadId ||
       `thread_${Date.now()}`;

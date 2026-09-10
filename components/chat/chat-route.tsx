@@ -1,23 +1,145 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useThreadStore } from "@/lib/chat/thread-store";
+import { useEffect, useRef } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useAui, useAuiState } from "@assistant-ui/react";
 
-/** Selects the chat from the URL (/chat/[id]); redirects home when unknown. */
+type ItemState = {
+  id: string;
+  remoteId?: string;
+  title?: string;
+  status?: string;
+};
+
+function useThreadListSnapshot() {
+  const isLoading = useAuiState((s) => (s.threads as any)?.isLoading ?? true);
+  const items = useAuiState(
+    (s) => ((s.threads as any)?.threadItems ?? []) as ItemState[],
+  );
+  return { isLoading, items };
+}
+
+/** Selects the chat from the URL (/chat/[id]); bounces home when unknown. */
 export function ChatRoute({ id }: { id: string }) {
+  const aui = useAui();
   const router = useRouter();
-  const loaded = useThreadStore((s) => s.loaded);
+  const { isLoading, items } = useThreadListSnapshot();
 
   useEffect(() => {
-    useThreadStore.getState().setSelectedId(id);
-  }, [id]);
+    if (!id) return;
+    let mainId: string | undefined;
+    let mainRemote: string | undefined;
+    try {
+      mainId = aui.threads().getState().mainThreadId;
+    } catch {}
+    try {
+      mainRemote = aui.threadListItem().getState().remoteId;
+    } catch {}
+    if (mainId === id || mainRemote === id) return;
+    const known = items.some((t) => t?.id === id || t?.remoteId === id);
+    if (!known && !isLoading) {
+      // Only bounce for server ids (stable): local/mapping ids may simply
+      // not be listed yet, and bouncing them destroys fresh chats.
+      if (/^thread_[0-9]+/.test(id)) {
+        router.replace("/");
+        return;
+      }
+    }
+    try {
+      aui.threads().switchToThread(id);
+    } catch {
+      // Resolution failures (unknown id) → bounce home when list settles.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isLoading, items.length]);
 
+  return null;
+}
+
+/**
+ * Keeps the URL glued to the main thread (reactively — never read thread
+ * ids imperatively after an action, those snapshots go stale).
+ * - Fresh "/" landing always opens a pristine composer (per-thread drafts
+ *   are preserved by the runtime, so nothing is lost). The landing's own
+ *   thread is tracked so only user-created chats navigate away.
+ * - Everywhere else the URL follows the main thread.
+ */
+export function ThreadUrlSync() {
+  const aui = useAui();
+  const router = useRouter();
+  const pathname = usePathname();
+  const mainId = useAuiState((s) => (s.threads as any)?.mainThreadId as string | undefined);
+  const mainItem = useAuiState((s) => (s as any).threadListItem as ItemState | undefined);
+  const { isLoading, items } = useThreadListSnapshot();
+
+  // Fresh landing (or back-to-/): pristine composer, drafts preserved per thread.
   useEffect(() => {
-    if (!loaded) return;
-    const known = useThreadStore.getState().threads.some((t) => t.id === id);
-    if (!known) router.replace("/");
-  }, [loaded, id, router]);
+    if (pathname !== "/") {
+      landingMainRef.current = undefined;
+      return;
+    }
+    if (landingMainRef.current === undefined) {
+      try {
+        landingMainRef.current = aui.threads().getState().mainThreadId ?? null;
+      } catch {
+        landingMainRef.current = null;
+      }
+    }
+    try {
+      aui.threads().switchToNewThread();
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  // If the main thread vanished (deleted), fall back to latest or fresh.
+  useEffect(() => {
+    if (isLoading || !mainId) return;
+    if (pathname === "/") return;
+    const gone =
+      mainItem?.status !== "new" &&
+      !items.some((t) => t?.id === mainId || t?.remoteId === mainId);
+    if (!gone) return;
+    const regular = items.filter(
+      (t) => t && t.status !== "archived" && t.status !== "deleted" && t.status !== "new",
+    );
+    try {
+      if (regular.length > 0) aui.threads().switchToThread(regular[0].id);
+      else aui.threads().switchToNewThread();
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mainId, pathname, isLoading, items.length]);
+
+  // URL follows the main thread — but only on genuine main *changes*.
+  // First runs, re-renders and StrictMode repeats never navigate, so deep
+  // links and fresh landings are never clobbered (ChatRoute owns those).
+  // landingMainRef tracks the "/" landing's own thread so only user-created
+  // threads navigate away from it.
+  const prevMainRef = useRef<string | undefined>(undefined);
+  const landingMainRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevMainRef.current;
+    if (mainId) prevMainRef.current = mainId;
+    if (!mainId) return;
+    const want = `/chat/${mainItem?.remoteId ?? mainId}`;
+    if (pathname === want) {
+      landingMainRef.current = mainId;
+      return;
+    }
+    if (pathname === "/") {
+      // Seed the landing thread on first sight; stay while it is pristine,
+      // navigate once it holds a real (initialized) chat or the user moved
+      // to a different (created) thread.
+      if (landingMainRef.current === undefined) {
+        landingMainRef.current = mainId;
+        return;
+      }
+      if (mainId === landingMainRef.current && mainItem?.status === "new") return;
+    }
+    if (prev === undefined || prev === mainId) return;
+    landingMainRef.current = mainId;
+    router.push(want);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mainId, mainItem?.remoteId, mainItem?.status, pathname]);
 
   return null;
 }

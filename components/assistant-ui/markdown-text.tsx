@@ -36,9 +36,15 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   );
 };
 
-const baseComponents = memoizeMarkdownComponents({
-  SyntaxHighlighter,
-  CodeHeader,
+// Created lazily on first render (not at module scope): chunk evaluation
+// order can otherwise hit the SyntaxHighlighter binding before its
+// initializer runs (SSR ReferenceError) in production chunk graphs.
+let cachedBaseComponents: any = null;
+function getBaseComponents() {
+  if (!cachedBaseComponents) {
+    cachedBaseComponents = memoizeMarkdownComponents({
+      SyntaxHighlighter,
+      CodeHeader,
   h1: ({ className, ...props }) => (
     <h1 className={cn("aui-md-h1 mb-4 mt-6 text-2xl font-bold", className)} {...props} />
   ),
@@ -106,11 +112,21 @@ const baseComponents = memoizeMarkdownComponents({
       />
     );
   },
-});
+    });
+  }
+  return cachedBaseComponents;
+}
 
-const defaultComponents: any = { ...baseComponents, fileCard: MdFileCardNode, fileCardGroup: MdFileCardGroupNode };
+function getDefaultComponents(): any {
+  return { ...getBaseComponents(), fileCard: MdFileCardNode, fileCardGroup: MdFileCardGroupNode };
+}
+
+// Lazily assigned on first render (see getBaseComponents); kept as a live
+// binding so existing import sites keep working.
+export let defaultComponents: any = undefined;
 
 export function MarkdownText() {
+  if (!defaultComponents) defaultComponents = getDefaultComponents();
   return (
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm, remarkFileRefs]}
@@ -125,4 +141,4 @@ export function MarkdownText() {
   );
 }
 
-export { MarkdownTextPrimitive, defaultComponents, remarkGfm };
+export { MarkdownTextPrimitive, remarkGfm };

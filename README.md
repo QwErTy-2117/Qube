@@ -12,7 +12,7 @@
 
 ## What is Qube?
 
-Qube is a personal assistant that lives on your computer. You talk to it like you would to a person.
+Qube is a personal assistant that lives on your computer. You talk to it like you would to a person. If you can install an app and type a message, you can use Qube — no coding, no terminal, no server to manage.
 
 Instead of giving you ideas and leaving you to do the work, Qube actually does it — it can organize your files, write documents, look things up online, work with the apps you already use, and handle repeat tasks for you.
 
@@ -29,6 +29,23 @@ It runs directly on your computer, and keeps your files, settings, and chat hist
 
 ---
 
+## What makes Qube different?
+
+Most AI agents assume you're comfortable with the terminal. Qube doesn't.
+
+**Qube itself is free.** It's open-source (Apache 2.0) and costs nothing to download and use. There's no Qube subscription and no per-message charge from Qube — you only ever pay your AI provider if their plan charges.
+
+**Bring the AI you already pay for.** Qube doesn't ship with an AI — you connect the one you already use:
+
+- Have a ChatGPT subscription? Sign in with it in the welcome screen and use your plan. No API key, no copying long secret codes, no extra per-token bill.
+- Prefer another provider? Add a key from OpenAI, Anthropic, Google, Mistral, and dozens of others, or point Qube at a local model with Ollama or LM Studio if you'd rather keep everything offline.
+
+You can switch anytime in Settings.
+
+**Setup takes minutes, with clicks — not commands.** Download Qube like any other desktop app, open it, and follow three short steps. Connect Gmail or Drive later only if you want to, with a normal sign-in. For everyday use you don't have to install Node or Python yourself, edit a config file, or keep a server running in the background.
+
+---
+
 ## Why would I use it?
 
 **It finishes the job, not just describes it.** Ask for a cleaned-up spreadsheet, a rewritten cover letter, or a folder of vacation photos sorted by date, and you get the actual file back — not a set of instructions for doing it yourself.
@@ -37,9 +54,7 @@ It runs directly on your computer, and keeps your files, settings, and chat hist
 
 **You stay in control.** Qube shows its work as it goes — what it read, what it wrote, what it found online — and pauses to check with you before anything with real consequences, like deleting a file or sending a message.
 
-**Your stuff stays on your device.** Your files, chat history, and settings live on your computer, not in someone else's cloud. Qube only reaches out to an AI service to think through your request.
-
-**You choose the intelligence.** Qube itself is free and doesn't include an AI — you bring the one you already use, like a ChatGPT login or a key from another provider, or run something local if you'd rather keep everything offline. Switch anytime.
+**Your stuff stays on your device.** Your files, chat history, and settings live on your computer, not in someone else's cloud. Qube only reaches out to an AI service to think through your request. When you chat, the text you send plus any file excerpts it needs may be sent to the AI provider you chose, under that provider's policies.
 
 ---
 
@@ -72,11 +87,29 @@ Qube remembers your preferences, your projects, and decisions you've already mad
 
 ---
 
+## How is Qube different from tools like OpenClaw or Hermes?
+
+They're powerful, but they're built for people who are comfortable in the terminal. Qube is built for everyone else too.
+
+**OpenClaw** runs as a gateway on your machine or server. You install it with a terminal script or npm, you need Node.js, then you run setup commands like `openclaw onboard` in the terminal, add an API key, and manage a Gateway process with a browser Control UI. It's a good fit if you want your agent plugged into Telegram, Discord, WhatsApp and don't mind config files and background services. See their [Install](https://docs.openclaw.ai/install) and [Getting started](https://docs.openclaw.ai/start/getting-started) docs.
+
+**Hermes Agent** is a terminal-first agent. You install it with a script, then configure it with commands like `hermes setup`, `hermes model`, and `hermes gateway setup`, pick providers and toolsets, and manage config files. It also expects a model with a large context window. It's a good fit if you like fine-tuning every tool and running bots or always-on servers. See their [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart).
+
+**Qube takes the opposite route:**
+
+- Install it like a normal desktop app — no terminal commands to get started.
+- If you already have ChatGPT, just sign in with it. No hunting for API keys. Or paste a single key, or run a local model if you prefer.
+- Connect Gmail, Drive, Slack, and the rest with a normal sign-in window, then just ask in plain words. There's no server to keep alive and no config file to edit for everyday use.
+
+If you enjoy running servers and editing settings files, you'll feel at home in OpenClaw or Hermes. If you just want to download something and ask for help in your own words, Qube is the easier start.
+
+---
+
 ## How do I get started?
 
 ### 1. Get Qube
 
-The quickest way is to grab a build for your system from the [Releases page](https://github.com/QwErTy-2117/Qube/releases) and install it like any other desktop app. Prefer to build it yourself, or there's no release yet for your platform? See [Build it yourself](#build-it-yourself) below — it only takes a few commands.
+No terminal needed for normal use. The quickest way is to grab a build for your system from the [Releases page](https://github.com/QwErTy-2117/Qube/releases) and install it like any other desktop app. Prefer to build it yourself, or there's no release yet for your platform? See [Build it yourself](#build-it-yourself) below — it only takes a few commands.
 
 When you first open Qube, it walks you through a short setup:
 

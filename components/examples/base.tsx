@@ -1439,7 +1439,7 @@ const DebugSend: FC = () => {
 
 export const Base: FC = () => {
   return (
-    <div className="bg-muted qube-app-root relative flex h-full w-full pl-2">
+    <div className="bg-muted relative flex h-full w-full pl-2">
       <ChatErrorTopPopup />
       <ChatErrorWatcher />
       <BrowserAutoOpener />

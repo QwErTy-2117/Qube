@@ -183,17 +183,7 @@ html.tauri.maximized {
   --window-radius: 0rem;
 }
 
-/* Tauri frameless window: the custom Titlebar renders as a fixed h-14
-   (56px) transparent drag strip + window controls overlay on top of the
-   window. Reserve that strip in the app layout so the top of the left
-   sidebar (logo / new-chat / search) sits BELOW the overlay and stays
-   clickable/draggable instead of being blocked by it. The strip itself
-   stays empty (bg-muted) so it remains a reliable window-drag area, and
-   the hover-only window controls float over empty padding — never over
-   sidebar or panel content. */
-html.tauri .qube-app-root {
-  padding-top: 3.5rem;
-}
+
 
 
 body {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useThreadStore } from "@/lib/chat/thread-store";
 
 async function getWindow() {
   const mod = await import("@tauri-apps/api/window");
@@ -12,6 +13,12 @@ export function Titlebar() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [platform, setPlatform] = useState<"windows" | "macos" | "linux" | "other">("other");
   const initialized = useRef(false);
+  // Sidebar width to exclude from window drag: Base root has pl-2 (8px) +
+  // QubeSidebar w-12 collapsed (48px) / w-64 expanded (256px). The drag
+  // strip starts AFTER the sidebar so the whole left sidebar stays
+  // clickable and never drags the window. Hook at top (before any early
+  // return) to keep hook order stable.
+  const sidebarExpanded = useThreadStore((s) => s.expanded);
 
   useEffect(() => {
     if (initialized.current) return;
@@ -248,13 +255,19 @@ export function Titlebar() {
 
   return (
     <>
-      {/* Drag region — stays below dialogs so it doesn't block modals */}
+      {/* Drag region — starts after the sidebar, stays below dialogs so it
+          doesn't block modals. No drag over the sidebar; buttons hover zone
+          below is right-side only. */}
       <div
         data-tauri-drag-region={isTauri ? true : undefined}
-        className="fixed top-0 left-0 right-0 h-14 z-40 select-none bg-transparent pointer-events-auto"
+        style={{ left: sidebarExpanded ? 264 : 56 }}
+        className="fixed top-0 right-0 h-14 z-40 select-none bg-transparent pointer-events-auto"
         aria-hidden
       />
-      {/* Window controls — always above dialogs/overlays so hover works even with popups */}
+      {/* Window controls — top-right hover zone only (w-60 on the right), so
+          the 3 buttons appear only when hovering the top of the right side,
+          never the left. Always above dialogs/overlays so hover works even
+          with popups. */}
       <div className="fixed top-0 right-0 h-14 z-[999] flex items-start justify-end select-none bg-transparent pointer-events-none">
         <div className="group/zone h-full w-60 flex items-start justify-end pt-4 pr-4 bg-transparent pointer-events-auto">
           <div className="opacity-0 pointer-events-none group-hover/zone:opacity-100 group-hover/zone:pointer-events-auto transition-all duration-300 ease-in-out">

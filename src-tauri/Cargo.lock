@@ -2481,7 +2481,7 @@ dependencies = [
 
 [[package]]
 name = "qube"
-version = "0.0.34"
+version = "0.0.35"
 dependencies = [
  "serde",
  "serde_json",

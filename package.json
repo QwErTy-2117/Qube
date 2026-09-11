@@ -1,12 +1,13 @@
 {
   "name": "xulux-base-demo",
-  "version": "0.0.34",
+  "version": "0.0.35",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3010",
     "build": "next build",
     "start": "next start",
+    "test": "QUBE_DATA_DIR=$(mktemp -d) npx tsx --test tests/*.test.ts",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -31,7 +32,7 @@
     "@tauri-apps/plugin-dialog": "^2.4.1",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
-    "@tauri-apps/plugin-updater": "^2.8.1",
+    "@tauri-apps/plugin-updater": "^2.11.0",
     "ai": "^6.0.208",
     "antd": "^6.6.1",
     "antd-style": "^4.1.0",

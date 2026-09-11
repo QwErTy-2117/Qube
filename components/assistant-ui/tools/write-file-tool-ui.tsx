@@ -1,35 +1,26 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { FileCard } from "./file-card";
 
+/**
+ * write_file never renders a file card: cards live only in the slim
+ * PresentedFiles list at the bottom of the message (built from
+ * present_file calls). This keeps intermediate builder scripts
+ * (e.g. create_doc.py used to generate a .docx) hidden inside the
+ * collapsed tool group instead of splashed as cards on top of the reply.
+ */
 export const WriteFileToolUI: ToolCallMessagePartComponent = ({
   args,
   result,
 }) => {
   const filename = (args as any)?.path || "";
-  let data: { path?: string; relativePath?: string; status?: string } = {};
+  let data: { status?: string } = {};
   try {
     if (typeof result === "string") data = JSON.parse(result);
     else if (result) data = result as typeof data;
   } catch {}
 
-  const relativePath = data.relativePath;
-  const downloadUrl = relativePath ? `/api/files/${relativePath.split("/").map((s) => encodeURIComponent(s)).join("/")}` : null;
-  const filePath = data.path || filename;
-
-  const ext = filename.split(".").pop()?.toLowerCase();
-  const isDownloadable = ["pptx", "ppt", "docx", "doc", "xlsx", "xls", "pdf", "csv", "zip", "png", "jpg", "jpeg", "gif", "svg", "md", "txt", "json", "js", "ts", "tsx", "jsx", "py", "html", "css"].includes(ext || "");
-
-  const displayName = filePath.split("/").pop() || filePath;
-
-  if (data.status === "written" && downloadUrl && isDownloadable) {
-    return (
-      <div className="my-3 flex flex-col gap-2" data-slot="file-card-inline">
-        <FileCard filename={displayName} filePath={relativePath || filename} downloadUrl={downloadUrl} />
-      </div>
-    );
-  }
+  const displayName = (filename as string).split("/").pop() || (filename as string);
 
   if (data.status === "written") {
     return (

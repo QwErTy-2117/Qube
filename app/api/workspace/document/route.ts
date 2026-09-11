@@ -98,6 +98,13 @@ export async function GET(req: Request) {
         const buf = await readFile(resolved);
         const XLSX = await import("xlsx");
         const wb = XLSX.read(buf, { type: "buffer" });
+        // Agent scripts (openpyxl) write formulas WITHOUT cached values, so
+        // SheetJS would surface them as blanks. Evaluate the missing ones
+        // server-side so the preview matches what Excel computes on open.
+        try {
+          const { fillFormulaValues } = await import("@/lib/workspace/spreadsheet-formulas");
+          for (const name of wb.SheetNames.slice(0, 20)) fillFormulaValues(wb.Sheets[name]);
+        } catch {}
         const sheets = wb.SheetNames.slice(0, 20).map((name) => {
           const ws = wb.Sheets[name];
           const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", blankrows: false });
@@ -202,6 +209,17 @@ export async function POST(req: Request) {
       for (const [i, sh] of list.entries()) {
         const rows = Array.isArray(sh?.rows) ? sh.rows.slice(0, 500).map((r) => (Array.isArray(r) ? r.slice(0, 50).map((c) => String(c ?? "")) : [])) : [];
         const ws = XLSX.utils.aoa_to_sheet(rows);
+        // Cells typed as =FORMULA(...) must persist as real formula cells —
+        // aoa_to_sheet would otherwise store them as literal text strings
+        // that Excel never computes. Cached values are left empty: Excel
+        // calculates on open and the preview evaluator fills them in.
+        for (const key of Object.keys(ws)) {
+          if (key.startsWith("!")) continue;
+          const cell = (ws as Record<string, { v?: unknown; f?: string; t?: string }>)[key];
+          if (cell && typeof cell.v === "string" && cell.v.startsWith("=") && cell.v.length > 1) {
+            (ws as Record<string, unknown>)[key] = { t: "n", f: cell.v.slice(1) };
+          }
+        }
         XLSX.utils.book_append_sheet(wb, ws, String(sh?.name || `Sheet${i + 1}`).slice(0, 31));
       }
       const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;

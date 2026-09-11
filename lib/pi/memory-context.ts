@@ -28,20 +28,34 @@ function lastUserText(messages: Array<Record<string, unknown>>): string {
 export async function buildMemoryContext(
   messages: Array<Record<string, unknown>>,
   currentThreadId: string,
+  opts?: { scopeKey?: string; proactiveTopic?: string },
 ): Promise<string> {
   try {
     const mem = await import("@/lib/memory/memory-store");
     await mem.warmup?.().catch(() => {});
     const query = lastUserText(messages);
-    const [recall, sessions] = await Promise.all([
-      query ? mem.getRelevantContext(query).catch(() => "") : Promise.resolve(""),
+    const [recall, sessions, proactive] = await Promise.all([
+      query ? (mem as any).getRelevantContext
+        ? (mem as any).getRelevantContext(query, { scopeKey: opts?.scopeKey }).catch(() => "")
+        : Promise.resolve("") : Promise.resolve(""),
       import("@/lib/memory/session-store")
         .then((m) => m.listSessions().catch(() => []))
         .catch(() => [] as any[]),
+      // Proactive state: active prefs + recent suggestion outcomes gate suggestions.
+      import("@/lib/proactivity/store")
+        .then((m) => m.loadProactiveState().catch(() => null))
+        .catch(() => null),
     ]);
+    try {
+      const { logMemoryRetrieved } = await import("@/lib/agent/observability");
+      if (query && recall) {
+        await logMemoryRetrieved(currentThreadId, query.slice(0, 200), [], ["auto-inject top-5"]).catch(() => {});
+      }
+    } catch {}
     const blocks: string[] = [];
     if (recall && recall.trim()) {
-      blocks.push(`## Recalled memory (auto — relevant to this message)\n${recall.trim()}`);
+      // Bounded injection (§24): top-5 only, never the whole DB.
+      blocks.push(`## Recalled memory (auto — relevant to this message, relevance-ranked, bounded)\n${recall.trim().slice(0, 1600)}`);
     }
     const others = (sessions as any[])
       .filter((s) => s.id !== currentThreadId)
@@ -51,6 +65,22 @@ export async function buildMemoryContext(
         `## Past chats (use list_sessions/read_session to recall details when the user refers to them)\n` +
           others.map((s) => `- ${s.title || "Untitled"} [${s.id}]`).join("\n"),
       );
+    }
+    if (proactive) {
+      const active = (proactive.preferences || []).filter((p: any) => p.enabled);
+      if (active.length > 0) {
+        blocks.push(
+          `## Active proactive preferences (${active.length})\n` +
+            active.slice(0, 5).map((p: any) => `- ${p.kind}: ${p.topic.slice(0, 100)}${p.frequency ? ` (${p.frequency})` : ""} [scope:${p.scope}]`).join("\n"),
+        );
+      }
+      const recentRejected = (proactive.suggestions || []).filter((s: any) => s.outcome === "rejected" || s.outcome === "dismissed").slice(-3);
+      if (recentRejected.length > 0) {
+        blocks.push(
+          `## Recently rejected suggestions (do NOT re-suggest these)\n` +
+            recentRejected.map((s: any) => `- ${s.topic.slice(0, 100)}`).join("\n"),
+        );
+      }
     }
     return blocks.join("\n\n");
   } catch {

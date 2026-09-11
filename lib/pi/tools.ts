@@ -209,7 +209,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
   return {
     ...extraTools,
     present_file: tool({
-      description: "Surface a workspace file in chat as an Open/Download card, rendered exactly where you call it. Call this when you create or update a deliverable (document, spreadsheet, presentation, image, code) so the user can open it in the document popup right from that point in your reply. Prefer this over the [file: path] marker when you want the card placed deliberately. For presentations always present the real presentations/*.pptx file (python-pptx), never an .md outline.",
+      description: "Surface a workspace file in chat as a slim file card, rendered in a list at the bottom of your reply. Call this ONCE per FINAL deliverable (document, spreadsheet, presentation, image, code). Only documents, spreadsheets and code get an Open button (viewer popup); images, PDFs and presentations are download-only. NEVER present intermediate builder/scaffolding scripts (e.g. .py scripts used to generate a .docx/.xlsx/.pptx) — only the final outputs. For presentations always present the real presentations/*.pptx file (python-pptx), never an .md outline.",
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path of an existing file"),
       }),
@@ -401,7 +401,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     }),
 
     web_search: tool({
-      description: "Search the web (DuckDuckGo) for up-to-date information. Returns 6 results with title, URL, snippet. Requires user approval (outside-workspace search) — batch needed searches together.",
+      description: "Search the web (DuckDuckGo) for up-to-date information. Returns 6 results with title, URL, snippet. No approval needed — batch needed searches together.",
       inputSchema: z.object({
         query: z.string(),
       }),
@@ -458,7 +458,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     }),
 
     web_fetch: tool({
-      description: "Fetch and extract cleaned text from a URL. Truncated to 25k chars. Requires user approval (outside-workspace fetch) — batch needed fetches together.",
+      description: "Fetch and extract cleaned text from a URL. Truncated to 25k chars. No approval needed — batch needed fetches together.",
       inputSchema: z.object({
         url: z.string(),
         selector: z.string().optional().describe("CSS selector to extract specific section"),

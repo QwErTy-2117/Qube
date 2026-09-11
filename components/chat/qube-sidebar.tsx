@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FC, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FC, type MouseEvent } from "react";
 import Image from "next/image";
 import { useAui, useAuiState } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
@@ -125,32 +125,95 @@ export const QubeSidebar: FC = () => {
 
   // Runtime thread list (server-persisted via the thread-list adapter).
   // Unstarted local threads stay hidden until their first message.
+  const threadIds = useAuiState(
+    (s) => ((s.threads as any)?.threadIds ?? []) as string[],
+  );
   const threadItems = useAuiState(
     (s) => ((s.threads as any)?.threadItems ?? []) as Array<{
       id: string;
       remoteId?: string;
       title?: string;
       status?: string;
+      lastMessageAt?: Date | string | number;
     }>,
   );
   const mainThreadId = useAuiState(
     (s) => (s.threads as any)?.mainThreadId as string | undefined,
   );
-  const visibleThreads = threadItems.filter(
-    (t) => t && t.status !== "new" && t.status !== "archived" && t.status !== "deleted",
+  // Message activity of the open chat: bumping recency when a message lands
+  // keeps the active chat on top immediately (the runtime's lastMessageAt
+  // only refreshes from the server on reload).
+  const mainMessagesLength = useAuiState(
+    (s) => ((s.threads as any)?.main?.messages?.length ?? 0) as number,
   );
+  const [activity, setActivity] = useState<Record<string, number>>({});
+  // Only new message activity bumps recency — merely viewing an old chat
+  // must not reorder the list.
+  const prevCountRef = useRef<{ id: string | undefined; len: number }>({
+    id: undefined,
+    len: 0,
+  });
+  useEffect(() => {
+    const prev = prevCountRef.current;
+    if (mainThreadId && prev.id === mainThreadId) {
+      if (mainMessagesLength > 0 && mainMessagesLength > prev.len) {
+        const id = mainThreadId;
+        setActivity((p) => ({ ...p, [id]: Date.now() }));
+      }
+    }
+    prevCountRef.current = { id: mainThreadId, len: mainMessagesLength };
+  }, [mainThreadId, mainMessagesLength]);
+
+  const visibleThreads = useMemo(() => {
+    const byId = new Map(threadItems.map((t) => [t.id, t]));
+    // Respect the runtime's threadIds order first (newly initialized chats
+    // are prepended there), then append any stray items.
+    const ordered = [
+      ...threadIds
+        .map((id) => byId.get(id))
+        .filter((t): t is NonNullable<typeof t> => !!t),
+      ...threadItems.filter((t) => t && !threadIds.includes(t.id)),
+    ];
+    const timeOf = (t: { id: string; lastMessageAt?: Date | string | number }) => {
+      const local = activity[t.id] ?? 0;
+      let remote = 0;
+      try {
+        const v = t.lastMessageAt as any;
+        if (v instanceof Date) remote = v.getTime();
+        else if (typeof v === "number") remote = v;
+        else if (typeof v === "string") remote = new Date(v).getTime();
+        else if (v && typeof v.getTime === "function") remote = v.getTime();
+      } catch {}
+      if (!Number.isFinite(remote)) remote = 0;
+      return Math.max(local, remote);
+    };
+    return ordered
+      .filter(
+        (t) => t && t.status !== "new" && t.status !== "archived" && t.status !== "deleted",
+      )
+      .sort((a, b) => timeOf(b) - timeOf(a));
+  }, [threadIds, threadItems, activity]);
 
   // The URL follows the main thread reactively (ThreadUrlSync) — actions
   // only switch; never read ids imperatively (those snapshots go stale).
+  // Missing/deleted threads fall back to a fresh chat, never an error.
   const openChat = (t: { id: string; remoteId?: string }) => {
     try {
-      aui.threads().switchToThread(t.id);
-    } catch {}
+      Promise.resolve(aui.threads().switchToThread(t.id)).catch(() => {
+        try {
+          Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
+        } catch {}
+      });
+    } catch {
+      try {
+        Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
+      } catch {}
+    }
   };
 
   const newChat = () => {
     try {
-      aui.threads().switchToNewThread();
+      Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
     } catch {}
   };
 
@@ -289,7 +352,9 @@ export const QubeSidebar: FC = () => {
                       onCommit={(v) => {
                         try {
                           if (v.trim() && v.trim() !== title) {
-                            aui.threads().item({ id: t.id }).rename(v.trim().slice(0, 120));
+                            Promise.resolve(
+                              aui.threads().item({ id: t.id }).rename(v.trim().slice(0, 120)),
+                            ).catch(() => {});
                           }
                         } catch {}
                         setRenamingId(null);
@@ -315,7 +380,7 @@ export const QubeSidebar: FC = () => {
                           }}
                           aria-label="Rename chat"
                           title="Rename"
-                          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                          className="flex size-6 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                         >
                           <PencilIcon className="size-3" />
                         </button>
@@ -325,12 +390,14 @@ export const QubeSidebar: FC = () => {
                             // The fallback effect re-homes main; the URL
                             // follows reactively.
                             try {
-                              aui.threads().item({ id: t.id }).delete();
+                              Promise.resolve(
+                                aui.threads().item({ id: t.id }).delete(),
+                              ).catch(() => {});
                             } catch {}
                           }}
                           aria-label="Delete chat"
                           title="Delete"
-                          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive"
+                          className="flex size-6 items-center justify-center text-muted-foreground transition-colors hover:text-destructive focus-visible:text-destructive"
                         >
                           <Trash2Icon className="size-3" />
                         </button>

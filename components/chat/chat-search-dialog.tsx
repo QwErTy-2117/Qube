@@ -29,11 +29,20 @@ export function ChatSearchDialog() {
   };
 
   // The URL follows the main thread reactively (ThreadUrlSync).
+  // Missing/deleted threads fall back to a fresh chat, never an error.
   const openChat = (id: string) => {
     setOpen(false);
     try {
-      aui.threads().switchToThread(id);
-    } catch {}
+      Promise.resolve(aui.threads().switchToThread(id)).catch(() => {
+        try {
+          Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
+        } catch {}
+      });
+    } catch {
+      try {
+        Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
+      } catch {}
+    }
   };
 
   // Cmd+K / Ctrl+K toggles.
@@ -87,7 +96,9 @@ export function ChatSearchDialog() {
   const commitEdit = (t: ThreadMeta) => {
     if (editValue.trim() && editValue.trim() !== t.title) {
       try {
-        itemApi(t.id)?.rename(editValue.trim().slice(0, 120));
+        Promise.resolve(
+          itemApi(t.id)?.rename(editValue.trim().slice(0, 120)),
+        ).catch(() => {});
       } catch {}
       setResults((rs) => rs.map((r) => (r.id === t.id ? { ...r, title: editValue.trim() } : r)));
     }
@@ -202,7 +213,7 @@ export function ChatSearchDialog() {
                           }}
                           aria-label="Rename chat"
                           title="Rename"
-                          className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
+                          className="flex size-6 items-center justify-center text-muted-foreground hover:text-foreground"
                         >
                           <PencilIcon className="size-3" />
                         </button>
@@ -212,13 +223,13 @@ export function ChatSearchDialog() {
                               // The fallback effect re-homes main; the URL
                               // follows reactively.
                               try {
-                                itemApi(t.id)?.delete();
+                                Promise.resolve(itemApi(t.id)?.delete()).catch(() => {});
                               } catch {}
                               setResults((rs) => rs.filter((r) => r.id !== t.id));
                             }}
                           aria-label="Delete chat"
                           title="Delete"
-                          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive"
+                          className="flex size-6 items-center justify-center text-muted-foreground transition-colors hover:text-destructive focus-visible:text-destructive"
                         >
                           <Trash2Icon className="size-3" />
                         </button>

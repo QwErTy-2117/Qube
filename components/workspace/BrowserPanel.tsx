@@ -235,32 +235,6 @@ export function BrowserPanel() {
             className="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize touch-none">
             <div className="mx-auto mt-[45%] h-10 w-1 rounded-full bg-border/70 opacity-0 transition hover:opacity-100" />
           </div>
-          {/* Header (no tabs — browser only) */}
-          <div className="flex items-center gap-2 border-b border-border/60 px-2.5 py-2">
-            <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />
-            <span
-              title={live ? "Live view" : "View may be stale — reconnecting"}
-              aria-label={live ? "Live view" : "View may be stale"}
-              className={`size-1.5 shrink-0 rounded-full transition-colors ${live ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`}
-            />
-            <span className="truncate text-[13px] font-semibold text-foreground">
-              {liveUrl || "Browser"}
-            </span>
-            <span className="flex-1" />
-            <button
-              onClick={() => void openInBrowser(liveUrl)}
-              disabled={!/^https?:\/\//i.test(liveUrl)}
-              title={liveUrl ? `Open ${liveUrl} in browser` : "Open in browser"}
-              aria-label="Open in browser"
-              className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40"
-            >
-              <SquareArrowOutUpRightIcon className="size-4" />
-            </button>
-            <button onClick={closeWorkspace} aria-label="Close browser panel"
-              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground">
-              <XIcon className="size-4" />
-            </button>
-          </div>
           {/* Live view */}
           <div className="relative min-h-0 flex-1 overflow-hidden bg-black/90">
             {showDiagnostics ? (
@@ -306,6 +280,34 @@ export function BrowserPanel() {
                 <img src={img} alt={liveUrl || "Live browser"} className="absolute inset-0 h-full w-full object-contain" draggable={false} />
               </div>
             )}
+          </div>
+          {/* Footer bar (no tabs — browser only). Kept at the bottom so the
+              Tauri frameless window controls (top-right close/max/min) never
+              cover it. */}
+          <div className="flex items-center gap-2 border-t border-border/60 px-2.5 py-2">
+            <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />
+            <span
+              title={live ? "Live view" : "View may be stale — reconnecting"}
+              aria-label={live ? "Live view" : "View may be stale"}
+              className={`size-1.5 shrink-0 rounded-full transition-colors ${live ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`}
+            />
+            <span className="truncate text-[13px] font-semibold text-foreground">
+              {liveUrl || "Browser"}
+            </span>
+            <span className="flex-1" />
+            <button
+              onClick={() => void openInBrowser(liveUrl)}
+              disabled={!/^https?:\/\//i.test(liveUrl)}
+              title={liveUrl ? `Open ${liveUrl} in browser` : "Open in browser"}
+              aria-label="Open in browser"
+              className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40"
+            >
+              <SquareArrowOutUpRightIcon className="size-4" />
+            </button>
+            <button onClick={closeWorkspace} aria-label="Close browser panel"
+              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground">
+              <XIcon className="size-4" />
+            </button>
           </div>
         </motion.aside>
       )}

@@ -138,16 +138,11 @@ export function evaluateToolCall(
 ): ToolCheckResult {
   const pathArg = (args.path as string) || (args.filepath as string) || "";
   const commandArg = args.command as string | undefined;
-  const urlArg = args.url as string | undefined;
 
-  if (toolName === "run_command" && commandArg) {
-    if (isDestructiveCommand(commandArg)) {
-      return {
-        needsPermission: true,
-        description: `The agent wants to run: ${commandArg}`,
-      };
-    }
-  }
+  // NOTE: Only paths outside the workspace (and not covered by an
+  // Allowed directory) require permission. Everything inside the
+  // workspace runs without prompting — including destructive shell
+  // commands and web search/fetch.
 
   if (
     toolName === "run_command" &&
@@ -163,7 +158,7 @@ export function evaluateToolCall(
       }
       return {
         needsPermission: true,
-        description: `The agent wants to run a command outside the workspace: ${commandArg}`,
+        description: `Access files outside the project directory`,
       };
     }
   }
@@ -177,27 +172,9 @@ export function evaluateToolCall(
       }
       return {
         needsPermission: true,
-        description: `The agent wants to access a path outside the workspace: ${pathArg}`,
+        description: `Access files outside the project directory`,
       };
     }
-  }
-
-  // Web search/fetch leaves the workspace (public internet) — always
-  // confirm in interactive sessions. Background/task runners never route
-  // through withPermissionCheck for these (see createTaskPermissionChecker).
-  if (toolName === "web_search") {
-    const q = typeof args.query === "string" ? args.query : "";
-    return {
-      needsPermission: true,
-      description: `The agent wants to search the web for: ${q.slice(0, 200)}`,
-    };
-  }
-
-  if (toolName === "web_fetch") {
-    return {
-      needsPermission: true,
-      description: `The agent wants to fetch an external page: ${urlArg || "(unknown URL)"}`,
-    };
   }
 
   if (
@@ -213,7 +190,7 @@ export function evaluateToolCall(
       }
       return {
         needsPermission: true,
-        description: `The agent wants to modify a file outside the workspace: ${pathArg}`,
+        description: `Access files outside the project directory`,
       };
     }
   }
@@ -224,7 +201,7 @@ export function evaluateToolCall(
     if (rel.startsWith("..") && !coveredByAllowedDir(toolName, pathArg, workspacePath)) {
       return {
         needsPermission: true,
-        description: `The agent wants to list a directory outside the workspace: ${pathArg}`,
+        description: `Access files outside the project directory`,
       };
     }
   }
@@ -278,9 +255,9 @@ export function createTaskPermissionChecker(permissions: TaskPermissions) {
     toolName: string,
     args: Record<string, unknown>,
   ): { allowed: boolean; reason?: string } {
-    const evaluation = evaluateToolCall(toolName, args, workspacePath);
-    if (!evaluation.needsPermission) return { allowed: true };
-
+    // Headless task gates run independently of the interactive prompt.
+    // Interactive chat only prompts for outside-workspace paths, but
+    // background tasks must still respect their own permission flags.
     if (toolName === "run_command") {
       const command = (args.command as string) || "";
       if (!permissions.runCommands) {
@@ -299,6 +276,16 @@ export function createTaskPermissionChecker(permissions: TaskPermissions) {
     }
 
     if (
+      (toolName === "web_search" || toolName === "web_fetch") &&
+      !permissions.webAccess
+    ) {
+      return {
+        allowed: false,
+        reason: "Task does not have permission to access the web.",
+      };
+    }
+
+    if (
       (toolName === "list_external_directory" ||
         toolName === "read_external_file") &&
       !permissions.externalFiles
@@ -309,33 +296,27 @@ export function createTaskPermissionChecker(permissions: TaskPermissions) {
       };
     }
 
-    if (
-      (toolName === "web_search" || toolName === "web_fetch") &&
-      !permissions.webAccess
-    ) {
-      return {
-        allowed: false,
-        reason: "Task does not have permission to access the web.",
-      };
-    }
+    const evaluation = evaluateToolCall(toolName, args, workspacePath);
+    if (!evaluation.needsPermission) return { allowed: true };
 
-
-
-    if (
-      (toolName === "write_file" ||
+    // Outside the workspace (and not in Allowed directories) — tasks
+    // need externalFiles to proceed. No prompt headless, just deny.
+    if (!permissions.externalFiles) {
+      if (
+        toolName === "write_file" ||
         toolName === "edit_file" ||
-        toolName === "delete_file") &&
-      !permissions.externalFiles
-    ) {
-      const pathArg = (args.path as string) || "";
-      const rel = relative(workspacePath, resolve(workspacePath, pathArg));
-      if (rel.startsWith("..")) {
+        toolName === "delete_file"
+      ) {
         return {
           allowed: false,
           reason:
             "Task does not have permission to modify files outside workspace.",
         };
       }
+      return {
+        allowed: false,
+        reason: "Task does not have permission to access external files.",
+      };
     }
 
     return { allowed: true };

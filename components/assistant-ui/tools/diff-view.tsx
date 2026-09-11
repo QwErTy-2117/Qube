@@ -1,5 +1,7 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+
 type DiffLine = {
   type: "add" | "del" | "context";
   content: string;
@@ -33,14 +35,18 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
 export function DiffView({
   oldContent,
   newContent,
+  className,
 }: {
   oldContent: string;
   newContent: string;
+  className?: string;
 }) {
   const lines = computeDiff(oldContent, newContent);
+  const showNoNewline =
+    typeof newContent === "string" && newContent.length > 0 && !newContent.endsWith("\n");
 
   return (
-    <div className="overflow-auto rounded-md border border-border bg-background font-mono text-xs leading-5">
+    <div className={cn("overflow-auto rounded-md border border-border bg-background font-mono text-xs leading-5", className)}>
       <div className="flex border-b border-border bg-muted/50 px-3 py-1">
         <span className="text-muted-foreground">Diff</span>
       </div>
@@ -62,6 +68,12 @@ export function DiffView({
             <span className="flex-1 whitespace-pre-wrap">{line.content}</span>
           </div>
         ))}
+        {showNoNewline && (
+          <div className="flex px-3 py-1 text-muted-foreground/70 italic">
+            <span className="mr-4 w-8 shrink-0 select-none" />
+            <span>No newline at end of file</span>
+          </div>
+        )}
       </div>
     </div>
   );

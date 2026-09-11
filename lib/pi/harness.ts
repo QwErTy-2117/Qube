@@ -529,6 +529,7 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
   const uiStream = result.toUIMessageStream({ originalMessages: config.messages as any } as any) as ReadableStream<any>;
   const reader = uiStream.getReader();
   let sawError = false;
+  let toolCallCount = 0;
 
   try {
     while (true) {
@@ -539,8 +540,19 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
       const { done, value } = await reader.read();
       if (done) break;
 
+      // Count tool invocations so the post-task learning pass can gate on real effort.
+      const chunkType = (value as any)?.type;
+      if (
+        chunkType === "tool-input-start" ||
+        chunkType === "dynamic-tool-input-start" ||
+        chunkType === "tool-call" ||
+        chunkType === "dynamic-tool-call"
+      ) {
+        toolCallCount++;
+      }
+
       // Surface error chunks as visible text (preserve UI contract)
-      if ((value as any)?.type === "error") {
+      if (chunkType === "error") {
         sawError = true;
         const errText = (value as any).errorText || "An error occurred";
         const isGeneric = errText.includes("An error occurred");
@@ -616,6 +628,30 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
       try {
         const { extractAndSaveMemories } = await import("./memory-context");
         extractAndSaveMemories(config.messages as Array<Record<string, unknown>>);
+      } catch {}
+      // Post-task learning pass (§§4,22): generalize, persist, skill-extract,
+      // evaluate proactivity. Fire-and-forget, bounded, never blocks response.
+      try {
+        const lastUser = [...(config.messages as any[])].reverse().find((m: any) => m.role === "user");
+        const textOf = (m: any): string => {
+          try {
+            const parts = m?.parts || m?.content;
+            if (Array.isArray(parts)) return parts.map((p: any) => p?.text || "").join(" ").slice(0, 800);
+            return typeof parts === "string" ? parts.slice(0, 800) : "";
+          } catch { return ""; }
+        };
+        const userText = lastUser ? textOf(lastUser) : "";
+        if (userText && userText.trim().length >= 8 && !sawError) {
+          const { runPostTaskLearning } = await import("@/lib/learning/protocol");
+          void runPostTaskLearning({
+            threadId: config.threadId,
+            userText,
+            taskSuccess: !sawError,
+            toolCalls: toolCallCount,
+            filesChanged: 0,
+            backgroundSupported: true,
+          }).catch(() => {});
+        }
       } catch {}
     }
   }

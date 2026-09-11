@@ -3,15 +3,16 @@
 import { visit } from "unist-util-visit";
 import { FileCard } from "./tools/file-card";
 
-/** Matches `[file: path]` markers and literal `present_file(path="...")` calls in chat text. */
-export const FILE_REF_RE = /(\[file:\s*(.+?)\]|present_file\(\s*path\s*=\s*"([^"]+)"\s*\))/gi;
+/** Matches `[file: path]` markers, literal `present_file(path="...")` calls,
+ * and `<present_file path="..." />` tags in chat text. */
+export const FILE_REF_RE = /(\[file:\s*(.+?)\]|present_file\(\s*path\s*=\s*"([^"]+)"\s*\)|<present_file\s+path\s*=\s*["']([^"']+)["']\s*\/?>)/gi;
 
 export function extractFileRefsFromText(text: string): string[] {
   const out: string[] = [];
   FILE_REF_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = FILE_REF_RE.exec(text)) !== null) {
-    const p = (m[2] ?? m[3] ?? "").trim();
+    const p = (m[2] ?? m[3] ?? m[4] ?? "").trim();
     if (p && !out.includes(p)) out.push(p);
   }
   return out;
@@ -55,7 +56,7 @@ export function remarkFileRefs() {
       while ((m = FILE_REF_RE.exec(value)) !== null) {
         matched = true;
         if (m.index > last) children.push({ type: "text", value: value.slice(last, m.index) });
-        children.push({ type: "fileCard", path: (m[2] ?? m[3] ?? "").trim() });
+        children.push({ type: "fileCard", path: (m[2] ?? m[3] ?? m[4] ?? "").trim() });
         last = m.index + m[0].length;
       }
       if (!matched) return;

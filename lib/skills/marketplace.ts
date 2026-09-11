@@ -75,10 +75,11 @@ export const MARKETPLACE_SKILLS: MarketplaceSkill[] = [
     instructions: `## Procedure
 1. Inspect input CSV/sheet with read_file (first 50 lines) to infer schema.
 2. Write python (openpyxl) to spreadsheets/ with header row, filters, formulas, and a totals row.
-3. Run, verify file size, present_file the sheet.
+3. Run, verify file size, then VERIFY the formulas actually landed: reload the workbook and print every formula cell (e.g. "for row in ws.iter_rows(): for c in row: print(c.coordinate, c.value)") — openpyxl never computes values, so confirm each "=FORMULA" string is present in the right cell. Only then present_file the sheet.
 
 ## Rules
 - Header row is mandatory; freeze intent noted in reply.
+- Totals rows must be real dynamic Excel formulas (e.g. "=SUM(C2:C5)"), never precomputed static numbers.
 - Never fabricate numbers — only compute from provided data.`,
     allowedTools: "read_file write_file run_command",
     marketplace: "Anthropic Official",

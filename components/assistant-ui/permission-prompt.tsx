@@ -1,9 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ShieldAlertIcon, ShieldCheckIcon, ShieldXIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 type PermissionRequest = {
   requestId: string;
@@ -62,65 +59,93 @@ export function PermissionBar({
   onRespond: (approved: boolean, always?: boolean) => void;
 }) {
   const commandArg = pending.args?.command as string | undefined;
-  const pathArg =
+  const rawPath =
     (pending.args?.path as string) ||
     (pending.args?.filepath as string) ||
+    (pending.args?.cwd as string) ||
     "";
 
+  // Mirror backend scopeDirForPath: show containing directory + /* so
+  // "Allow always" scope is obvious (e.g. /home/luca/.config/opencode/*).
+  const scopePattern = (() => {
+    if (!rawPath) return "";
+    let p = rawPath.trim();
+    // Strip trailing file-like segment (heuristic, no fs access here)
+    // e.g. /a/b/config.json -> /a/b/*, /a/b/ -> /a/b/*
+    p = p.replace(/\/+$/, "");
+    const last = p.split("/").pop() ?? "";
+    if (last.includes(".") && !last.startsWith(".")) {
+      p = p.split("/").slice(0, -1).join("/") || "/";
+    }
+    if (p.endsWith("/*")) return p;
+    if (p === "") return "";
+    return `${p}/*`;
+  })();
+
+  const title = "Permission required";
+  const subtitle =
+    pending.description || "Access files outside the project directory";
+
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-800/50 dark:bg-amber-950/20">
-      <div className="flex items-start gap-3">
-        <ShieldAlertIcon className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-            Permission Required
+    <div className="w-full overflow-hidden rounded-xl border border-neutral-800 bg-[#0e0e0e] text-neutral-100 shadow-[0_8px_30px_rgba(0,0,0,0.45)]">
+      <div className="px-4 pt-3.5 pb-3">
+        <div className="flex items-center gap-2">
+          <span className="flex size-5 items-center justify-center">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#facc15"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+            </svg>
+          </span>
+          <p className="text-[15px] font-semibold tracking-tight text-white">
+            {title}
           </p>
-          <p className="mt-1 text-xs text-amber-700/80 dark:text-amber-300/80">
-            {pending.description}
-          </p>
-          {commandArg && (
-            <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-amber-100/80 p-2 font-mono text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden whitespace-pre-wrap break-words">
-              $ {commandArg}
-            </pre>
-          )}
-          {pathArg && (
-            <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-amber-100/80 p-2 font-mono text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden whitespace-pre-wrap break-words">
-              {pathArg}
-            </pre>
-          )}
         </div>
-      </div>
-      <div className="flex items-center gap-2 self-end">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onRespond(false)}
-          className="h-8 gap-1.5 rounded-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-800/50 dark:text-red-400 dark:hover:bg-red-950/30"
-        >
-          <ShieldXIcon className="size-3.5" />
-          Deny
-        </Button>
-        {pathArg && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onRespond(true, true)}
-            title="Always allow this directory (saved in Preferences → Allowed directories)"
-            className="h-8 gap-1.5 rounded-full"
-          >
-            <ShieldCheckIcon className="size-3.5" />
-            Always allow
-          </Button>
+        <p className="mt-2.5 text-sm leading-6 text-neutral-300">{subtitle}</p>
+        {scopePattern && (
+          <p className="mt-1 truncate font-mono text-[13px] leading-6 text-neutral-500">
+            {scopePattern}
+          </p>
         )}
-        <Button
-          variant="default"
-          size="sm"
-          onClick={() => onRespond(true)}
-          className="h-8 gap-1.5 rounded-full bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:text-amber-950 dark:hover:bg-amber-400"
+        {commandArg && (
+          <p className="mt-1 truncate font-mono text-[12px] leading-5 text-neutral-600">
+            $ {commandArg.slice(0, 300)}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center justify-end gap-2 border-t border-neutral-800/80 bg-[#131313] px-3 py-2">
+        <button
+          type="button"
+          onClick={() => onRespond(false)}
+          className="h-8 rounded-lg px-3 text-sm font-medium text-neutral-300 transition-colors hover:bg-white/5 hover:text-white"
         >
-          <ShieldCheckIcon className="size-3.5" />
-          Allow
-        </Button>
+          Deny
+        </button>
+        <button
+          type="button"
+          onClick={() => onRespond(true, true)}
+          title="Always allow this directory (saved in Preferences → Allowed directories)"
+          className="h-8 rounded-lg border border-neutral-700 bg-neutral-900 px-3.5 text-sm font-medium text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-white"
+        >
+          Allow always
+        </button>
+        <button
+          type="button"
+          onClick={() => onRespond(true)}
+          className="h-8 rounded-lg bg-white px-3.5 text-sm font-semibold text-black transition-colors hover:bg-neutral-200"
+        >
+          Allow once
+        </button>
       </div>
     </div>
   );

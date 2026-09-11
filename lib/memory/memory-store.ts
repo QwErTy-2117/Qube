@@ -4,9 +4,10 @@
  * UI never references VoiceMem.
  */
 
-export type { MemoryEntry } from "./voicemem-core";
+export type { MemoryEntry, MemoryExtOpts } from "./voicemem-core";
 export {
   addMemoryEntry,
+  addMemoryEntryExt,
   getMemoryEntries,
   deleteMemoryEntry,
   updateMemoryEntry,
@@ -16,6 +17,8 @@ export {
   getRelevantContextSemantic,
   detectContradictions,
   upsertMemoryWithContradictionCheck,
+  searchMemories,
+  consolidateMemories,
 } from "./voicemem-core";
 
 // Additional VoiceMem streaming APIs re-exported for harness use (not UI)

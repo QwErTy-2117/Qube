@@ -2065,15 +2065,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
                 {/* Memory Section */}
                 <div className="border-t border-border/40 pt-6 space-y-4">
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-semibold text-foreground">Memory</h3>
-                    <p className="text-xs text-muted-foreground">Control whether Qube remembers facts across conversations. When off, the agent neither recalls past memories nor saves new ones. Stored memories are kept until you delete them.</p>
-                  </div>
                   <div className="rounded-xl border border-border/60 divide-y divide-border/40">
                     <div className="flex items-center justify-between px-4 py-3">
                       <div className="space-y-0.5">
-                        <span className="text-sm font-medium text-foreground">Long-term memory</span>
-                        <p className="text-xs text-muted-foreground">{memoryEnabled ? "On — Qube recalls and saves memories across chats." : "Off — each chat starts without recalled or saved memories."}</p>
+                        <span className="text-sm font-medium text-foreground">Memory</span>
+                        <p className="text-xs text-muted-foreground">Qube recalls and saves memories across chats.</p>
                       </div>
                       <SwitchToggle checked={memoryEnabled} onCheckedChange={(v) => {
                         setMemoryEnabled(v);

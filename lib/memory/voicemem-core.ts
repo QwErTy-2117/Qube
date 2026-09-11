@@ -38,6 +38,19 @@ export type MemoryEntry = {
   stm?: boolean; // short-term vs long-term
   emotion?: string | null;
   tokenCount?: number;
+  // Learning/memory extensions (§3 metadata) — all optional for compat
+  memoryType?: string;
+  scope?: string;
+  scopeKey?: string;
+  importance?: number;
+  topics?: string[];
+  sourceConversation?: string;
+  provenance?: string;
+  expiresAt?: number | null;
+  reviewAt?: number | null;
+  confirmation?: string;
+  proactiveRelevance?: number;
+  actionStatus?: string;
 };
 
 type DualStore = {
@@ -165,20 +178,33 @@ async function readDualStore(): Promise<DualStore> {
 }
 
 function migrateEntry(e: Record<string, unknown>): MemoryEntry {
+  const content = String(e.content ?? "");
   return {
     id: String(e.id ?? `mem_${Date.now()}`),
     category: String(e.category ?? "general"),
-    content: String(e.content ?? ""),
+    content,
     createdAt: Number(e.createdAt ?? Date.now()),
     updatedAt: Number(e.updatedAt ?? Date.now()),
     relevance: e.relevance !== undefined ? Number(e.relevance) : 0.5,
     confidence: e.confidence !== undefined ? Number(e.confidence) : 0.5,
     brain: (e.brain as any) || categorizeBrain(String(e.category??"general")),
-    entities: Array.isArray(e.entities) ? e.entities as string[] : extractEntities(String(e.content??"")),
-    schemas: Array.isArray(e.schemas) ? e.schemas as string[] : extractSchemas(String(e.content??"")),
+    entities: Array.isArray(e.entities) ? e.entities as string[] : extractEntities(content),
+    schemas: Array.isArray(e.schemas) ? e.schemas as string[] : extractSchemas(content),
     stm: e.stm !== undefined ? Boolean(e.stm) : (Date.now() - Number(e.createdAt??Date.now()) < 86400000*7),
     emotion: (e.emotion as string) ?? null,
-    tokenCount: e.tokenCount !== undefined ? Number(e.tokenCount) : estimateTokens(String(e.content??"")),
+    tokenCount: e.tokenCount !== undefined ? Number(e.tokenCount) : estimateTokens(content),
+    memoryType: typeof e.memoryType === "string" ? e.memoryType : undefined,
+    scope: typeof e.scope === "string" ? e.scope : "global_user",
+    scopeKey: typeof e.scopeKey === "string" ? e.scopeKey : undefined,
+    importance: e.importance !== undefined ? Number(e.importance) : 0.5,
+    topics: Array.isArray(e.topics) ? e.topics as string[] : [],
+    sourceConversation: typeof e.sourceConversation === "string" ? e.sourceConversation : undefined,
+    provenance: typeof e.provenance === "string" ? e.provenance : undefined,
+    expiresAt: e.expiresAt !== undefined && e.expiresAt !== null ? Number(e.expiresAt) : null,
+    reviewAt: e.reviewAt !== undefined && e.reviewAt !== null ? Number(e.reviewAt) : null,
+    confirmation: typeof e.confirmation === "string" ? e.confirmation : "inferred",
+    proactiveRelevance: e.proactiveRelevance !== undefined ? Number(e.proactiveRelevance) : 0,
+    actionStatus: typeof e.actionStatus === "string" ? e.actionStatus : "none",
   };
 }
 
@@ -256,26 +282,152 @@ function rankEntries(query: string, entries: MemoryEntry[], topK: number): Memor
 // Public API — compatible with old memory-store.ts but faster
 
 export async function addMemoryEntry(category: string, content: string, relevance=0.5, confidence?: number): Promise<MemoryEntry> {
+  return addMemoryEntryExt(category, content, { relevance, confidence });
+}
+
+export type MemoryExtOpts = {
+  relevance?: number;
+  confidence?: number;
+  importance?: number;
+  memoryType?: string;
+  scope?: string;
+  scopeKey?: string;
+  topics?: string[];
+  sourceConversation?: string;
+  provenance?: string;
+  expiresAt?: number | null;
+  reviewAt?: number | null;
+  confirmation?: string;
+  proactiveRelevance?: number;
+  actionStatus?: string;
+};
+
+/** Extended write path with safety gate + rich metadata (§§3,26). Never throws on unsafe content. */
+export async function addMemoryEntryExt(category: string, content: string, opts: MemoryExtOpts = {}): Promise<MemoryEntry> {
+  const { checkPersistable, sanitizeCategory, isSensitiveInference } = await import("./safety");
+  const gate = checkPersistable(content);
+  if (!gate.ok) throw new Error(`Memory not stored: ${gate.reason}`);
+  if (isSensitiveInference(content)) throw new Error("Memory not stored: sensitive personal inference blocked");
   if (!warmupDone) await warmup();
   const store = warmStore || await readDualStore();
   warmStore = store;
-  const brain = categorizeBrain(category);
+  const safeCategory = sanitizeCategory(category);
+  const brain = categorizeBrain(safeCategory);
+  const relevance = opts.relevance ?? 0.5;
   const entry: MemoryEntry = {
     id: `mem_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
-    category, content, createdAt: Date.now(), updatedAt: Date.now(),
-    relevance, confidence: confidence ?? relevance,
+    category: safeCategory, content: content.slice(0, 2000), createdAt: Date.now(), updatedAt: Date.now(),
+    relevance, confidence: opts.confidence ?? relevance,
     brain, entities: extractEntities(content), schemas: extractSchemas(content),
     stm: true, emotion: null, tokenCount: estimateTokens(content),
+    memoryType: opts.memoryType, scope: opts.scope || "global_user", scopeKey: opts.scopeKey,
+    importance: opts.importance ?? 0.5, topics: opts.topics || [],
+    sourceConversation: opts.sourceConversation, provenance: opts.provenance,
+    expiresAt: opts.expiresAt ?? null, reviewAt: opts.reviewAt ?? null,
+    confirmation: opts.confirmation || "inferred",
+    proactiveRelevance: opts.proactiveRelevance ?? 0, actionStatus: opts.actionStatus || "none",
   };
   if (brain === "right") store.right.push(entry);
   else if (brain === "cross") store.cross.push(entry);
   else store.left.push(entry);
   await writeDualStore(store);
-  // Add to hot cache immediately (STM)
   if (hotCache) hotCache.set(entry.id, entry);
-  // Invalidate prefetch cache
   prefetchCache.clear();
+  try {
+    const { logMemoryWritten } = await import("@/lib/agent/observability");
+    await logMemoryWritten(entry.sourceConversation || "memory", entry.id, entry.category, `stored (${entry.memoryType || "context"})`);
+  } catch {}
   return entry;
+}
+
+/** Explicit filtered search (§2B): scope/type/confidence-aware, bounded. */
+export async function searchMemories(opts: {
+  query: string;
+  scope?: string;
+  scopeKey?: string;
+  memoryType?: string;
+  minConfidence?: number;
+  topK?: number;
+}): Promise<MemoryEntry[]> {
+  if (!warmupDone) await warmup();
+  const store = warmStore || await readDualStore();
+  let pool = [...store.left, ...store.right, ...store.cross];
+  const now = Date.now();
+  // Expiry filter.
+  pool = pool.filter((e) => !(e.expiresAt && now > e.expiresAt));
+  if (opts.scope) pool = pool.filter((e) => (e.scope || "global_user") === opts.scope);
+  // ScopeKey: matching scope wins, global always included; other projects excluded when filtering.
+  if (opts.scopeKey) {
+    pool = pool.filter((e) => {
+      const s = e.scope || "global_user";
+      if (s === "global_user") return true;
+      if (s === "project" || s === "workspace") return (e.scopeKey || "") === opts.scopeKey;
+      return true;
+    });
+  }
+  if (opts.memoryType) pool = pool.filter((e) => (e.memoryType || "context") === opts.memoryType);
+  if (opts.minConfidence !== undefined) pool = pool.filter((e) => e.confidence >= opts.minConfidence!);
+  try {
+    const { rankMemories } = await import("./retrieval");
+    const ranked = rankMemories(pool as any, { text: opts.query, scopeKey: opts.scopeKey, topK: opts.topK ?? 8 } as any);
+    return ranked.map((r) => r.memory as MemoryEntry);
+  } catch {
+    return pool.slice(0, opts.topK ?? 8);
+  }
+}
+
+/** Consolidate duplicates in-place (merge content/confidence/topics). Returns merged count. */
+export async function consolidateMemories(): Promise<{ merged: number; total: number }> {
+  if (!warmupDone) await warmup();
+  const store = warmStore || await readDualStore();
+  const all = [...store.left, ...store.right, ...store.cross];
+  let merged = 0;
+  try {
+    const { dedupeMemories } = await import("./retrieval");
+    const { consolidateGroup } = await import("./learning");
+    // Group by normalized prefix for cheap blocking, then dedupe within groups.
+    const groups = new Map<string, MemoryEntry[]>();
+    for (const e of all) {
+      const key = e.content.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).slice(0, 4).join(" ");
+      const arr = groups.get(key) || [];
+      arr.push(e);
+      groups.set(key, arr);
+    }
+    const kept: MemoryEntry[] = [];
+    for (const g of groups.values()) {
+      if (g.length === 1) { kept.push(g[0]); continue; }
+      const deduped = dedupeMemories(g as any) as any as MemoryEntry[];
+      merged += g.length - deduped.length;
+      // Strengthen survivors from repeated observations.
+      for (const d of deduped) {
+        const repeats = g.length - deduped.length + 1;
+        if (repeats >= 2) d.confidence = Math.min(0.92, d.confidence + 0.06);
+      }
+      // Further merge true twins via consolidateGroup.
+      if (deduped.length > 1) {
+        const twinSets: MemoryEntry[][] = [];
+        const used = new Set<string>();
+        for (const e of deduped) {
+          if (used.has(e.id)) continue;
+          const twins = deduped.filter((o) => !used.has(o.id) && o.content.toLowerCase().slice(0, 60) === e.content.toLowerCase().slice(0, 60));
+          twins.forEach((t) => used.add(t.id));
+          twinSets.push(twins);
+        }
+        for (const set of twinSets) kept.push(set.length > 1 ? (consolidateGroup(set as any) as any) : set[0]);
+        merged += deduped.length - twinSets.reduce((n, s) => n + 1, 0);
+      } else kept.push(...deduped);
+    }
+    if (merged > 0) {
+      const left: MemoryEntry[] = []; const right: MemoryEntry[] = []; const cross: MemoryEntry[] = [];
+      for (const e of kept) {
+        if (e.brain === "right") right.push(e); else if (e.brain === "cross") cross.push(e); else left.push(e);
+      }
+      await writeDualStore({ left, right, cross, version: 4 });
+      prefetchCache.clear();
+    }
+  } catch {}
+  const total = [...(warmStore?.left || []), ...(warmStore?.right || []), ...(warmStore?.cross || [])].length;
+  return { merged, total };
 }
 
 export async function getMemoryEntries(category?: string): Promise<MemoryEntry[]> {
@@ -300,16 +452,31 @@ export async function deleteMemoryEntry(id: string): Promise<boolean> {
   return true;
 }
 
-export async function updateMemoryEntry(id: string, updates: Partial<Pick<MemoryEntry,"content"|"category"|"relevance"|"confidence">>): Promise<boolean> {
+export async function updateMemoryEntry(id: string, updates: Partial<Pick<MemoryEntry,"content"|"category"|"relevance"|"confidence"|"importance"|"scope"|"scopeKey"|"memoryType"|"topics"|"confirmation"|"proactiveRelevance"|"actionStatus"|"expiresAt"|"reviewAt">>): Promise<boolean> {
   if (!warmupDone) await warmup();
   const store = warmStore || await readDualStore();
   const all = [...store.left, ...store.right, ...store.cross];
   const entry = all.find(e=>e.id===id);
   if (!entry) return false;
-  if (updates.content !== undefined) { entry.content = updates.content; entry.entities = extractEntities(updates.content); entry.schemas = extractSchemas(updates.content); entry.tokenCount = estimateTokens(updates.content); }
+  if (updates.content !== undefined) {
+    const { checkPersistable } = await import("./safety");
+    const gate = checkPersistable(updates.content);
+    if (!gate.ok) return false;
+    entry.content = updates.content.slice(0, 2000); entry.entities = extractEntities(updates.content); entry.schemas = extractSchemas(updates.content); entry.tokenCount = estimateTokens(updates.content);
+  }
   if (updates.category !== undefined) entry.category = updates.category;
   if (updates.relevance !== undefined) entry.relevance = updates.relevance;
   if (updates.confidence !== undefined) entry.confidence = updates.confidence;
+  if (updates.importance !== undefined) entry.importance = updates.importance;
+  if (updates.scope !== undefined) entry.scope = updates.scope;
+  if (updates.scopeKey !== undefined) entry.scopeKey = updates.scopeKey;
+  if (updates.memoryType !== undefined) entry.memoryType = updates.memoryType;
+  if (updates.topics !== undefined) entry.topics = updates.topics;
+  if (updates.confirmation !== undefined) entry.confirmation = updates.confirmation;
+  if (updates.proactiveRelevance !== undefined) entry.proactiveRelevance = updates.proactiveRelevance;
+  if (updates.actionStatus !== undefined) entry.actionStatus = updates.actionStatus;
+  if (updates.expiresAt !== undefined) entry.expiresAt = updates.expiresAt;
+  if (updates.reviewAt !== undefined) entry.reviewAt = updates.reviewAt;
   entry.updatedAt = Date.now();
   entry.stm = (Date.now() - entry.createdAt < 86400000*7);
   // Move between brains if category changed
@@ -353,18 +520,23 @@ export async function clearMemory(): Promise<void> {
 }
 
 // Core: getRelevantContext now uses dual-brain routing + Top-K + compression, with speculative prefetch cache
-export async function getRelevantContext(query?: string): Promise<string> {
+export async function getRelevantContext(query?: string, opts?: { scopeKey?: string; proactiveMode?: boolean }): Promise<string> {
+  const now = Date.now();
+  const notExpired = (e: MemoryEntry) => !(e.expiresAt && now > e.expiresAt);
   // Fast path: if no query, return from hot cache Top-5 (like VoiceMem Top-K=5, ~300 tokens)
   if (!query) {
     if (!warmupDone) await warmup();
     const store = warmStore || await readDualStore();
-    const all = [...store.left, ...store.right, ...store.cross];
+    const all = [...store.left, ...store.right, ...store.cross].filter(notExpired);
     if (all.length === 0) return "";
-    // Rank by relevance*recency without query
+    // Rank by relevance*recency without query (+ importance + proactive boost)
     const scored = all.map(e => {
       const ageDays = (Date.now() - e.updatedAt)/86400000;
       const decay = Math.pow(0.95, ageDays) * (ageDays<7?1.1:1);
-      const score = e.relevance * decay * (0.6+e.confidence*0.6) * (e.brain==="right"?1.1:1);
+      const importance = 0.7 + ((e.importance ?? 0.5) * 0.6);
+      const proactive = opts?.proactiveMode ? 1 + ((e.proactiveRelevance ?? 0) * 0.5) : 1;
+      const scopePenalty = e.scope && e.scope !== "global_user" && opts?.scopeKey && e.scopeKey !== opts.scopeKey ? 0.4 : 1;
+      const score = e.relevance * decay * (0.6+e.confidence*0.6) * (e.brain==="right"?1.1:1) * importance * proactive * scopePenalty;
       return { e, score };
     }).sort((a,b)=>b.score-a.score).slice(0,5);
     return compressToTokens(scored.map(s=>s.e), 430);
@@ -387,7 +559,14 @@ export async function getRelevantContext(query?: string): Promise<string> {
   if (route.right) candidates.push(...store.right);
   if (route.cross) candidates.push(...store.cross);
   // If route filtered too much, fallback to all
-  const pool = candidates.length >= 3 ? candidates : [...store.left, ...store.right, ...store.cross];
+  const poolAll = candidates.length >= 3 ? candidates : [...store.left, ...store.right, ...store.cross];
+  // Scope + expiry filtering (§9): project-scoped memories from other projects sink.
+  const pool = poolAll.filter(notExpired).map((e) => {
+    if (opts?.scopeKey && e.scope && e.scope !== "global_user" && e.scopeKey && e.scopeKey !== opts.scopeKey) {
+      return { ...e, relevance: e.relevance * 0.3 };
+    }
+    return e;
+  });
   // Hierarchical: prioritize hot (STM) entries first, then rank
   const hotIds = new Set(getHotEntries().map(e=>e.id));
   const hotPool = pool.filter(e=>hotIds.has(e.id));
@@ -467,15 +646,41 @@ export async function detectContradictions(newContent: string, threshold=0.35) {
 }
 
 export async function upsertMemoryWithContradictionCheck(category:string,content:string,relevance=0.6,confidence?:number){
+  const { resolveContradiction } = await import("./learning");
   const contradictions = await detectContradictions(content,0.3);
   const superseded: MemoryEntry[] = [];
   if (contradictions.length>0) {
+    const top = contradictions[0];
+    const isExplicit = /\b(remember|my name is|call me|prefer|decided|don't|do not|never|always)\b/i.test(content);
     for(const {entry} of contradictions){
-      if(entry.category===category || contradictions[0].overlap>0.5){
-        await updateMemoryEntry(entry.id,{relevance: Math.max(0.1, entry.relevance*0.6)});
+      if(entry.category===category || top.overlap>0.5){
+        try {
+          const resolution = resolveContradiction(entry as any, content, { newExplicit: isExplicit });
+          if (resolution.action === "update" && "mergedContent" in resolution) {
+            await updateMemoryEntry(entry.id,{ content: (resolution as any).mergedContent, relevance: Math.max(relevance, entry.relevance), confidence: Math.max(confidence ?? 0.6, entry.confidence) });
+          } else if (resolution.action === "narrow_scope") {
+            // Keep existing; new memory gets narrower scope below.
+          } else if (resolution.action === "temporary_exception") {
+            // Existing retained; new memory expires.
+          } else if (resolution.action === "replace") {
+            await updateMemoryEntry(entry.id,{ relevance: 0.15, confidence: Math.max(0.1, entry.confidence * 0.5) });
+          } else {
+            await updateMemoryEntry(entry.id,{relevance: Math.max(0.1, entry.relevance*0.6)});
+          }
+        } catch {
+          await updateMemoryEntry(entry.id,{relevance: Math.max(0.1, entry.relevance*0.6)});
+        }
         superseded.push(entry);
       }
     }
+  }
+  // Safety gate lives in addMemoryEntryExt; fall back to legacy add on import failure.
+  try {
+    const { checkPersistable } = await import("./safety");
+    const gate = checkPersistable(content);
+    if (!gate.ok) throw new Error(`Memory not stored: ${gate.reason}`);
+  } catch (e: any) {
+    if (/Memory not stored/.test(e?.message || "")) throw e;
   }
   const entry = await addMemoryEntry(category,content,relevance,confidence);
   return {entry, superseded};

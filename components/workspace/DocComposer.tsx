@@ -72,16 +72,18 @@ export function DocComposer({ artifact }: { artifact: WorkspaceArtifact }) {
       <motion.div
         layout
         transition={{ duration: 0.25, ease: "easeOut" }}
-        className={`pointer-events-auto flex items-center gap-2.5 rounded-full border border-border bg-popover/85 py-2 pr-2 pl-5 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.3)] backdrop-blur-xl transition-[border-color] focus-within:border-ring/50 dark:shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)] ${isRunning ? "h-9 w-auto px-3" : "w-full pl-4"}`}
+        className={
+          isRunning
+            ? "pointer-events-auto flex h-9 w-auto min-w-[68px] items-center justify-center rounded-full border border-border bg-popover/85 px-4 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.3)] backdrop-blur-xl dark:shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)]"
+            : "pointer-events-auto flex w-full items-center gap-2.5 rounded-full border border-border bg-popover/85 py-2 pr-2 pl-4 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.3)] backdrop-blur-xl transition-[border-color] focus-within:border-ring/50 dark:shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)]"
+        }
       >
         {isRunning ? (
-          <div className="flex items-center" aria-live="polite" aria-label="Agent is writing">
-            <span className="typing-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-          </div>
+          <span className="typing-dots text-muted-foreground" aria-live="polite" aria-label="Agent is writing">
+            <span />
+            <span />
+            <span />
+          </span>
         ) : (
           <>
           <textarea

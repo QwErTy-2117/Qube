@@ -2,8 +2,13 @@
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { DiffView } from "./diff-view";
-import { FileCard } from "./file-card";
 
+/**
+ * edit_file never renders a file card: cards live only in the slim
+ * PresentedFiles list at the bottom of the message (built from
+ * present_file calls). Only diff/status rows render here, inside the
+ * collapsed tool group.
+ */
 export const EditFileToolUI: ToolCallMessagePartComponent = ({
   args,
   result,
@@ -11,32 +16,24 @@ export const EditFileToolUI: ToolCallMessagePartComponent = ({
   const path = (args as any)?.path || "";
   const oldString = (args as any)?.oldString || "";
   const newString = (args as any)?.newString || "";
-  let data: { path?: string; relativePath?: string; status?: string } = {};
+  let data: { path?: string; status?: string } = {};
   try {
     if (typeof result === "string") data = JSON.parse(result);
     else if (result) data = result as typeof data;
   } catch {}
 
   const displayPath = data.path || path;
-  const downloadUrl = data.relativePath ? `/api/files/${data.relativePath.split("/").map((s) => encodeURIComponent(s)).join("/")}` : null;
-
-  const ext = displayPath.split(".").pop()?.toLowerCase();
-  const isDownloadable = ["pptx", "ppt", "docx", "doc", "xlsx", "xls", "pdf", "csv", "zip", "png", "jpg", "jpeg", "gif", "svg", "md", "txt", "json", "js", "ts", "tsx", "jsx", "py", "html", "css"].includes(ext || "");
 
   const displayName = displayPath.split("/").pop() || displayPath;
 
-  // Standalone inline rendering (never inside a collapsed tool group):
-  // file card gets breathing room; diff details stay in a bordered block.
-  if (!downloadUrl || !isDownloadable) {
-    // Non-downloadable edits keep a compact status row (no card to splash).
-    if (!data.status && !oldString) return null;
-  }
+  if (!data.status && !oldString) return null;
+  const hasDiff = !!(oldString && newString);
+  const hasFailure = data.status === "failed";
+  const hasStatusRow = data.status === "edited";
+  if (!hasDiff && !hasFailure && !hasStatusRow) return null;
   return (
     <div className="my-3 flex flex-col gap-2 text-sm" data-slot="file-card-inline">
-      {downloadUrl && isDownloadable && (
-        <FileCard filename={displayName} filePath={data.relativePath || path} downloadUrl={downloadUrl} />
-      )}
-      {data.status === "edited" && !downloadUrl ? (
+      {data.status === "edited" ? (
         <div className="flex items-center gap-1.5 px-1 text-sm text-green-600 dark:text-green-400">
           <span className="size-1.5 rounded-full bg-green-500" />
           <span className="font-medium">{displayName}</span>

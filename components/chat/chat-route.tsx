@@ -27,6 +27,7 @@ export function ChatRoute({ id }: { id: string }) {
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
     let mainId: string | undefined;
     let mainRemote: string | undefined;
     try {
@@ -45,11 +46,23 @@ export function ChatRoute({ id }: { id: string }) {
         return;
       }
     }
-    try {
-      aui.threads().switchToThread(id);
-    } catch {
-      // Resolution failures (unknown id) → bounce home when list settles.
-    }
+    // switchToThread is async: a sync try/catch misses its rejection
+    // ("Thread not found" for deleted/unknown ids). Unknown ids fall back
+    // to a fresh chat — never an error overlay.
+    Promise.resolve()
+      .then(() => aui.threads().switchToThread(id))
+      .catch(() => {
+        if (cancelled) return;
+        try {
+          Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
+        } catch {}
+        try {
+          router.replace("/");
+        } catch {}
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isLoading, items.length]);
 
@@ -86,7 +99,7 @@ export function ThreadUrlSync() {
       }
     }
     try {
-      aui.threads().switchToNewThread();
+      Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
@@ -102,10 +115,23 @@ export function ThreadUrlSync() {
     const regular = items.filter(
       (t) => t && t.status !== "archived" && t.status !== "deleted" && t.status !== "new",
     );
+    // Async switches can still reject (thread deleted between list and
+    // switch) — always land on a fresh chat, never an error overlay.
     try {
-      if (regular.length > 0) aui.threads().switchToThread(regular[0].id);
-      else aui.threads().switchToNewThread();
-    } catch {}
+      const target =
+        regular.length > 0
+          ? Promise.resolve().then(() => aui.threads().switchToThread(regular[0].id))
+          : Promise.resolve().then(() => aui.threads().switchToNewThread());
+      target.catch(() => {
+        try {
+          Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
+        } catch {}
+      });
+    } catch {
+      try {
+        Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
+      } catch {}
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainId, pathname, isLoading, items.length]);
 

@@ -27,7 +27,10 @@ export const ChatTitle: FC = () => {
 
   const commit = (v: string) => {
     try {
-      if (v.trim()) aui.threadListItem().rename(v.trim().slice(0, 120));
+      if (v.trim())
+        Promise.resolve(
+          aui.threadListItem().rename(v.trim().slice(0, 120)),
+        ).catch(() => {});
     } catch {}
     setEditing(false);
   };

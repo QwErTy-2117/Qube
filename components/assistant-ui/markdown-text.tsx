@@ -13,7 +13,7 @@ import { useState, type FC, useCallback } from "react";
 import remarkGfm from "remark-gfm";
 import { SyntaxHighlighter } from "./shiki-highlighter";
 import { TooltipIconButton } from "./tooltip-icon-button";
-import { remarkFileRefs, MdFileCardNode, MdFileCardGroupNode } from "./md-file-ref";
+import { remarkFileRefs, MdFileCardNode, MdFileCardGroupNode, FILE_REF_RE } from "./md-file-ref";
 import { renderLatexShortcuts } from "./latex-shortcuts";
 
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
@@ -127,16 +127,22 @@ export let defaultComponents: any = undefined;
 
 export function MarkdownText() {
   if (!defaultComponents) defaultComponents = getDefaultComponents();
+  // File cards live only in the slim PresentedFiles list at the bottom of
+  // the message — strip every [file:]/present_file(...) marker here so
+  // markers never render a second inline copy (or leak as raw text).
   return (
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm, remarkFileRefs]}
       className="aui-md"
       components={defaultComponents}
-      preprocess={(text) =>
-        renderLatexShortcuts(
-          text.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<script\b[^>]*\/>/gi, ""),
-        )
-      }
+      preprocess={(text) => {
+        const clean = text
+          .replace(/<script[\s\S]*?<\/script>/gi, "")
+          .replace(/<script\b[^>]*\/>/gi, "");
+        FILE_REF_RE.lastIndex = 0;
+        const stripped = clean.replace(FILE_REF_RE, "");
+        return renderLatexShortcuts(stripped);
+      }}
     />
   );
 }

@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
 import { ChangedFiles } from "@/components/assistant-ui/tools/changed-files";
+import { PresentedFiles } from "@/components/assistant-ui/tools/presented-files";
 import { SubagentToolUI } from "@/components/assistant-ui/tools/subagent-tool-ui";
 import { GoalsPanel } from "@/components/assistant-ui/goals-panel";
 import {
@@ -115,11 +116,13 @@ const baseToolGroupBy = groupPartByType({
 const messageGroupBy = (part: any, context: any) => {
   if (part.type === "tool-call" && part.toolName === "subagent") return [];
   if (part.type === "tool-call" && part.toolName === "TodoWrite") return [];
-  // Document deliverables always render standalone, exactly where the agent
-  // called them (never collapsed inside a tool group on top of the reply).
+  // present_file renders nothing inline (its slim pill lives in the
+  // PresentedFiles list at the bottom) — keep it out of tool groups so it
+  // never affects group counts. write_file/edit_file stay grouped
+  // (collapsed): they only render compact status rows, never cards, so
+  // builder scripts stay hidden in the transcript instead of splashing
+  // on top of the reply.
   if (part.type === "tool-call" && part.toolName === "present_file") return [];
-  if (part.type === "tool-call" && part.toolName === "write_file") return [];
-  if (part.type === "tool-call" && part.toolName === "edit_file") return [];
   return baseToolGroupBy(part as any, context as any);
 };
 
@@ -1150,15 +1153,11 @@ const AssistantMessage: FC = () => {
                 if (part.toolName === "TodoWrite") {
                   return null;
                 }
-                // present_file + write_file + edit_file render their cards bare
-                // (never in a tool group) so the agent can place Open/Download
-                // exactly where it wants — mid-paragraph, with padding.
-                if (
-                  part.toolName === "present_file" ||
-                  part.toolName === "write_file" ||
-                  part.toolName === "edit_file"
-                ) {
-                  return part.toolUI ?? <ToolFallback {...part} />;
+                // present_file renders nothing inline — its slim pill lives
+                // in the PresentedFiles list pinned to the bottom of the
+                // message, so cards never stack on top of the reply.
+                if (part.toolName === "present_file") {
+                  return null;
                 }
                 const isDestructive = DESTRUCTIVE_KEYWORDS.some(kw =>
                   part.toolName.toLowerCase().includes(kw)
@@ -1186,6 +1185,7 @@ const AssistantMessage: FC = () => {
             }
           }}
         </MessagePrimitive.GroupedParts>
+        <PresentedFiles />
         <ChangedFiles />
         <MessageError />
       </div>
@@ -1439,7 +1439,7 @@ const DebugSend: FC = () => {
 
 export const Base: FC = () => {
   return (
-    <div className="bg-muted relative flex h-full w-full pl-2">
+    <div className="bg-muted qube-app-root relative flex h-full w-full pl-2">
       <ChatErrorTopPopup />
       <ChatErrorWatcher />
       <BrowserAutoOpener />

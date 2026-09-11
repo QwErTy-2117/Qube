@@ -12,13 +12,24 @@ jobs:
       contents: write
     strategy:
       # Do not cancel Windows/macOS when Linux fails (default fail-fast:true
-      # cancelled both in v0.0.34). Tauri docs also recommend 22.04 as the
-      # Linux baseline: oldest supported base for AppImage/glibc compat and
-      # the runner linuxdeploy is tested on. 24.04 (glibc 2.39, webkit 2.52)
-      # fails AppImage bundling with opaque `failed to run linuxdeploy`.
+      # cancelled both in v0.0.34). Tauri docs recommend 22.04 as the Linux
+      # baseline for AppImage/glibc compat.
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        include:
+          # Linux builds deb+rpm only: AppImage/linuxdeploy fails on GH
+          # runners with opaque `failed to run linuxdeploy` even on 22.04
+          # with all documented deps (webkit 2.50, pkgconf, libfuse2,
+          # APPIMAGE_EXTRACT_AND_RUN). deb+rmm bundle reliably; updater
+          # artifacts (tar.gz+sig) are still produced via
+          # createUpdaterArtifacts. To debug AppImage, temporarily set Linux
+          # args to '--verbose' and run via workflow_dispatch.
+          - os: ubuntu-22.04
+            args: '--bundles deb,rpm'
+          - os: windows-latest
+            args: ''
+          - os: macos-latest
+            args: ''
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -96,13 +107,9 @@ jobs:
           # (the latter logs "Unexpected input" and is silently ignored).
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
           # AppImage bundling downloads unpinned third-party tools
           # (linuxdeploy, appimagetool, gtk plugins) at build time; a single
           # retry absorbs transient network flakes without masking real
           # errors (the log still shows the first failure).
           retryAttempts: 1
-          # If the Linux job ever fails again with only
-          # `failed to run linuxdeploy` and no detail, temporarily add
-          # `args: '--verbose'` here and re-run via workflow_dispatch: verbose
-          # mode prints the underlying linuxdeploy/plugin stderr that Tauri
-          # otherwise swallows.

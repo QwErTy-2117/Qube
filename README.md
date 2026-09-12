@@ -16,9 +16,9 @@
 
 ## What is Qube?
 
-Qube is a personal assistant that lives on your computer. You talk to it like you would to a person. If you can install an app and type a message, you can use Qube — no coding, no terminal, no server to manage.
+Qube is a personal assistant that lives on your computer. You talk to it like you would to a person. If you can install an app and type a message, you can use Qube — no coding, no terminal, no s[...]
 
-Instead of giving you ideas and leaving you to do the work, Qube actually does it — it can organize your files, write documents, look things up online, work with the apps you already use, and handle repeat tasks for you.
+Instead of giving you ideas and leaving you to do the work, Qube actually does it — it can organize your files, write documents, look things up online, work with the apps you already use, and ha[...]
 
 Just say what you want in your own words. For example:
 
@@ -37,7 +37,7 @@ It runs directly on your computer, and keeps your files, settings, and chat hist
 
 Most AI agents assume you're comfortable with the terminal. Qube doesn't.
 
-**Qube itself is free.** It's open-source (Apache 2.0) and costs nothing to download and use. There's no Qube subscription and no per-message charge from Qube — you only ever pay your AI provider if their plan charges.
+**Qube itself is free.** It's open-source (Apache 2.0) and costs nothing to download and use. There's no Qube subscription and no per-message charge from Qube — you only ever pay your AI provide[...]
 
 **Bring the AI you already pay for.** Qube doesn't ship with an AI — you connect the one you already use:
 
@@ -46,29 +46,29 @@ Most AI agents assume you're comfortable with the terminal. Qube doesn't.
 
 You can switch anytime in Settings.
 
-**Setup takes minutes, with clicks — not commands.** Download Qube like any other desktop app, open it, and follow three short steps. Connect Gmail or Drive later only if you want to, with a normal sign-in. For everyday use you don't have to install Node or Python yourself, edit a config file, or keep a server running in the background.
+**Setup takes minutes, with clicks — not commands.** Download Qube like any other desktop app, open it, and follow three short steps. Connect Gmail or Drive later only if you want to, with a nor[...]
 
 ---
 
 ## Why would I use it?
 
-**It finishes the job, not just describes it.** Ask for a cleaned-up spreadsheet, a rewritten cover letter, or a folder of vacation photos sorted by date, and you get the actual file back — not a set of instructions for doing it yourself.
+**It finishes the job, not just describes it.** Ask for a cleaned-up spreadsheet, a rewritten cover letter, or a folder of vacation photos sorted by date, and you get the actual file back — not [...]
 
-**You describe the result, not the steps.** "Compare these three insurance quotes and tell me which is cheapest over five years" is enough on its own. Qube reads the documents, works out the numbers, and gives you an answer with the math behind it.
+**You describe the result, not the steps.** "Compare these three insurance quotes and tell me which is cheapest over five years" is enough on its own. Qube reads the documents, works out the numbe[...]
 
-**You stay in control.** Qube shows its work as it goes — what it read, what it wrote, what it found online — and pauses to check before touching files outside its workspace or running a send/create/delete-type action in a connected app. Read-only lookups don't pause, and anything inside its workspace runs without a prompt — so still review before you rely on, send, or share the result.
+**You stay in control.** Qube shows its work as it goes — what it read, what it wrote, what it found online — and pauses to check before touching files outside its workspace or running a send/[...]
 
-**Your stuff stays on your device.** Your files, chat history, and settings live on your computer, not in someone else's cloud. Qube only reaches out to an AI service to think through your request. When you chat, the text you send plus any file excerpts it needs may be sent to the AI provider you chose, under that provider's policies.
+**Your stuff stays on your device.** Your files, chat history, and settings live on your computer, not in someone else's cloud. Qube only reaches out to an AI service to think through your request[...]
 
 **Why Qube instead of a terminal-first agent?**
 
-- **No terminal commands or config-file edits for everyday use.** You install Qube like a normal desktop app and talk in plain words. OpenClaw and Hermes now also ship desktop installers, but their docs still route setup through CLI commands (e.g. `openclaw onboard`, `hermes setup` / `hermes model`) and a Gateway/service you manage for bots or always-on work.
-- **Reuse the AI you already pay for.** Got ChatGPT? Sign in with it in the welcome screen — no API key hunt. Or paste one key, or point it at a local model via Ollama or LM Studio you run yourself.
-- **Apps connect with a normal sign-in window.** Gmail, Drive, Calendar, Slack, GitHub, Notion, Trello and others: sign in once, then just ask. You don't create bot tokens yourself — releases include a built-in key for this, and if you build from source you add your own `COMPOSIO_API_KEY`. Write actions pause for your approval.
+- **No terminal commands or config-file edits for everyday use.** You install Qube like a normal desktop app and talk in plain words. OpenClaw and Hermes now also ship desktop installers, but thei[...]
+- **Reuse the AI you already pay for.** Got ChatGPT? Sign in with it in the welcome screen — no API key hunt. Or paste one key, or point it at a local model via Ollama or LM Studio you run yours[...]
+- **Apps connect with a normal sign-in window.** Gmail, Drive, Calendar, Slack, GitHub, Notion, Trello and others: sign in once, then just ask. You don't create bot tokens yourself — releases in[...]
 
-Everyday examples: tailor a resume plus cover letter per job post; a household budget with live totals that update when you change a number; compare three insurance quotes (paste the text) and show the math; plan a weekend trip as a short sourced table, then add the dates to your calendar after you approve.
+Everyday examples: tailor a resume plus cover letter per job post; a household budget with live totals that update when you change a number; compare three insurance quotes (paste the text) and sho[...]
 
-Honest note: if you want a fleet of bots on Telegram, Discord, and WhatsApp at once, deep per-tool and per-platform sandbox tuning, or a headless Gateway/server setup — including OpenClaw's simultaneous channels and Hermes' gateway plus toolsets — OpenClaw or Hermes may fit better. Both now also offer desktop installers; Qube just stays click-only for everyday use.
+Honest note: if you want a fleet of bots on Telegram, Discord, and WhatsApp at once, deep per-tool and per-platform sandbox tuning, or a headless Gateway/server setup — including OpenClaw's simu[...]
 
 ---
 
@@ -77,22 +77,22 @@ Honest note: if you want a fleet of bots on Telegram, Discord, and WhatsApp at o
 These are the things Qube can really do today, built for everyday use:
 
 ### A conversation that actually finishes things
-Ask, and watch it happen. Qube explains what it's about to do, shows progress as it goes, and drops the results right into the chat. You can come back to any past conversation — Qube remembers titles, summaries, and what you talked about, so you can dig up "that presentation from three weeks ago" just by asking.
+Ask, and watch it happen. Qube explains what it's about to do, shows progress as it goes, and drops the results right into the chat. You can come back to any past conversation — Qube remembers t[...]
 
 ### A tidy workspace, not a folder disaster
-Qube has its own workspace on your computer for the files it creates, and it sorts them automatically — reports go to `documents`, decks to `presentations`, tables to `spreadsheets` — so you can always find them again. If it needs to touch something outside that workspace, like a file on your desktop, it asks first.
+Qube has its own workspace on your computer for the files it creates, and it sorts them automatically — reports go to `documents`, decks to `presentations`, tables to `spreadsheets` — so you c[...]
 
 ### Real files, ready to use
-Ask for a report, a presentation, or a spreadsheet and get back something properly formatted — headings, tables, charts, styling — not placeholder text. Hand it something you already have, like a résumé or a budget, and ask it to update or improve it. Everything shows up in the chat, ready to download.
+Ask for a report, a presentation, or a spreadsheet and get back something properly formatted — headings, tables, charts, styling — not placeholder text. Hand it something you already have, lik[...]
 
 ### Answers, not eleven open tabs
-"What's a good kids' bike for a 6-year-old, under €150?" — Qube searches, reads through what it finds, and comes back with a short, sourced answer instead of a page of links. Give it a specific link and it'll pull out just what matters from that page.
+"What's a good kids' bike for a 6-year-old, under €150?" — Qube searches, reads through what it finds, and comes back with a short, sourced answer instead of a page of links. Give it a specifi[...]
 
 ### The apps you already use, working together
-Connect Gmail, Google Drive and Calendar, Slack, GitHub, Notion, Trello, and others you rely on. Releases include a built-in key for this; if you build from source, add your own `COMPOSIO_API_KEY`. Sign in once, and from then on you can just say what you want — "summarize this inbox thread," "post this in Slack after I approve." Send/create/delete-type actions pause for your approval first; read-only lookups don't.
+Connect Gmail, Google Drive and Calendar, Slack, GitHub, Notion, Trello, and others you rely on. Releases include a built-in key for this; if you build from source, add your own `COMPOSIO_API_KEY`[...]
 
 ### Things that happen without you asking twice
-Set something up once — "check this folder every morning," "put together a summary every 7 days" — and Qube's scheduler repeats it on its own, within whatever limits you set. (Weekday-cron like "every Friday" needs exact schedule support — use an interval or one-shot for now.) It also checks its workspace periodically and flags anything that needs attention.
+Set something up once — "check this folder every morning," "put together a summary every 7 days" — and Qube's scheduler repeats it on its own, within whatever limits you set. (Weekday-cron lik[...]
 
 ### Continuity, not a blank slate every time
 Qube remembers your preferences, your projects, and decisions you've already made, so you're not re-explaining yourself in every new conversation.
@@ -105,17 +105,17 @@ Qube remembers your preferences, your projects, and decisions you've already mad
 
 They're powerful, but they're built for people who are comfortable in the terminal. Qube is built for everyone else too.
 
-**OpenClaw** runs as a gateway on your machine or server, and now also ships desktop apps (Windows Hub installer, macOS menu-bar app) that can provision a local Gateway on first run. Its docs still route setup through terminal commands like `openclaw onboard`, an API key or CLI login, and a Gateway process with a browser Control UI you manage. It's a good fit if you want your agent plugged into many chat channels at once and don't mind config files and background services. See their [Install](https://docs.openclaw.ai/install) and [Getting started](https://docs.openclaw.ai/start/getting-started) docs.
+**OpenClaw** runs as a gateway on your machine or server, and now also ships desktop apps (Windows Hub installer, macOS menu-bar app) that can provision a local Gateway on first run. Its docs sti[...]
 
-**Hermes Agent** is a terminal-first agent that now also offers a Desktop installer on macOS/Windows. Its docs still route setup through commands like `hermes setup`, `hermes model`, and `hermes gateway setup`, with providers, toolsets, and config files to manage. It's a good fit if you like fine-tuning every tool and running bots or always-on servers. See their [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart).
+**Hermes Agent** is a terminal-first agent that now also offers a Desktop installer on macOS/Windows. Its docs still route setup through commands like `hermes setup`, `hermes model`, and `hermes [...]
 
 **Qube takes the opposite route:**
 
 - Install it like a normal desktop app — no terminal commands to get started.
 - If you already have ChatGPT, just sign in with it. No hunting for API keys. Or paste a single key, or point it at a local model via Ollama or LM Studio you run yourself.
-- Connect Gmail, Drive, Slack, and the rest with a normal sign-in window (releases include a built-in key; source builds use your own `COMPOSIO_API_KEY`), then just ask in plain words. There's no bot token to create and no Gateway to keep alive for everyday use.
+- Connect Gmail, Drive, Slack, and the rest with a normal sign-in window (releases include a built-in key; source builds use your own `COMPOSIO_API_KEY`), then just ask in plain words. There's no[...]
 
-If you enjoy running servers and editing settings files, you'll feel at home in OpenClaw or Hermes. If you just want to download something and ask for help in your own words, Qube is the easier start.
+If you enjoy running servers and editing settings files, you'll feel at home in OpenClaw or Hermes. If you just want to download something and ask for help in your own words, Qube is the easier s[...]
 
 ---
 
@@ -123,7 +123,7 @@ If you enjoy running servers and editing settings files, you'll feel at home in 
 
 ### 1. Get Qube
 
-No terminal needed for normal use. The quickest way is to grab a build for your system from the [Releases page](https://github.com/QwErTy-2117/Qube/releases) and install it like any other desktop app. Prefer to build it yourself, or there's no release yet for your platform? See [Build it yourself](#build-it-yourself) below — it only takes a few commands.
+No terminal needed for normal use. The quickest way is to grab a build for your system from the [Releases page](https://github.com/QwErTy-2117/Qube/releases) and install it like any other desktop[...]
 
 When you first open Qube, it walks you through a short setup:
 
@@ -133,7 +133,7 @@ When you first open Qube, it walks you through a short setup:
 
 You don't need to do everything at once. Start with just the chat and add the rest later.
 
-App connections use a built-in key in releases, so there's nothing to paste. If you'd rather use your own key (higher limits or a private project), you can switch anytime in Settings → Advanced → Composio API Key — pick the built-in key or paste a custom one.
+App connections use a built-in key in releases, so there's nothing to paste. If you'd rather use your own key (higher limits or a private project), you can switch anytime in Settings → Advanced[...]
 
 ### 2. Just talk
 
@@ -148,13 +148,13 @@ A few tips that help:
 
 ## What do I need to know before using it?
 
-**You're in charge of what it does on your behalf.** When you give Qube instructions, approve something, or connect an app, you're authorizing it to take the steps it thinks are needed. That can include creating or changing files, running actions on your computer, or doing things in your connected apps — even in ways you didn't exactly expect. Always review what it did before you rely on, send, or share the result.
+**You're in charge of what it does on your behalf.** When you give Qube instructions, approve something, or connect an app, you're authorizing it to take the steps it thinks are needed. That can [...]
 
-**It can make mistakes.** Like any AI, Qube can be wrong, miss details, or misunderstand what you meant — even when it sounds confident. Double-check anything important, keep copies of important files, and don't rely on it alone for high-stakes decisions.
+**It can make mistakes.** Like any AI, Qube can be wrong, miss details, or misunderstand what you meant — even when it sounds confident. Double-check anything important, keep copies of importan[...]
 
-**Your data stays local unless you ask it to go elsewhere.** Files, history, and settings live on your computer. When you chat, the text you send, relevant excerpts of files it read, and some context it has remembered may be sent to the AI service you chose so it can respond. Connected apps receive only what's needed to do what you asked. Each provider or app handles that data under its own policies.
+**Your data stays local unless you ask it to go elsewhere.** Files, history, and settings live on your computer. When you chat, the text you send, relevant excerpts of files it read, and some con[...]
 
-Qube will also tell you when it wants to do something more sensitive and ask you to confirm. Those checks help, but they don't catch everything — your review is still the most important safeguard.
+Qube will also tell you when it wants to do something more sensitive and ask you to confirm. Those checks help, but they don't catch everything — your review is still the most important safegua[...]
 
 For more details, see the [Terms of Service](TERMS.md) and [Privacy Policy](PRIVACY.md).
 
@@ -162,7 +162,9 @@ For more details, see the [Terms of Service](TERMS.md) and [Privacy Policy](PRIV
 
 ## Build it yourself
 
-You don't need this section to use Qube — it's here for anyone who wants to run it from source or make changes. 
+You don't need this section to use Qube — it's here for anyone who wants to run it from source or make changes. See the [Releases page](https://github.com/QwErTy-2117/Qube/releases) for direct downloads.
+
+[![Download Qube](https://img.shields.io/badge/Download-Releases-blue?logo=github)](https://github.com/QwErTy-2117/Qube/releases)
 
 **What you'll need**
 - Node.js 18+ and npm
@@ -214,7 +216,7 @@ npm run tauri:dev
 
 Find the finished app in `src-tauri/target/` (path depends on your system).
 
-**A note on responsibility:** the assistant acts on what you tell it and what you approve. You're responsible for checking its work before you use it — especially for files, messages, or anything it does in your other apps. See [TERMS.md](TERMS.md) for the full terms.
+**A note on responsibility:** the assistant acts on what you tell it and what you approve. You're responsible for checking its work before you use it — especially for files, messages, or anythi[...]
 
 ---
 

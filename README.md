@@ -8,6 +8,10 @@
   <strong>An AI agent for anyone.</strong>
 </p>
 
+<p align="center">
+  <a href="#support-qube">❤️ Donate</a>
+</p>
+
 ---
 
 ## What is Qube?
@@ -217,3 +221,15 @@ Find the finished app in `src-tauri/target/` (path depends on your system).
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
+
+---
+
+## Support Qube
+
+Qube is free and open-source, and it stays that way thanks to people like you. If Qube saves you time, consider supporting its development:
+
+- **BTC:** `bc1qYOURBTCADDRESSMOCKUP00000000000000000000`
+- **SOL:** `YourSolAddressMockup111111111111111111111111111`
+- **ETH:** `0xYOUR ETH ADDRESS MOCKUP00000000000000000000`
+
+Replace these with real addresses before sharing widely.

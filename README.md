@@ -18,7 +18,7 @@
 
 Qube is a personal assistant that lives on your computer. You talk to it like you would to a person. If you can install an app and type a message, you can use Qube — no coding, no terminal, no s[...]
 
-Instead of giving you ideas and leaving you to do the work, Qube actually does it — it can organize your files, write documents, look things up online, work with the apps you already use, and ha[...]
+Instead of giving you ideas and leaving you to do the work, Qube actually does it — it can organize your files, write documents, look things up online and work with the apps you already use.
 
 Just say what you want in your own words. For example:
 
@@ -37,7 +37,7 @@ It runs directly on your computer, and keeps your files, settings, and chat hist
 
 Most AI agents assume you're comfortable with the terminal. Qube doesn't.
 
-**Qube itself is free.** It's open-source (Apache 2.0) and costs nothing to download and use. There's no Qube subscription and no per-message charge from Qube — you only ever pay your AI provide[...]
+**Qube itself is free.** It's open-source (Apache 2.0) and costs nothing to download and use. There's no Qube subscription and no per-message charge from Qube — you only ever pay your AI provider.
 
 **Bring the AI you already pay for.** Qube doesn't ship with an AI — you connect the one you already use:
 
@@ -46,13 +46,13 @@ Most AI agents assume you're comfortable with the terminal. Qube doesn't.
 
 You can switch anytime in Settings.
 
-**Setup takes minutes, with clicks — not commands.** Download Qube like any other desktop app, open it, and follow three short steps. Connect Gmail or Drive later only if you want to, with a nor[...]
+**Setup takes minutes, with clicks — not commands.** Download Qube like any other desktop app, open it, and follow three short steps. Connect Gmail or Drive later only if you want to, with a normal log-in page.
 
 ---
 
 ## Why would I use it?
 
-**It finishes the job, not just describes it.** Ask for a cleaned-up spreadsheet, a rewritten cover letter, or a folder of vacation photos sorted by date, and you get the actual file back — not [...]
+**It finishes the job, not just describes it.** Ask for a cleaned-up spreadsheet, a rewritten cover letter, or a folder of vacation photos sorted by date, and you get the actual file back.
 
 **You describe the result, not the steps.** "Compare these three insurance quotes and tell me which is cheapest over five years" is enough on its own. Qube reads the documents, works out the numbe[...]
 
@@ -162,9 +162,7 @@ For more details, see the [Terms of Service](TERMS.md) and [Privacy Policy](PRIV
 
 ## Build it yourself
 
-You don't need this section to use Qube — it's here for anyone who wants to run it from source or make changes. See the Releases page for direct downloads.
-
-[![Download Qube](https://img.shields.io/badge/Download-Releases-blue?logo=github)](https://github.com/QwErTy-2117/Qube/releases)
+You don't need this section to use Qube — it's here for anyone who wants to run it from source or make changes. See the [Releases page](https://github.com/QwErTy-2117/Qube/releases) for direct downloads.
 
 **What you'll need**
 - Node.js 18+ and npm

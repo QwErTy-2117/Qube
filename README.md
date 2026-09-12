@@ -52,9 +52,20 @@ You can switch anytime in Settings.
 
 **You describe the result, not the steps.** "Compare these three insurance quotes and tell me which is cheapest over five years" is enough on its own. Qube reads the documents, works out the numbers, and gives you an answer with the math behind it.
 
-**You stay in control.** Qube shows its work as it goes — what it read, what it wrote, what it found online — and pauses to check with you before anything with real consequences, like deleting a file or sending a message.
+**You stay in control.** Qube shows its work as it goes — what it read, what it wrote, what it found online — and pauses to check before touching files outside its workspace or running a send/create/delete-type action in a connected app. Read-only lookups don't pause, and anything inside its workspace runs without a prompt — so still review before you rely on, send, or share the result.
 
 **Your stuff stays on your device.** Your files, chat history, and settings live on your computer, not in someone else's cloud. Qube only reaches out to an AI service to think through your request. When you chat, the text you send plus any file excerpts it needs may be sent to the AI provider you chose, under that provider's policies.
+
+**Why Qube instead of a terminal-first agent?**
+
+- **No terminal commands or config-file edits for everyday use.** You install Qube like a normal desktop app and talk in plain words. OpenClaw and Hermes now also ship desktop installers, but their docs still route setup through CLI commands (e.g. `openclaw onboard`, `hermes setup` / `hermes model`) and a Gateway/service you manage for bots or always-on work — see links below.
+- **Reuse the AI you already pay for.** Got ChatGPT? Sign in with it in the welcome screen — no API key hunt. Or paste one key, or point it at a local model via Ollama or LM Studio you run yourself.
+- **Apps connect with a normal sign-in window.** Gmail, Drive, Calendar, Slack, GitHub, Notion, Trello and others: sign in once, then just ask. You don't create bot tokens yourself — releases include a built-in key for this, and if you build from source you add your own `COMPOSIO_API_KEY`. Write actions pause for your approval.
+- **Real files, tidy by itself, repeats on a schedule.** Reports land in `documents`, decks in `presentations`, sheets in `spreadsheets` with proper formatting and live Excel formulas. Say "every morning" or "every 7 days" once and its scheduler repeats it. It remembers your preferences so you rarely re-explain.
+
+Everyday examples: tailor a resume plus cover letter per job post; a household budget with live totals that update when you change a number; compare three insurance quotes (paste the text) and show the math; plan a weekend trip as a short sourced table, then add the dates to your calendar after you approve — if Calendar is connected with write access.
+
+Honest note: if you want a fleet of bots on Telegram, Discord, and WhatsApp at once, deep per-tool and per-platform sandbox tuning, or a headless Gateway/server setup — including OpenClaw's simultaneous channels and Hermes' gateway plus toolsets — OpenClaw or Hermes may fit better (see comparison below). Both now also offer desktop installers; Qube just stays click-only for everyday use.
 
 ---
 
@@ -75,10 +86,10 @@ Ask for a report, a presentation, or a spreadsheet and get back something proper
 "What's a good kids' bike for a 6-year-old, under €150?" — Qube searches, reads through what it finds, and comes back with a short, sourced answer instead of a page of links. Give it a specific link and it'll pull out just what matters from that page.
 
 ### The apps you already use, working together
-Connect Gmail, Google Drive and Calendar, Slack, GitHub, Notion, Trello, and others you rely on. Sign in once, and from then on you can just say what you want — "add this to my calendar," "post this in Slack." Anything that would create, send, or delete something pauses for your approval first.
+Connect Gmail, Google Drive and Calendar, Slack, GitHub, Notion, Trello, and others you rely on. Releases include a built-in key for this; if you build from source, add your own `COMPOSIO_API_KEY`. Sign in once, and from then on you can just say what you want — "summarize this inbox thread," "post this in Slack after I approve." Send/create/delete-type actions pause for your approval first; read-only lookups don't.
 
 ### Things that happen without you asking twice
-Set something up once — "check this folder every morning," "put together a weekly summary every Friday" — and Qube keeps doing it on its own, within whatever limits you set. It also checks in on your workspace periodically and flags anything that needs attention.
+Set something up once — "check this folder every morning," "put together a summary every 7 days" — and Qube's scheduler repeats it on its own, within whatever limits you set. (Weekday-cron like "every Friday" needs exact schedule support — use an interval or one-shot for now.) It also checks its workspace periodically and flags anything that needs attention.
 
 ### Continuity, not a blank slate every time
 Qube remembers your preferences, your projects, and decisions you've already made, so you're not re-explaining yourself in every new conversation.
@@ -91,15 +102,15 @@ Qube remembers your preferences, your projects, and decisions you've already mad
 
 They're powerful, but they're built for people who are comfortable in the terminal. Qube is built for everyone else too.
 
-**OpenClaw** runs as a gateway on your machine or server. You install it with a terminal script or npm, you need Node.js, then you run setup commands like `openclaw onboard` in the terminal, add an API key, and manage a Gateway process with a browser Control UI. It's a good fit if you want your agent plugged into Telegram, Discord, WhatsApp and don't mind config files and background services. See their [Install](https://docs.openclaw.ai/install) and [Getting started](https://docs.openclaw.ai/start/getting-started) docs.
+**OpenClaw** runs as a gateway on your machine or server, and now also ships desktop apps (Windows Hub installer, macOS menu-bar app) that can provision a local Gateway on first run. Its docs still route setup through terminal commands like `openclaw onboard`, an API key or CLI login, and a Gateway process with a browser Control UI you manage. It's a good fit if you want your agent plugged into many chat channels at once and don't mind config files and background services. See their [Install](https://docs.openclaw.ai/install) and [Getting started](https://docs.openclaw.ai/start/getting-started) docs.
 
-**Hermes Agent** is a terminal-first agent. You install it with a script, then configure it with commands like `hermes setup`, `hermes model`, and `hermes gateway setup`, pick providers and toolsets, and manage config files. It also expects a model with a large context window. It's a good fit if you like fine-tuning every tool and running bots or always-on servers. See their [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart).
+**Hermes Agent** is a terminal-first agent that now also offers a Desktop installer on macOS/Windows. Its docs still route setup through commands like `hermes setup`, `hermes model`, and `hermes gateway setup`, with providers, toolsets, and config files to manage. It's a good fit if you like fine-tuning every tool and running bots or always-on servers. See their [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart).
 
 **Qube takes the opposite route:**
 
 - Install it like a normal desktop app — no terminal commands to get started.
-- If you already have ChatGPT, just sign in with it. No hunting for API keys. Or paste a single key, or run a local model if you prefer.
-- Connect Gmail, Drive, Slack, and the rest with a normal sign-in window, then just ask in plain words. There's no server to keep alive and no config file to edit for everyday use.
+- If you already have ChatGPT, just sign in with it. No hunting for API keys. Or paste a single key, or point it at a local model via Ollama or LM Studio you run yourself.
+- Connect Gmail, Drive, Slack, and the rest with a normal sign-in window (releases include a built-in key; source builds use your own `COMPOSIO_API_KEY`), then just ask in plain words. There's no bot token to create and no Gateway to keep alive for everyday use.
 
 If you enjoy running servers and editing settings files, you'll feel at home in OpenClaw or Hermes. If you just want to download something and ask for help in your own words, Qube is the easier start.
 
@@ -169,7 +180,8 @@ Open `http://localhost:3010` and follow the onboarding.
 **Environment options** — all optional at first, you can also set them in the app:
 
 ```
-# For connectors like Gmail, Slack, GitHub, etc. (optional)
+# For connectors like Gmail, Slack, GitHub, etc.
+# Releases already include a built-in key; only needed when building from source.
 COMPOSIO_API_KEY=...
 
 # For a stable ChatGPT login (optional, otherwise auto-created locally)

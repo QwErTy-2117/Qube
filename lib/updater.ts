@@ -15,6 +15,19 @@ type CheckResult =
   | { available: true; info: UpdateInfo }
   | { available: false };
 
+/**
+ * Whole-percent (0..100) of a bundle download, or null when the total
+ * size is unknown. Overshoot is clamped so duplicate chunks never exceed 100.
+ */
+export function downloadProgressPercent(
+  downloaded: number,
+  contentLength: number | undefined
+): number | null {
+  if (!contentLength || contentLength <= 0) return null;
+  const pct = Math.floor((downloaded / contentLength) * 100);
+  return Math.min(100, Math.max(0, pct));
+}
+
 let cachedUpdate: any = null; // holds Tauri Update object for install
 
 function isTauri(): boolean {

@@ -3,30 +3,51 @@
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { useUpdaterStore } from "@/lib/updater-store";
-import { downloadAndInstall } from "@/lib/updater";
+import { downloadAndInstall, downloadProgressPercent } from "@/lib/updater";
 import { Loader2Icon } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 export function UpdateToast() {
   const { showToast, info, dismiss, downloading, setDownloading, setProgress } = useUpdaterStore();
   const [phase, setPhase] = useState<"idle" | "downloading" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  // Byte counters accumulate Tauri updater events (Started → total,
+  // Progress → chunkLength) so the button shows live % instead of a
+  // static "Updating…" while multi-MB bundles download.
+  const [downloaded, setDownloaded] = useState(0);
+  const [contentLength, setContentLength] = useState<number | undefined>(undefined);
+  const downloadedRef = useRef(0);
+  const percent = phase === "downloading" ? downloadProgressPercent(downloaded, contentLength) : null;
 
   const handleUpdate = async () => {
     if (!info) return;
     setPhase("downloading");
     setDownloading(true);
     setError(null);
+    downloadedRef.current = 0;
+    setDownloaded(0);
+    setContentLength(undefined);
     try {
       await downloadAndInstall((ev) => {
-        if (ev.event === "Started") setProgress(0);
+        if (ev.event === "Started") {
+          setProgress(0);
+          if (typeof ev.data?.contentLength === "number") {
+            setContentLength(ev.data.contentLength);
+          }
+        } else if (ev.event === "Progress" && typeof ev.data?.chunkLength === "number") {
+          downloadedRef.current += ev.data.chunkLength;
+          setDownloaded(downloadedRef.current);
+        }
       });
       setPhase("done");
       setTimeout(() => {
         dismiss();
         setPhase("idle");
         setDownloading(false);
+        downloadedRef.current = 0;
+        setDownloaded(0);
+        setContentLength(undefined);
       }, 1500);
     } catch (e) {
       setPhase("error");
@@ -51,6 +72,9 @@ export function UpdateToast() {
     setError(null);
     setDownloading(false);
     setProgress(null);
+    downloadedRef.current = 0;
+    setDownloaded(0);
+    setContentLength(undefined);
   };
 
   // Radius axis: outer radius = button radius (14px for h-7 rounded-full) + padding (12px)
@@ -89,6 +113,25 @@ export function UpdateToast() {
                   {error}
                 </p>
               )}
+              {phase === "downloading" && (
+                <div
+                  className="mt-2.5 h-1 rounded-full bg-white/15 overflow-hidden"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={percent ?? undefined}
+                  aria-label="Download progress"
+                >
+                  {percent !== null ? (
+                    <div
+                      className="h-full rounded-full bg-white transition-[width] duration-200"
+                      style={{ width: `${percent}%` }}
+                    />
+                  ) : (
+                    <div className="h-full w-1/3 rounded-full bg-white/70 animate-pulse" />
+                  )}
+                </div>
+              )}
             </div>
 
             {/* buttons row: padding 12px (p-3) so axis aligns: outer 26 = 14 (button) + 12 */}
@@ -111,12 +154,12 @@ export function UpdateToast() {
                   handleUpdate();
                 }}
                 disabled={downloading || phase === "done"}
-                className="rounded-full h-7 px-4 text-xs font-semibold bg-white text-[#1e4d2f] hover:bg-white/90 border border-white min-w-[92px] justify-center whitespace-nowrap"
+                className="rounded-full h-7 px-4 text-xs font-semibold bg-white text-[#1e4d2f] hover:bg-white/90 border border-white min-w-[118px] justify-center whitespace-nowrap"
               >
                 {phase === "downloading" || downloading ? (
                   <>
                     <Loader2Icon className="size-3.5 animate-spin mr-1" />
-                    Updating…
+                    {percent !== null ? `Updating… ${percent}%` : "Updating…"}
                   </>
                 ) : phase === "done" ? (
                   "Restarting…"

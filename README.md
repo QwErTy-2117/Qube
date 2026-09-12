@@ -162,9 +162,7 @@ For more details, see the [Terms of Service](TERMS.md) and [Privacy Policy](PRIV
 
 ## Build it yourself
 
-You don't need this section to use Qube — it's here for anyone who wants to run it from source or make changes. See the [Releases page](https://github.com/QwErTy-2117/Qube/releases) for direct downloads.
-
-[![Download Qube](https://img.shields.io/badge/Download-Releases-blue?logo=github)](https://github.com/QwErTy-2117/Qube/releases)
+You don't need this section to use Qube — it's here for anyone who wants to run it from source or make changes. See the Releases page for direct downloads. [![Download Qube](https://img.shields.io/badge/Download-Releases-blue?logo=github)](https://github.com/QwErTy-2117/Qube/releases)
 
 **What you'll need**
 - Node.js 18+ and npm

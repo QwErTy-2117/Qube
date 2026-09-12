@@ -11,6 +11,7 @@ src-tauri/gen/
 *.tsbuildinfo
 .next.d.ts
 .playwright-mcp/
+.browser-profile/
 .memory/
 /sandbox/
 /playground/

@@ -58,14 +58,13 @@ You can switch anytime in Settings.
 
 **Why Qube instead of a terminal-first agent?**
 
-- **No terminal commands or config-file edits for everyday use.** You install Qube like a normal desktop app and talk in plain words. OpenClaw and Hermes now also ship desktop installers, but their docs still route setup through CLI commands (e.g. `openclaw onboard`, `hermes setup` / `hermes model`) and a Gateway/service you manage for bots or always-on work — see links below.
+- **No terminal commands or config-file edits for everyday use.** You install Qube like a normal desktop app and talk in plain words. OpenClaw and Hermes now also ship desktop installers, but their docs still route setup through CLI commands (e.g. `openclaw onboard`, `hermes setup` / `hermes model`) and a Gateway/service you manage for bots or always-on work.
 - **Reuse the AI you already pay for.** Got ChatGPT? Sign in with it in the welcome screen — no API key hunt. Or paste one key, or point it at a local model via Ollama or LM Studio you run yourself.
 - **Apps connect with a normal sign-in window.** Gmail, Drive, Calendar, Slack, GitHub, Notion, Trello and others: sign in once, then just ask. You don't create bot tokens yourself — releases include a built-in key for this, and if you build from source you add your own `COMPOSIO_API_KEY`. Write actions pause for your approval.
-- **Real files, tidy by itself, repeats on a schedule.** Reports land in `documents`, decks in `presentations`, sheets in `spreadsheets` with proper formatting and live Excel formulas. Say "every morning" or "every 7 days" once and its scheduler repeats it. It remembers your preferences so you rarely re-explain.
 
-Everyday examples: tailor a resume plus cover letter per job post; a household budget with live totals that update when you change a number; compare three insurance quotes (paste the text) and show the math; plan a weekend trip as a short sourced table, then add the dates to your calendar after you approve — if Calendar is connected with write access.
+Everyday examples: tailor a resume plus cover letter per job post; a household budget with live totals that update when you change a number; compare three insurance quotes (paste the text) and show the math; plan a weekend trip as a short sourced table, then add the dates to your calendar after you approve.
 
-Honest note: if you want a fleet of bots on Telegram, Discord, and WhatsApp at once, deep per-tool and per-platform sandbox tuning, or a headless Gateway/server setup — including OpenClaw's simultaneous channels and Hermes' gateway plus toolsets — OpenClaw or Hermes may fit better (see comparison below). Both now also offer desktop installers; Qube just stays click-only for everyday use.
+Honest note: if you want a fleet of bots on Telegram, Discord, and WhatsApp at once, deep per-tool and per-platform sandbox tuning, or a headless Gateway/server setup — including OpenClaw's simultaneous channels and Hermes' gateway plus toolsets — OpenClaw or Hermes may fit better. Both now also offer desktop installers; Qube just stays click-only for everyday use.
 
 ---
 
@@ -76,7 +75,7 @@ These are the things Qube can really do today, built for everyday use:
 ### A conversation that actually finishes things
 Ask, and watch it happen. Qube explains what it's about to do, shows progress as it goes, and drops the results right into the chat. You can come back to any past conversation — Qube remembers titles, summaries, and what you talked about, so you can dig up "that presentation from three weeks ago" just by asking.
 
-### A tidy workspace, not a downloads-folder disaster
+### A tidy workspace, not a folder disaster
 Qube has its own workspace on your computer for the files it creates, and it sorts them automatically — reports go to `documents`, decks to `presentations`, tables to `spreadsheets` — so you can always find them again. If it needs to touch something outside that workspace, like a file on your desktop, it asks first.
 
 ### Real files, ready to use

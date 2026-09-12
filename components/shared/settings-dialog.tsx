@@ -1029,6 +1029,77 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [mcpFormArgs, setMcpFormArgs] = useState("");
   const [mcpFormEnv, setMcpFormEnv] = useState("");
 
+  // Composio API key state (Settings → Advanced → Composio API Key)
+  const [composioKeyOpen, setComposioKeyOpen] = useState(false);
+  const [composioMode, setComposioMode] = useState<"builtin" | "custom">("builtin");
+  const [composioHasCustom, setComposioHasCustom] = useState(false);
+  const [composioMasked, setComposioMasked] = useState<string | null>(null);
+  const [composioHasBuiltin, setComposioHasBuiltin] = useState(true);
+  const [composioKeyInput, setComposioKeyInput] = useState("");
+  const [composioShowKey, setComposioShowKey] = useState(false);
+  const [composioSaving, setComposioSaving] = useState(false);
+  const [composioSaved, setComposioSaved] = useState(false);
+  const [composioError, setComposioError] = useState<string | null>(null);
+
+  const fetchComposioKeyStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/connectors/composio-key");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.mode === "custom" || data.mode === "builtin") setComposioMode(data.mode);
+      setComposioHasCustom(!!data.hasCustomKey);
+      setComposioMasked(typeof data.customKeyMasked === "string" ? data.customKeyMasked : null);
+      if (typeof data.hasBuiltInKey === "boolean") setComposioHasBuiltin(data.hasBuiltInKey);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchComposioKeyStatus();
+  }, [fetchComposioKeyStatus]);
+
+  useEffect(() => {
+    if (composioKeyOpen) {
+      setComposioError(null);
+      setComposioKeyInput("");
+      setComposioShowKey(false);
+      fetchComposioKeyStatus();
+    }
+  }, [composioKeyOpen, fetchComposioKeyStatus]);
+
+  const handleSaveComposioKey = async () => {
+    setComposioSaving(true);
+    setComposioError(null);
+    try {
+      const body: { mode: "builtin" | "custom"; customKey?: string } = { mode: composioMode };
+      if (composioMode === "custom" && composioKeyInput.trim()) {
+        body.customKey = composioKeyInput.trim();
+      }
+      const res = await fetch("/api/connectors/composio-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Failed to save Composio API key.");
+      }
+      if (data.mode === "custom" || data.mode === "builtin") setComposioMode(data.mode);
+      setComposioHasCustom(!!data.hasCustomKey);
+      setComposioMasked(typeof data.customKeyMasked === "string" ? data.customKeyMasked : null);
+      if (typeof data.hasBuiltInKey === "boolean") setComposioHasBuiltin(data.hasBuiltInKey);
+      setComposioKeyInput("");
+      setComposioSaved(true);
+      setTimeout(() => {
+        setComposioSaved(false);
+        setComposioKeyOpen(false);
+      }, 800);
+    } catch (e) {
+      setComposioError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setComposioSaving(false);
+    }
+  };
+
   const fetchMemories = useCallback(async () => {
     setLoadingMemories(true);
     try {
@@ -2032,6 +2103,35 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   </div>
                 </div>
 
+                {/* Composio API Key Section */}
+                <div className="border-t border-border/40 pt-6 space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold text-foreground">Composio API Key</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Powers Gmail, Drive, Calendar, Slack and other app connections. Releases include a built-in key — switch to your own for higher limits or private projects.
+                      </p>
+                      <p className="text-[11px] text-muted-foreground/70">
+                        {composioMode === "custom" && composioHasCustom
+                          ? `Using your custom key${composioMasked ? ` (${composioMasked})` : ""}.`
+                          : composioHasBuiltin
+                            ? "Using the built-in key."
+                            : "No built-in key found in this build — add your own key to use app connections."}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={() => setComposioKeyOpen(true)}
+                        variant="outline"
+                        className="rounded-full font-semibold px-4 h-8 flex items-center gap-1.5"
+                        size="sm"
+                      >
+                        Manage
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Skills Section (under MCP) */}
                 <SkillsTab onDialogOpenChange={setSkillsDialogOpen} />
 
@@ -2990,6 +3090,115 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={composioKeyOpen} onOpenChange={(v) => { if (!v) setComposioKeyOpen(false); }}>
+        <DialogContent className="sm:max-w-lg rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Composio API Key</DialogTitle>
+            <DialogDescription>
+              Choose which key powers your app connections (Gmail, Drive, Calendar, Slack and others).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <button
+              type="button"
+              onClick={() => setComposioMode("builtin")}
+              className={cn(
+                "w-full text-left p-3.5 rounded-2xl border transition-all cursor-pointer",
+                composioMode === "builtin"
+                  ? "border-emerald-500/60 bg-emerald-500/5"
+                  : "border-border bg-muted/10 hover:bg-muted/20"
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className={cn(
+                  "size-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-all",
+                  composioMode === "builtin" ? "border-emerald-500 bg-emerald-500" : "border-muted-foreground/30"
+                )}>
+                  {composioMode === "builtin" && <CheckIcon className="size-3 text-white" />}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Built-in key <span className="text-[10px] font-medium text-muted-foreground">(recommended)</span></p>
+                  <p className="text-xs text-muted-foreground/80 leading-relaxed">
+                    {composioHasBuiltin
+                      ? "Included with Qube releases. Nothing to paste."
+                      : "Not found in this build — releases include one, or add your own below."}
+                  </p>
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setComposioMode("custom")}
+              className={cn(
+                "w-full text-left p-3.5 rounded-2xl border transition-all cursor-pointer",
+                composioMode === "custom"
+                  ? "border-emerald-500/60 bg-emerald-500/5"
+                  : "border-border bg-muted/10 hover:bg-muted/20"
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className={cn(
+                  "size-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-all",
+                  composioMode === "custom" ? "border-emerald-500 bg-emerald-500" : "border-muted-foreground/30"
+                )}>
+                  {composioMode === "custom" && <CheckIcon className="size-3 text-white" />}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Custom key</p>
+                  <p className="text-xs text-muted-foreground/80 leading-relaxed">
+                    Use your own key from dashboard.composio.dev — for higher limits or private projects.
+                    {composioHasCustom && composioMasked ? ` Saved key ends in ${composioMasked}.` : ""}
+                  </p>
+                </div>
+              </div>
+            </button>
+
+            {composioMode === "custom" && (
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-semibold text-foreground">
+                  {composioHasCustom ? "Replace custom key (leave empty to keep the saved one)" : "Custom Composio API key"}
+                </label>
+                <div className="relative">
+                  <input
+                    type={composioShowKey ? "text" : "password"}
+                    placeholder={composioHasCustom ? "Paste a new key to replace the saved one" : "Paste your key (starts with ak_…)"}
+                    value={composioKeyInput}
+                    onChange={(e) => setComposioKeyInput(e.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="w-full px-3.5 py-2.5 pr-11 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setComposioShowKey((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 size-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    title={composioShowKey ? "Hide key" : "Show key"}
+                  >
+                    <EyeIcon className="size-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {composioError && (
+              <p className="text-xs text-red-500 leading-relaxed">{composioError}</p>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2">
+            <ConfirmGroup
+              onCancel={() => setComposioKeyOpen(false)}
+              onConfirm={handleSaveComposioKey}
+              saving={composioSaving}
+              saved={composioSaved}
+              confirmDisabled={composioMode === "custom" && !composioHasCustom && !composioKeyInput.trim()}
+            />
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

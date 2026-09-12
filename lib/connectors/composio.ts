@@ -3,6 +3,7 @@ import { VercelProvider } from "@composio/vercel";
 import { z } from "zod";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { composioKeyStore } from "./composio-key-store";
 
 const DESTRUCTIVE_KEYWORDS = [
   "send", "create", "post", "delete", "remove",
@@ -55,7 +56,29 @@ export const DEFAULT_USER_ID = "qube-default-user";
 
 let composioClient: any = null;
 
+export function resetComposioClient() {
+  composioClient = null;
+}
+
+/** True when a built-in key exists (release builds embed one via env.json). Never returns the key itself. */
+export function hasBuiltInKey(): boolean {
+  if (process.env.COMPOSIO_API_KEY) return true;
+  try {
+    const configPath = join(process.cwd(), "env.json");
+    if (existsSync(configPath)) {
+      const config = JSON.parse(readFileSync(configPath, "utf-8"));
+      if (config.COMPOSIO_API_KEY) return true;
+    }
+  } catch {}
+  return false;
+}
+
 function loadApiKey(): string {
+  // User override from Settings → Advanced → Composio API Key (custom mode).
+  try {
+    const custom = composioKeyStore.getActiveCustomKey();
+    if (custom) return custom;
+  } catch {}
   if (process.env.COMPOSIO_API_KEY) return process.env.COMPOSIO_API_KEY;
   try {
     const configPath = join(process.cwd(), "env.json");

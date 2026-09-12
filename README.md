@@ -130,6 +130,8 @@ When you first open Qube, it walks you through a short setup:
 
 You don't need to do everything at once. Start with just the chat and add the rest later.
 
+App connections use a built-in key in releases, so there's nothing to paste. If you'd rather use your own key (higher limits or a private project), you can switch anytime in Settings → Advanced → Composio API Key — pick the built-in key or paste a custom one.
+
 ### 2. Just talk
 
 Tell Qube what you want to happen, in your own words. If it needs a detail you didn't give, it'll ask. Otherwise it gets started and shows you what it's doing.

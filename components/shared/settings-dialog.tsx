@@ -1655,6 +1655,22 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("qube-providers-changed", handler);
   }, []);
 
+  // Programmatic open (e.g. home-page connectors tray): detail.tab selects
+  // one of the settings tabs. Matches the qube-* window-event convention.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        const tab = (e as CustomEvent).detail?.tab;
+        if (tab === "preferences" || tab === "connectors" || tab === "scheduling" || tab === "advanced") {
+          setTabValue(tab);
+        }
+      } catch {}
+      setOpen(true);
+    };
+    window.addEventListener("qube-open-settings", handler);
+    return () => window.removeEventListener("qube-open-settings", handler);
+  }, []);
+
   // Auto-save all settings when dialog closes
   const handleOpenChange = (next: boolean) => {
     const childDialogOpen = clearConfirm !== null

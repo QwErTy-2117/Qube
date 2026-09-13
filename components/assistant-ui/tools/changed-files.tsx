@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDownIcon, SquareArrowOutUpRightIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import { useAuiState } from "@assistant-ui/react";
 import { openDocumentWorkspace } from "@/lib/workspace/store";
 import { extractFileRefsFromText } from "@/components/assistant-ui/md-file-ref";
@@ -206,7 +206,7 @@ export function ChangedFiles() {
                     onClick={() => (hasDiff ? toggle(f.path) : openFile(f))}
                     disabled={!hasDiff && !clickable}
                     title={hasDiff ? `${isOpen ? "Collapse" : "Expand"} diff for ${base}` : clickable ? `Open ${base}` : f.path}
-                    className="flex min-w-0 flex-1 items-center gap-3 text-left text-sm transition enabled:cursor-pointer enabled:hover:bg-accent/60 disabled:cursor-default"
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left text-sm transition enabled:cursor-pointer disabled:cursor-default"
                   >
                     <span className="min-w-0 flex-1 truncate font-mono text-[13px]">
                       <span className={f.deleted ? "text-muted-foreground line-through" : "text-foreground"}>{base}</span>
@@ -227,19 +227,6 @@ export function ChangedFiles() {
                       />
                     )}
                   </button>
-                  {clickable && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openFile(f);
-                      }}
-                      title={`Open ${base}`}
-                      aria-label={`Open ${base}`}
-                      className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                    >
-                      <SquareArrowOutUpRightIcon className="size-3.5" />
-                    </button>
-                  )}
                 </div>
                 {hasDiff && isOpen && (
                   <div className="border-t border-border/50 px-2 py-2">
@@ -250,6 +237,7 @@ export function ChangedFiles() {
                           oldContent={d.oldText}
                           newContent={d.newText}
                           className="max-h-[320px]"
+                          hideHeader
                         />
                       ))}
                     </div>

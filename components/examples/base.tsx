@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
 import { ChangedFiles } from "@/components/assistant-ui/tools/changed-files";
+import { ConnectorsStrip } from "@/components/shared/connectors-strip";
 import { PresentedFiles } from "@/components/assistant-ui/tools/presented-files";
 import { SubagentToolUI } from "@/components/assistant-ui/tools/subagent-tool-ui";
 import { GoalsPanel } from "@/components/assistant-ui/goals-panel";
@@ -67,15 +68,11 @@ import {
   CodeXmlIcon,
   CopyIcon,
   DownloadIcon,
-  FilesIcon,
-  GlobeIcon,
-  LightbulbIcon,
   MicIcon,
   MoreHorizontalIcon,
   PaperclipIcon,
   PencilIcon,
   PencilLineIcon,
-  PlugIcon,
   PlusIcon,
   RefreshCwIcon,
   Settings as SettingsIcon,
@@ -320,11 +317,11 @@ const Thread: FC = () => {
         <AuiIf condition={isNewChatView}>
           <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4">
             <ThreadWelcome />
-            <div className="w-full max-w-(--thread-max-width)">
-              <Composer />
-            </div>
-            <div className="w-full max-w-(--thread-max-width)">
-              <ThreadSuggestions />
+            <div className="flex w-full max-w-(--thread-max-width) flex-col">
+              <div className="relative z-10 w-full">
+                <Composer />
+              </div>
+              <ConnectorsStrip />
             </div>
           </div>
         </AuiIf>
@@ -419,164 +416,6 @@ const ThreadWelcome: FC = () => {
       >
         {welcome}
       </h1>
-    </div>
-  );
-};
-
-type SuggestionGroup = {
-  label: string;
-  icon: ReactNode;
-  options: { label: string; prompt: string }[];
-};
-
-const SUGGESTION_GROUPS: SuggestionGroup[] = [
-  {
-    label: "Organize",
-    icon: <LightbulbIcon />,
-    options: [
-      {
-        label: "weekly schedule & priorities",
-        prompt: "Summarize my key priorities and organize a clear schedule for this week",
-      },
-      {
-        label: "plan a weekend trip",
-        prompt: "Plan a 3-day weekend trip itinerary with activities and dining recommendations",
-      },
-      {
-        label: "clean up notes & ideas",
-        prompt: "Organize my unformatted notes and brainstorming points into structured action items",
-      },
-    ],
-  },
-  {
-    label: "Writing",
-    icon: <PencilIcon />,
-    options: [
-      {
-        label: "professional email draft",
-        prompt: "Draft a polite, clear follow-up email regarding an ongoing project",
-      },
-      {
-        label: "project summary overview",
-        prompt: "Write a concise executive summary for a project proposal",
-      },
-      {
-        label: "blog post outline",
-        prompt: "Create an engaging blog post outline about workplace productivity and focus",
-      },
-    ],
-  },
-  {
-    label: "Documents",
-    icon: <FilesIcon />,
-    options: [
-      {
-        label: "presentation slide deck",
-        prompt: "Create a modern visual presentation slide deck outline and slide contents",
-      },
-      {
-        label: "weekly status document",
-        prompt: "Create a styled Word document summarizing project goals, status, and deliverables",
-      },
-      {
-        label: "budget spreadsheet",
-        prompt: "Create a clean Excel spreadsheet budget tracker with formatted categories",
-      },
-    ],
-  },
-  {
-    label: "Research",
-    icon: <GlobeIcon />,
-    options: [
-      {
-        label: "compare product reviews",
-        prompt: "Research top-rated product options, comparing key pros, cons, and recommendations",
-      },
-      {
-        label: "explain complex topic",
-        prompt: "Explain how artificial intelligence helps with daily organization in simple terms",
-      },
-    ],
-  },
-  {
-    label: "Connectors",
-    icon: <PlugIcon />,
-    options: [
-      {
-        label: "check email & calendar",
-        prompt: "Check my recent emails and summarize upcoming calendar events",
-      },
-      {
-        label: "send team message",
-        prompt: "Draft and post a clear team progress update",
-      },
-    ],
-  },
-];
-
-const suggestionChipClass =
-  "aui-thread-welcome-suggestion text-foreground hover:bg-muted border-border/60 h-auto gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-normal whitespace-nowrap transition-colors [&_svg]:size-4";
-
-const ThreadSuggestions: FC = () => {
-  const aui = useAui();
-  const [expandedLabel, setExpandedLabel] = useState<string | null>(null);
-  const expandedGroup = SUGGESTION_GROUPS.find(
-    (group) => group.label === expandedLabel,
-  );
-
-  const sendPrompt = (prompt: string) => {
-    if (aui.thread().getState().isRunning) return;
-    aui.thread().append({
-      content: [{ type: "text", text: prompt }],
-      runConfig: aui.composer().getState().runConfig,
-    });
-  };
-
-  return (
-    <div className="aui-thread-welcome-suggestions relative flex w-full flex-col gap-2 px-4">
-      <div className="w-full scrollbar-none overflow-x-auto">
-        <div className="mx-auto flex w-max items-center gap-2">
-          {SUGGESTION_GROUPS.map((group, i) => (
-            <Button
-              key={group.label}
-              variant="ghost"
-              className={cn(
-                suggestionChipClass,
-                "animate-in fade-in slide-in-from-bottom-3 fill-mode-both duration-400",
-                group.label === expandedLabel && "bg-muted",
-              )}
-              style={{ animationDelay: `${i * 80}ms` }}
-              onClick={() =>
-                setExpandedLabel(
-                  group.label === expandedLabel ? null : group.label,
-                )
-              }
-            >
-              {group.icon}
-              {group.label}
-            </Button>
-          ))}
-        </div>
-      </div>
-      {expandedGroup && (
-        <div
-          key={expandedGroup.label}
-          className="fade-in slide-in-from-top-1 animate-in absolute left-0 right-0 top-full z-10 w-full scrollbar-none overflow-x-auto pt-1 duration-200"
-        >
-          <div className="mx-auto flex w-max items-center gap-2">
-            {expandedGroup.options.map((option) => (
-              <Button
-                key={option.label}
-                variant="ghost"
-                className={suggestionChipClass}
-                onClick={() => sendPrompt(option.prompt)}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

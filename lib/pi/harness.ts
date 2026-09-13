@@ -492,97 +492,193 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
   // Close on abort
   signal.addEventListener?.("abort", () => { void closeMcp(); }, { once: true });
 
+  // Context compaction (preflight): shrink what the model sees when the
+  // estimated request approaches the context window. Operates on UIMessages
+  // (whole-message cuts only); the summary is injected into the system prompt.
+  // Durable history on disk is untouched — only the next model call is reduced.
+  let activeUiMessages = config.messages as Array<Record<string, unknown>>;
+  const notifyCompaction = (info: { freshSummary: boolean; hardCut?: boolean; retried?: boolean; stats: any }) => {
+    try {
+      writer.write({
+        type: "data-compaction",
+        data: {
+          compacted: true,
+          freshSummary: info.freshSummary,
+          hardCut: !!info.hardCut,
+          retried: !!info.retried,
+          keptMessages: info.stats?.keptMessages,
+          droppedMessages: info.stats?.droppedMessages,
+        },
+      } as any);
+    } catch {}
+  };
+  try {
+    const { maybeCompactMessages } = await import("./compaction");
+    const pre = await maybeCompactMessages({
+      messages: activeUiMessages,
+      threadId: config.threadId,
+      systemPrompt,
+      modelName: config.modelName,
+      request: config.request,
+    });
+    if (pre.summaryBlock) systemPrompt += `\n\n${pre.summaryBlock}`;
+    activeUiMessages = pre.messages;
+    if (pre.freshSummary) notifyCompaction(pre);
+  } catch (e: any) {
+    console.warn("[pi-harness] Compaction preflight failed (non-fatal):", (e?.message || String(e)).slice(0, 200));
+  }
+
   // Convert UIMessages to model messages (session recovery: full history provided)
   const { convertToModelMessages } = await import("ai");
-  let modelMessages: any;
-  try {
-    modelMessages = await convertToModelMessages(config.messages as any);
-  } catch (e: any) {
-    console.warn("[pi-harness] convertToModelMessages failed, using raw messages:", e.message);
-    modelMessages = config.messages;
-  }
+  const toModelMessages = async (uiMessages: Array<Record<string, unknown>>): Promise<any> => {
+    try {
+      return await convertToModelMessages(uiMessages as any);
+    } catch (e: any) {
+      console.warn("[pi-harness] convertToModelMessages failed, using raw messages:", e.message);
+      return uiMessages;
+    }
+  };
 
   // Check abort before starting stream (cancellation edge)
   if (signal.aborted) {
     throw new DOMException("Aborted before Pi stream start", "AbortError");
   }
 
-  let result: any;
-  try {
-    result = streamText({
-      model,
-      system: systemPrompt,
-      messages: modelMessages as any,
-      maxRetries: 0,
-      abortSignal: signal,
-      stopWhen: async ({ steps }: { steps: any[] }) => steps.length >= 15,
-      temperature: config.temperature !== undefined ? config.temperature : 0.7,
-      ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
-      tools: tools as any,
-    });
-  } catch (e: any) {
-    console.error("[pi-harness] streamText init failed:", e.message);
-    throw e;
-  }
-
-  // Stream to writer with interruption handling
-  const uiStream = result.toUIMessageStream({ originalMessages: config.messages as any } as any) as ReadableStream<any>;
-  const reader = uiStream.getReader();
+  // Stream to writer with interruption handling. Up to 2 attempts: a provider
+  // context-overflow error triggers one aggressive compaction + retry.
   let sawError = false;
   let toolCallCount = 0;
+  let reader: ReadableStreamDefaultReader<any> | null = null;
+  let overflowRetried = false;
 
   try {
-    while (true) {
-      // Check abort between chunks
-      if (signal.aborted) {
-        throw new DOMException("Pi run aborted during streaming", "AbortError");
-      }
-      const { done, value } = await reader.read();
-      if (done) break;
+    for (let attempt = 0; ; attempt++) {
+      const modelMessages = await toModelMessages(activeUiMessages);
 
-      // Count tool invocations so the post-task learning pass can gate on real effort.
-      const chunkType = (value as any)?.type;
-      if (
-        chunkType === "tool-input-start" ||
-        chunkType === "dynamic-tool-input-start" ||
-        chunkType === "tool-call" ||
-        chunkType === "dynamic-tool-call"
-      ) {
-        toolCallCount++;
-      }
-
-      // Surface error chunks as visible text (preserve UI contract)
-      if (chunkType === "error") {
-        sawError = true;
-        const errText = (value as any).errorText || "An error occurred";
-        const isGeneric = errText.includes("An error occurred");
-        const hint =
-          isGeneric || /rate limit|FreeUsageLimit/i.test(errText)
-            ? `${errText}\n\nModel "${config.modelName}" failed (likely rate-limited free tier). Open Settings → Model and try e.g. "mistral:mistral-medium-2505" or another model — or wait 1-2 min.`
-            : errText;
-        const id = `pi-error-${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
-        try {
-          writer.write({ type: "text-start", id } as any);
-          writer.write({ type: "text-delta", id, delta: hint } as any);
-          writer.write({ type: "text-end", id } as any);
-        } catch (writeErr) {
-          // Streaming interruption: writer write failed (client disconnected)
-          console.warn("[pi-harness] Writer write failed (stream interruption):", (writeErr as Error).message);
-          throw new Error(`Streaming interrupted: ${(writeErr as Error).message}`);
-        }
-        continue;
-      }
-
+      let result: any;
       try {
-        writer.write(value);
-      } catch (writeErr: any) {
-        console.warn("[pi-harness] Writer write failed mid-stream [", config.threadId, "]:", writeErr.message);
-        // Streaming interruption — propagate as cancellation vs error based on signal
-        if (signal.aborted) {
-          throw new DOMException("Writer interruption due to abort", "AbortError");
+        result = streamText({
+          model,
+          system: systemPrompt,
+          messages: modelMessages as any,
+          maxRetries: 0,
+          abortSignal: signal,
+          stopWhen: async ({ steps }: { steps: any[] }) => steps.length >= 15,
+          temperature: config.temperature !== undefined ? config.temperature : 0.7,
+          ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
+          tools: tools as any,
+        });
+      } catch (e: any) {
+        const { isContextOverflowError } = await import("./compaction").catch(() => ({ isContextOverflowError: () => false as boolean }));
+        if (isContextOverflowError(e) && !overflowRetried) {
+          overflowRetried = true;
+          console.warn(`[pi-harness] streamText overflow [${config.threadId}] — compacting + retrying`);
+          const recovered = await recoverFromOverflow(activeUiMessages);
+          if (recovered) continue;
         }
-        throw new Error(`Streaming interrupted: ${writeErr.message}`);
+        console.error("[pi-harness] streamText init failed:", e.message);
+        throw e;
       }
+
+      const uiStream = result.toUIMessageStream({ originalMessages: activeUiMessages as any } as any) as ReadableStream<any>;
+      reader = uiStream.getReader();
+      let attemptOverflow = false;
+
+      while (true) {
+        // Check abort between chunks
+        if (signal.aborted) {
+          throw new DOMException("Pi run aborted during streaming", "AbortError");
+        }
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // Count tool invocations so the post-task learning pass can gate on real effort.
+        const chunkType = (value as any)?.type;
+        if (
+          chunkType === "tool-input-start" ||
+          chunkType === "dynamic-tool-input-start" ||
+          chunkType === "tool-call" ||
+          chunkType === "dynamic-tool-call"
+        ) {
+          toolCallCount++;
+        }
+
+        // Surface error chunks as visible text (preserve UI contract)
+        if (chunkType === "error") {
+          const errText = (value as any).errorText || "An error occurred";
+          const { isContextOverflowError } = await import("./compaction").catch(() => ({ isContextOverflowError: () => false as boolean }));
+          if (isContextOverflowError(errText) && !overflowRetried) {
+            // Don't surface the overflow as chat text — compact + retry instead.
+            attemptOverflow = true;
+            try {
+              await reader.cancel();
+            } catch {}
+            break;
+          }
+          sawError = true;
+          const isGeneric = errText.includes("An error occurred");
+          const hint =
+            isGeneric || /rate limit|FreeUsageLimit/i.test(errText)
+              ? `${errText}\n\nModel "${config.modelName}" failed (likely rate-limited free tier). Open Settings → Model and try e.g. "mistral:mistral-medium-2505" or another model — or wait 1-2 min.`
+              : errText;
+          const id = `pi-error-${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
+          try {
+            writer.write({ type: "text-start", id } as any);
+            writer.write({ type: "text-delta", id, delta: hint } as any);
+            writer.write({ type: "text-end", id } as any);
+          } catch (writeErr) {
+            // Streaming interruption: writer write failed (client disconnected)
+            console.warn("[pi-harness] Writer write failed (stream interruption):", (writeErr as Error).message);
+            throw new Error(`Streaming interrupted: ${(writeErr as Error).message}`);
+          }
+          continue;
+        }
+
+        try {
+          writer.write(value);
+        } catch (writeErr: any) {
+          console.warn("[pi-harness] Writer write failed mid-stream [", config.threadId, "]:", writeErr.message);
+          // Streaming interruption — propagate as cancellation vs error based on signal
+          if (signal.aborted) {
+            throw new DOMException("Writer interruption due to abort", "AbortError");
+          }
+          throw new Error(`Streaming interrupted: ${writeErr.message}`);
+        }
+      }
+
+      if (attemptOverflow && !overflowRetried) {
+        overflowRetried = true;
+        console.warn(`[pi-harness] Context overflow [${config.threadId}] — compacting + retrying`);
+        const recovered = await recoverFromOverflow(activeUiMessages);
+        if (recovered) continue;
+      }
+      break;
+    }
+
+    async function recoverFromOverflow(
+      uiMessages: Array<Record<string, unknown>>,
+    ): Promise<boolean> {
+      try {
+        const { maybeCompactMessages } = await import("./compaction");
+        const rec = await maybeCompactMessages({
+          messages: uiMessages,
+          threadId: config.threadId,
+          systemPrompt,
+          modelName: config.modelName,
+          request: config.request,
+          force: true,
+          aggressive: true,
+        });
+        if (rec.compacted && rec.messages.length < uiMessages.length) {
+          if (rec.summaryBlock) systemPrompt += `\n\n${rec.summaryBlock}`;
+          activeUiMessages = rec.messages;
+          notifyCompaction({ ...rec, retried: true });
+          return true;
+        }
+      } catch (e: any) {
+        console.warn("[pi-harness] Overflow recovery failed:", (e?.message || String(e)).slice(0, 200));
+      }
+      return false;
     }
   } catch (e: any) {
     // Distinguish tool execution failures vs transport/stream failures
@@ -612,7 +708,10 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     throw e;
   } finally {
     try {
-      reader.releaseLock();
+      await reader?.cancel().catch(() => {});
+    } catch {}
+    try {
+      reader?.releaseLock();
     } catch {}
     // Ensure MCP clients are closed even if stream succeeded/failed/aborted
     try {

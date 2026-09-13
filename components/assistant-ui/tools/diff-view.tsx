@@ -36,10 +36,12 @@ export function DiffView({
   oldContent,
   newContent,
   className,
+  hideHeader,
 }: {
   oldContent: string;
   newContent: string;
   className?: string;
+  hideHeader?: boolean;
 }) {
   const lines = computeDiff(oldContent, newContent);
   const showNoNewline =
@@ -47,9 +49,11 @@ export function DiffView({
 
   return (
     <div className={cn("overflow-auto rounded-md border border-border bg-background font-mono text-xs leading-5", className)}>
-      <div className="flex border-b border-border bg-muted/50 px-3 py-1">
-        <span className="text-muted-foreground">Diff</span>
-      </div>
+      {!hideHeader && (
+        <div className="flex border-b border-border bg-muted/50 px-3 py-1">
+          <span className="text-muted-foreground">Diff</span>
+        </div>
+      )}
       <div className="p-0">
         {lines.map((line, i) => (
           <div

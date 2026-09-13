@@ -7,7 +7,6 @@ import {
   Loader2Icon,
   XIcon,
   PlusIcon,
-  SparklesIcon,
   CheckIcon,
   Trash2Icon,
   LockIcon,
@@ -77,6 +76,19 @@ function toForm(s: SkillConfig) {
 
 type FormState = ReturnType<typeof emptyForm>;
 
+/** Marketplace entry → read-only preview form (flags fall back to install defaults). */
+function marketplaceToForm(mp: MarketplaceSkill): FormState {
+  return {
+    name: mp.name,
+    description: mp.description,
+    instructions: mp.instructions,
+    allowedTools: mp.allowedTools || "",
+    disallowedTools: "",
+    userInvocable: true,
+    disableModelInvocation: false,
+  };
+}
+
 /** Every static Pi harness tool, grouped like the task-permissions list. */
 const TOOL_GROUPS: Array<{ label: string; tools: Array<{ name: string; hint: string }> }> = [
   {
@@ -143,13 +155,14 @@ const TOOL_GROUPS: Array<{ label: string; tools: Array<{ name: string; hint: str
   },
 ];
 
-function MiniSwitch({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (v: boolean) => void }) {
+function MiniSwitch({ checked, onCheckedChange, disabled }: { checked: boolean; onCheckedChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
-        "inline-flex shrink-0 cursor-pointer items-center rounded-full transition-colors h-6 w-11",
+        "inline-flex shrink-0 cursor-pointer items-center rounded-full transition-colors h-6 w-11 disabled:cursor-default disabled:opacity-60",
         checked ? "bg-emerald-500" : "bg-input/40"
       )}
     >
@@ -168,11 +181,13 @@ function SkillFormFields({
   setForm,
   nameLocked,
   error,
+  readOnly = false,
 }: {
   form: FormState;
   setForm: (f: FormState) => void;
   nameLocked: boolean;
   error: string | null;
+  readOnly?: boolean;
 }) {
   const [tab, setTab] = useState("general");
 
@@ -211,8 +226,12 @@ function SkillFormFields({
                   <button
                     key={tool.name}
                     type="button"
+                    disabled={readOnly}
                     onClick={() => toggleTool(tool.name, which)}
-                    className="flex w-full items-center justify-between px-4 py-2 text-left transition-colors hover:bg-muted/30 cursor-pointer"
+                    className={cn(
+                      "flex w-full items-center justify-between px-4 py-2 text-left transition-colors",
+                      readOnly ? "cursor-default" : "hover:bg-muted/30 cursor-pointer"
+                    )}
                   >
                     <span className="min-w-0">
                       <span className="block font-mono text-xs text-foreground">{tool.name}</span>
@@ -239,6 +258,7 @@ function SkillFormFields({
           <input
             type="text"
             placeholder="custom-mcp-tool another-tool"
+            disabled={readOnly}
             value={which === "allowed" ? form.allowedTools : form.disallowedTools}
             onChange={(e) => {
               const v = e.target.value;
@@ -250,7 +270,7 @@ function SkillFormFields({
               const merged = [...kept, ...rest.filter((t) => !kept.includes(t))].join(" ");
               setForm({ ...form, [which === "allowed" ? "allowedTools" : "disallowedTools"]: merged });
             }}
-            className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring font-mono"
+            className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring font-mono disabled:opacity-60"
           />
           <p className="text-[11px] text-muted-foreground">For dynamic MCP / connector tools not listed above.</p>
         </div>
@@ -277,7 +297,7 @@ function SkillFormFields({
               type="text"
               placeholder="my-skill"
               value={form.name}
-              disabled={nameLocked}
+              disabled={nameLocked || readOnly}
               onChange={(e) => setForm({ ...form, name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
               className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring font-mono disabled:opacity-60"
             />
@@ -290,9 +310,10 @@ function SkillFormFields({
             <textarea
               placeholder="Does X. Use when the user asks for Y…"
               value={form.description}
+              disabled={readOnly}
               onChange={(e) => setForm({ ...form, description: e.target.value.slice(0, 1024) })}
               rows={3}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed disabled:opacity-60"
             />
           </div>
         </TabsContent>
@@ -303,9 +324,10 @@ function SkillFormFields({
             <textarea
               placeholder="## Procedure&#10;1. …&#10;&#10;## Rules&#10;- …"
               value={form.instructions}
+              disabled={readOnly}
               onChange={(e) => setForm({ ...form, instructions: e.target.value })}
               rows={10}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-y leading-relaxed font-mono"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-y leading-relaxed font-mono disabled:opacity-60"
             />
           </div>
         </TabsContent>
@@ -317,14 +339,14 @@ function SkillFormFields({
                 <p className="text-xs font-semibold text-foreground">Show in / menu</p>
                 <p className="text-[11px] text-muted-foreground">Off = background knowledge, auto-applied silently.</p>
               </div>
-              <MiniSwitch checked={form.userInvocable} onCheckedChange={(v) => setForm({ ...form, userInvocable: v })} />
+              <MiniSwitch checked={form.userInvocable} disabled={readOnly} onCheckedChange={(v) => setForm({ ...form, userInvocable: v })} />
             </div>
             <div className="flex items-center justify-between px-4 py-2.5">
               <div>
                 <p className="text-xs font-semibold text-foreground">Manual only</p>
                 <p className="text-[11px] text-muted-foreground">On = runs only when you type the skill name.</p>
               </div>
-              <MiniSwitch checked={form.disableModelInvocation} onCheckedChange={(v) => setForm({ ...form, disableModelInvocation: v })} />
+              <MiniSwitch checked={form.disableModelInvocation} disabled={readOnly} onCheckedChange={(v) => setForm({ ...form, disableModelInvocation: v })} />
             </div>
           </div>
           <div className="space-y-2">
@@ -710,72 +732,65 @@ export function SkillsTab({ onDialogOpenChange }: { onDialogOpenChange?: (open: 
         </DialogContent>
       </Dialog>
 
-      {/* Marketplace detail popup — read-only + Add / Cancel */}
+      {/* Marketplace detail popup — read-only twin of create/edit, Add instead of Save */}
       <Dialog open={detail !== null} onOpenChange={(v) => { if (!v) setDetail(null); }}>
-        <DialogContent className="sm:max-w-sm rounded-3xl p-0 overflow-hidden gap-0">
-          <DialogHeader className="sr-only">
+        <DialogContent className="sm:max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <DialogHeader>
             <DialogTitle>{detail?.name}</DialogTitle>
-            <DialogDescription>{detail?.description}</DialogDescription>
+            {detail && (
+              <DialogDescription>
+                From {detail.marketplace} · v{detail.version} — preview only, nothing here is editable.
+              </DialogDescription>
+            )}
           </DialogHeader>
           {detail && (
-            <>
-              <div className="flex gap-3 items-start p-5">
-                <div className="size-12 rounded-xl bg-background border border-border/60 flex items-center justify-center shrink-0">
-                  <SparklesIcon className="size-6 text-muted-foreground/60" />
-                </div>
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="text-sm font-semibold text-foreground leading-none">{detail.name}</p>
-                    <span className={cn("px-1.5 py-0.5 rounded-full text-[10px] font-semibold", MARKETPLACE_COLORS[detail.marketplace] || "bg-muted text-muted-foreground")}>
-                      {detail.marketplace}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{detail.description}</p>
-                  {detail.allowedTools && (
-                    <p className="text-[11px] text-muted-foreground/70 font-mono">tools: {detail.allowedTools}</p>
-                  )}
-                </div>
-              </div>
-              <div className="mx-5 mb-3 max-h-44 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden rounded-xl border border-border/60 bg-muted/10 p-3">
-                <pre className="text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap font-mono">{detail.instructions}</pre>
-              </div>
-              <div className="w-fit ml-auto flex items-center gap-2 rounded-full border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-1.5 py-1.5 m-5 mt-2">
-                <button
-                  onClick={() => setDetail(null)}
-                  type="button"
-                  className="flex items-center justify-center size-8 rounded-full text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
-                  title="Cancel"
-                >
-                  <XIcon className="size-4" />
-                </button>
-                <div className="relative">
-                  <AnimatePresence mode="wait">
-                    {saved ? (
-                      <motion.div
-                        key="saved"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        className="flex items-center justify-center size-8 rounded-full bg-emerald-500 text-white"
-                      >
-                        <CheckIcon className="size-4" />
-                      </motion.div>
-                    ) : (
-                      <motion.div key="add" initial={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }}>
-                        <Button
-                          onClick={() => handleAddMarketplace(detail)}
-                          disabled={saving}
-                          className="rounded-full font-semibold"
-                        >
-                          {saving ? <Loader2Icon className="size-4 animate-spin" /> : "Add"}
-                        </Button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
-            </>
+            <div className="flex items-center gap-1.5 px-1">
+              <span className={cn("px-1.5 py-0.5 rounded-full text-[10px] font-semibold", MARKETPLACE_COLORS[detail.marketplace] || "bg-muted text-muted-foreground")}>
+                {detail.marketplace}
+              </span>
+            </div>
           )}
+          {detail && (
+            <SkillFormFields form={marketplaceToForm(detail)} setForm={() => {}} nameLocked readOnly error={null} />
+          )}
+          <DialogFooter className="pt-2">
+            <div className="w-fit ml-auto flex items-center gap-2 rounded-full border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-1.5 py-1.5 shrink-0">
+              <button
+                onClick={() => setDetail(null)}
+                type="button"
+                className="flex items-center justify-center size-8 rounded-full text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+                title="Cancel"
+              >
+                <XIcon className="size-4" />
+              </button>
+              <div className="relative">
+                <AnimatePresence mode="wait">
+                  {saved ? (
+                    <motion.div
+                      key="saved"
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.8, opacity: 0 }}
+                      className="flex items-center justify-center size-8 rounded-full bg-emerald-500 text-white"
+                    >
+                      <CheckIcon className="size-4" />
+                    </motion.div>
+                  ) : (
+                    <motion.div key="add" initial={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }}>
+                      <Button
+                        onClick={() => detail && handleAddMarketplace(detail)}
+                        disabled={saving}
+                        className="rounded-full font-semibold h-8 px-4"
+                        size="sm"
+                      >
+                        {saving ? <Loader2Icon className="size-4 animate-spin" /> : "Add"}
+                      </Button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

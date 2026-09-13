@@ -18,3 +18,4 @@ export { ConnectServiceToolUI } from "./connect-service-tool-ui";
 export { GoalToolUI } from "./goal-tool-ui";
 export { SubagentToolUI } from "./subagent-tool-ui";
 export { ShowFileToolUI } from "./show-file-tool-ui";
+export { CompactionNoticeDataUI } from "./compaction-notice";

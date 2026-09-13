@@ -214,6 +214,8 @@ npm run tauri:dev
 
 Find the finished app in `src-tauri/target/` (path depends on your system).
 
+**Power-user note:** Qube can also run as an Agent Client Protocol agent over stdio, so ACP-compatible editors (e.g. Zed's external agents) can drive it via `npm run acp`. Setup is manual — see [docs/acp.md](docs/acp.md).
+
 **A note on responsibility:** the assistant acts on what you tell it and what you approve. You're responsible for checking its work before you use it — especially for files, messages, or anything it does in your other apps. See [TERMS.md](TERMS.md) for the full terms.
 
 ---

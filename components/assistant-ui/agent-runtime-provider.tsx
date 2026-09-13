@@ -26,7 +26,7 @@ import {
   GoalToolUI,
   ShowFileToolUI,
 } from "@/components/assistant-ui/tools";
-import { ConnectorToolUI, ConnectServiceToolUI } from "@/components/assistant-ui/tools";
+import { ConnectorToolUI, ConnectServiceToolUI, CompactionNoticeDataUI } from "@/components/assistant-ui/tools";
 import { BrowserToolUI } from "@/components/workspace";
 import { type ReactNode, useEffect, useState } from "react";
 
@@ -236,6 +236,7 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ToolUIRegistrar />
+      <CompactionNoticeDataUI />
       <PrefetchManager />
       {children}
     </AssistantRuntimeProvider>

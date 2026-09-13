@@ -13,6 +13,8 @@ export interface AppSettings {
   runOnStart?: boolean;
   keepAlive?: boolean;
   memoryEnabled?: boolean;
+  /** Auto context compaction (default ON). Manual /api/chat/compact still works when off. */
+  compactionEnabled?: boolean;
 }
 
 const defaults: AppSettings = {

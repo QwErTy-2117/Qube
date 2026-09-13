@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
+import "@fontsource/caveat/600.css";
 import { Provider } from "./provider";
 import { Titlebar } from "@/components/tauri/titlebar";
 import { AgentRuntimeProvider } from "@/components/assistant-ui/agent-runtime-provider";

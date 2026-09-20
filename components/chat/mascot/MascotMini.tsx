@@ -54,6 +54,22 @@ const ONE_SHOT_DUR: Record<MascotOneshotKind, number> = {
   drop: 0.9,
 };
 
+// Gaze staging: below EYE_ONLY_R only the pupils travel and the body stays
+// put; past FULL_BODY_R the whole body turns and hops slightly to get there.
+// The mascot stands on an invisible tilted plane (PLANE_*): y never drops
+// below the pavement, hops slide along the tilt instead of going straight up.
+const EYE_ONLY_R = 0.3;
+const FULL_BODY_R = 0.6;
+const PLANE_RX = 0.045;
+const PLANE_RZ = -0.055;
+const HOP_H = 0.07;
+const HOP_DUR = 0.35;
+
+function sstep(a: number, b: number, x: number) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
 function easeInOut(p: number) {
   return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
 }
@@ -212,6 +228,9 @@ function MascotModel({
   const prevKind = useRef<MascotOneshotKind | null>(null);
   // Re-rolled every fall: sideways drift + lean direction.
   const dropSeed = useRef({ drift: 0, tilt: 0.2 });
+  // Hop-to-turn state: rising edge past FULL_BODY_R triggers one hop.
+  const wasBeyond = useRef(false);
+  const hopT = useRef(1e9);
   // Entrance drop: wall-clock 3s from the FIRST RENDERED FRAME (not mount,
   // not render-clock) — immune to slow canvas init and clock stalls. Fires
   // on its own; only skipped while another gag is literally mid-flight.
@@ -273,8 +292,27 @@ function MascotModel({
     const gx = running ? responseRef.current.x : cursorRef.current.x;
     const gy = running ? responseRef.current.y : cursorRef.current.y;
     const cd = cursorRef.current.d;
-    const cursorRy = reduceMotion ? 0 : gx * 0.65;
-    const cursorRx = reduceMotion ? 0 : -gy * 0.38;
+    // Threshold staging: pupils always travel the full gaze, the body only
+    // joins past the dead zone — and hops a little to get there.
+    const gazeMag = Math.hypot(gx, gy);
+    const bodyW = reduceMotion ? 0 : sstep(EYE_ONLY_R, FULL_BODY_R, gazeMag);
+    let hopY = 0;
+    if (!reduceMotion && !oneshot.current) {
+      const beyond = gazeMag > FULL_BODY_R;
+      if (beyond && !wasBeyond.current && hopT.current > HOP_DUR + 0.1) {
+        hopT.current = 0;
+      }
+      wasBeyond.current = beyond;
+      hopT.current += dt;
+      if (hopT.current < HOP_DUR) {
+        hopY = Math.sin((Math.PI * hopT.current) / HOP_DUR) * HOP_H;
+      }
+    } else {
+      wasBeyond.current = gazeMag > FULL_BODY_R;
+      hopT.current = Math.max(hopT.current, HOP_DUR);
+    }
+    const cursorRy = reduceMotion ? 0 : gx * 0.65 * bodyW;
+    const cursorRx = reduceMotion ? 0 : -gy * 0.38 * bodyW;
     const cursorLookX = reduceMotion ? 0 : gx * 0.13;
     const cursorLookY = reduceMotion ? 0 : gy * 0.1;
     // Close hover = excited: wide eyes + happy tremble (idle only).
@@ -372,7 +410,7 @@ function MascotModel({
     const preDrop =
       !reduceMotion && !dropSettled.current && !oneshot.current && prevKind.current === null;
     const tgt: Pose = {
-      y: (preDrop ? 2.4 : breathY + modeBob + excBob + listenBob) + (os.y ?? 0),
+      y: (preDrop ? 2.4 : breathY + modeBob + excBob + listenBob + hopY) + (os.y ?? 0),
       x: os.x ?? 0,
       rx: cursorRx * pursuit + listenRx + modeRx + (os.rx ?? 0),
       ry: cursorRy * pursuit + (os.ry ?? 0),
@@ -404,6 +442,8 @@ function MascotModel({
     // ---- smooth-damp every channel toward target ----
     const c = cur.current;
     c.y = THREE.MathUtils.damp(c.y, tgt.y, 12, dt);
+    // Pavement: the origin never sinks below the floor.
+    if (c.y < 0) c.y = 0;
     c.x = THREE.MathUtils.damp(c.x, tgt.x, 12, dt);
     c.rx = THREE.MathUtils.damp(c.rx, tgt.rx, 9, dt);
     c.ry = THREE.MathUtils.damp(c.ry, tgt.ry, 9, dt);
@@ -416,8 +456,9 @@ function MascotModel({
 
     // ---- apply ----
     g.position.y = c.y;
-    g.position.x = c.x;
-    g.rotation.set(c.rx, c.ry, c.rz);
+    // Hops travel along the tilted plane instead of straight up.
+    g.position.x = c.x + c.y * 0.12;
+    g.rotation.set(c.rx + PLANE_RX, c.ry, c.rz + PLANE_RZ);
     const sxz = 1 - c.squash * 0.55;
     g.scale.set(sxz, 1 + c.squash, sxz);
 

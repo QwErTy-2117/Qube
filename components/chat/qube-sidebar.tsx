@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FC, type MouseEvent } from "react";
-import Image from "next/image";
 import { useAui, useAuiState } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
-import logoPng from "@/public/logo.png";
+import { MascotMini } from "@/components/chat/mascot/MascotMini";
+import { emitMascot } from "@/components/chat/mascot/mascot-bus";
 import { SettingsDialog } from "@/components/shared/settings-dialog";
 import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { useThreadStore, loadExpanded } from "@/lib/chat/thread-store";
@@ -90,7 +90,6 @@ const RenameInput: FC<{
 };
 
 export const QubeSidebar: FC = () => {
-  const [logoHover, setLogoHover] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
 
   // Apply the persisted expand preference after mount (kept out of the
@@ -198,6 +197,7 @@ export const QubeSidebar: FC = () => {
   // only switch; never read ids imperatively (those snapshots go stale).
   // Missing/deleted threads fall back to a fresh chat, never an error.
   const openChat = (t: { id: string; remoteId?: string }) => {
+    emitMascot("jump");
     try {
       Promise.resolve(aui.threads().switchToThread(t.id)).catch(() => {
         try {
@@ -212,6 +212,7 @@ export const QubeSidebar: FC = () => {
   };
 
   const newChat = () => {
+    emitMascot("jump");
     try {
       Promise.resolve(aui.threads().switchToNewThread()).catch(() => {});
     } catch {}
@@ -219,22 +220,14 @@ export const QubeSidebar: FC = () => {
 
   const expand = () => setExpanded(true);
 
-  // Expand zones (collapsed only): the chat-list zone between the two lines,
-  // and the logo. Nothing else expands or lights the logo.
   const onListZoneClick = () => {
     if (!expanded) expand();
-  };
-  const onListZoneHover = () => {
-    if (!expanded) setLogoHover(true);
-  };
-  const onListZoneLeave = () => {
-    if (!expanded) setLogoHover(false);
   };
 
   const onLogoClick = (e: MouseEvent) => {
     e.stopPropagation();
-    // Always fall back to the logo itself after toggling.
-    setLogoHover(false);
+    // Playful 360° spin on top of the expand/collapse toggle.
+    emitMascot("spin");
     setExpanded(!expanded);
   };
 
@@ -260,19 +253,11 @@ export const QubeSidebar: FC = () => {
         <button
           data-logo-btn
           onClick={onLogoClick}
-          onMouseEnter={() => {
-            if (!expanded) setLogoHover(true);
-          }}
-          onMouseLeave={() => setLogoHover(false)}
           aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
           title={expanded ? "Collapse sidebar" : "Expand sidebar"}
           className="flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors"
         >
-          {logoHover && !expanded ? (
-            <SidebarToggleIcon />
-          ) : (
-            <Image src={logoPng} alt="Qube" className="size-5 shrink-0" />
-          )}
+          <MascotMini size={24} />
         </button>
         {expanded && (
           <span className="ml-auto flex items-center">
@@ -314,12 +299,10 @@ export const QubeSidebar: FC = () => {
       {/* Major separation between top buttons and the chat list */}
       <div className="mx-2 mt-4 mb-2 border-t border-border/70" aria-hidden />
 
-      {/* Thread list zone (only threads when expanded). This zone — plus the
-          logo — is the only area that expands the sidebar / lights the logo. */}
+      {/* Thread list zone (only threads when expanded). Clicking the zone
+          while collapsed expands the sidebar. */}
       <div
         onClick={onListZoneClick}
-        onMouseEnter={onListZoneHover}
-        onMouseLeave={onListZoneLeave}
         className={cn(
           "min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 scrollbar-none",
           !expanded && "cursor-pointer",

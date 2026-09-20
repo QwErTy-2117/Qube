@@ -7,6 +7,7 @@
  * Override via env: BROWSER_MCP_DISABLED=1, BROWSER_MCP_COMMAND, BROWSER_MCP_ARGS_JSON.
  */
 import type { McpServerConfig } from "./mcp-store";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 export const BROWSER_MCP_SERVER_ID = "qube-browser-use";
@@ -42,6 +43,15 @@ function resolveCommandAndArgs(): { command: string; args: string[] } {
 export function getBuiltInMcpServers(): McpServerConfig[] {
   if (process.env.BROWSER_MCP_DISABLED === "1") return [];
   const { command, args } = resolveCommandAndArgs();
+  // Fail loudly with the resolved path instead of a bare "Connection closed"
+  // from the MCP client when the child exits on a missing script (e.g. an
+  // incomplete production bundle — see scripts/build-sidecar.js).
+  if (command === "node" && args.length > 0 && !existsSync(args[0])) {
+    console.error(
+      `[browser-mcp] Built-in Browser Use MCP script missing at ${args[0]} (cwd=${process.cwd()}) — ` +
+        `browser tools will fail to start. Set BROWSER_MCP_DISABLED=1 to silence, or fix the bundle.`,
+    );
+  }
   return [
     {
       id: BROWSER_MCP_SERVER_ID,

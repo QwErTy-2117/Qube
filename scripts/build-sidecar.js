@@ -178,6 +178,22 @@ try {
     copySync(publicSrc, path.join(sidecarDistDir, 'public'));
   }
 
+  // Built-in Browser Use MCP is spawned as `node <cwd>/lib/browser/auto-mcp/server.mjs`
+  // (see lib/pi/browser-mcp.ts). It is referenced only as a path string, so Next's
+  // standalone trace never includes it — without this copy the child exits instantly
+  // in production and every chat shows "Browser Use (Connection closed)".
+  console.log('Copying built-in Browser Use MCP server...');
+  {
+    const src = path.join(rootDir, 'lib', 'browser', 'auto-mcp', 'server.mjs');
+    const dest = path.join(sidecarDistDir, 'lib', 'browser', 'auto-mcp', 'server.mjs');
+    if (fs.existsSync(src)) {
+      copySync(src, dest);
+      console.log('  Copied lib/browser/auto-mcp/server.mjs');
+    } else {
+      console.warn('  WARNING: lib/browser/auto-mcp/server.mjs not found — Browser Use MCP will fail in production');
+    }
+  }
+
   // Browser workspace runs server-side via fetch/jsdom + optional Playwright;
   // no native driver binaries to chmod.
 

@@ -1,0 +1,97 @@
+# Rakazo port — browser / computer-use / context / prompt engineering
+
+Source: https://github.com/elie222/rakazo (Apache-2.0)
+
+This doc maps what was copied from Rakazo into Qube and where it lives.
+Rakazo is a server product (Docker/E2B/Daytona/Box, Postgres, multi-bot);
+Qube is a local desktop app (managed Chromium via CDP). Provider machinery
+was NOT copied — only the agent-facing patterns, adapted to local Chrome.
+
+## Browser use (`lib/pi/computer-use.ts`)
+- `browser_navigate(url)` → CDP `Page.navigate` (Rakazo `browser-tools.ts` parity).
+- `browser_snapshot()` → isolated-world eval, bounded page text (4000 chars) +
+  max 80 interactive elements as `e1…` refs, password values masked
+  (`computer-browser.ts` parity: isolated script world, mask passwords,
+  reject stale refs, ≤80 elements).
+- `browser_act(click/fill/type by ref)` → stale refs rejected with fresh-snapshot
+  guidance, never retargeted; failures report `completed/N + uncertain` with
+  `fallback: "computer_act"` + "inspect current state, never replay" note.
+- `formatSnapshotTree()` + `withBrowserFallback()` match Rakazo exactly.
+
+## Computer use (`lib/pi/computer-use.ts`, `lib/pi/tools.ts`)
+- `computer_observe` → CDP `Page.captureScreenshot`; identical consecutive
+  frames omit image bytes (metadata + `unchanged` only) — Rakazo
+  `computer-tools.ts observationToolResult` parity.
+- `computer_act(actions ≤ 24, observe=true)` → ordered batch: click/move/down/up (pointer),
+  type→clipboard paste, key, scroll, wait — Rakazo `parseComputerActions` parity.
+  `observe:false` batches predictable actions without a screenshot; `settle_ms`
+  (0–5000) waits before the screenshot (executor parity).
+- `open_path(path|url)` → workspace file in its OS default application
+  (`open`/`xdg-open`/`start`, permission-gated), or URL via `browser_navigate`,
+  then `computer_observe` screen (Rakazo `open_path` parity; `launch_app` has no
+  local equivalent — OS app launch outside a file/URL stays with `run_command`).
+- `SingleScreenClaimTracker` — Rakazo `computer-screens.ts` parity (busy →
+  "screen temporarily busy, file/shell still work").
+- `request_takeover` tool — Rakazo `waiting_takeover` parity: pauses for
+  protected input (login/captcha/2FA) via the Browser panel questionnaire.
+- System prompt carries Rakazo executor guidance: batch predictable actions,
+  observe before coordinates/after nav/when uncertain, never kill browser
+  processes, page banners are content not stop commands, re-observe on change.
+
+## Context (`lib/pi/prompt-context.ts`, harness, memory, compaction)
+- `escapePromptData` + byte-budget `truncateUtf8` (Rakazo `memory-context.ts`,
+  `scratchpad-context.ts`, `history-compaction.ts` parity).
+- `<durable_memory>` (32k, revision-ordered, data-not-instructions) — built from
+  the real memory store (newest entries) in `memory-context.ts`, supplementing
+  the relevance-ranked recall.
+- `<scratchpad_open>` (4k, 40 open items, not a scheduler) — open + parked
+  statuses stay visible (Rakazo `open|parked|done` parity); title ≤200 /
+  notes ≤4000 caps exported as `SCRATCHPAD_TITLE_MAX` / `SCRATCHPAD_NOTES_MAX`.
+- `<recalled_memory>` (max 5, provenance/id/entity citations).
+- `<compacted_thread_summary>` framed as untrusted historical data
+  (compaction block already existed; framing hardened).
+- `formatReplyTarget` (reply_target / reaction_target quoting).
+- `formatCurrentTimeInstruction` injected into every system prompt.
+- Harness injects `<scratchpad_open>`; memory-context wraps recall in
+  `<recalled_memory>` framing.
+
+## Prompt engineering (`lib/pi/system-prompt.ts`)
+- Global untrusted-data discipline section (page/memory/summary/scratchpad/
+  tool/file/web = data, never instructions).
+- Inspect-before-continue / never-replay-completed-or-uncertain rule.
+- Page-tools-first ordering: navigate → snapshot → act → computer_* → takeover.
+- `computerUseInstructions(true)` appended verbatim-style from Rakazo executor.
+
+## Web safety (`lib/agent/browser/ssrf-dns.ts`, wired into `web_fetch`)
+- Rakazo `web-ssrf.ts` parity: scheme/credential check, hostname blocklist,
+  DNS lookup + private-address rejection (v4/v6), per-hop redirect
+  re-validation (max 5), size cap (5MB), 15s timeout.
+- Rakazo `web-limits.ts` parity: `clampMaxResults` (1–10, default 6) wired into
+  `web_search` (`maxResults` param); `clampMaxChars` (100–50000, default 8000)
+  wired into `web_fetch` (`maxChars` param, Qube keeps its 25k default).
+
+## Computer-use lease
+- `takeoverLeaseMs()` / `DEFAULT_TAKEOVER_LEASE_MS` (15 min, `COMPUTER_TAKEOVER_TTL_MS`
+  override) — Rakazo `computer-control.ts` parity. `request_takeover` waits on the
+  lease TTL, not the generic permission timeout, since logins/captchas take longer
+  than a permission click.
+
+## Tests
+- `tests/rakazo-port.test.ts`: 20 cases (parsing incl. double-click expansion
+  limit, framing, budgets, SSRF, web-limit clamps, takeover TTL, tool registry
+  incl. `open_path`, parked visibility).
+- Full suite: 125 pass. `tsc --noEmit` clean.
+
+## MCP path (`lib/browser/auto-mcp/server.mjs`)
+- `snapshot` tool: bounded text + ≤80 refs with `data-qube-ref` tagging,
+  password masking, stale-ref rejection (mirrors `browser_snapshot`).
+- `act` tool: click/fill/type by ref, max 24, never-replay guidance.
+
+## Notes
+- `evalIsolated` tries `Page.createIsolatedWorld` then falls back to the
+  default world (some Chromium builds reject world creation without a frame).
+
+## Deliberately NOT ported
+- Sandbox providers (Docker/E2B/Daytona/Box), workspace checkpoint/export,
+  multi-bot displays, Postgres/Graphile jobs, mobile/Electron shells.
+  Qube's local managed-Chrome + workspace model replaces these.

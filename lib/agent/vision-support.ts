@@ -8,15 +8,18 @@ export function detectModelImageSupport(modelId: string): boolean {
     lower.includes("vl") ||
     lower.includes("pixtral") ||
     lower.includes("llava") ||
+    lower.includes("bakllava") ||
     lower.includes("cogvlm") ||
     lower.includes("cogview") ||
     lower.includes("glm-4v") ||
     lower.includes("minicpm") ||
     lower.includes("deepseek-vl") ||
+    lower.includes("deepseek-vl2") ||
+    lower.includes("janus") ||
     lower.includes("idefics") ||
     lower.includes("florence") ||
     lower.includes("internvl") ||
-    lower.includes("internlm") ||
+    lower.includes("internlm-xcomposer") ||
     lower.includes("paligemma") ||
     lower.includes("moondream") ||
     lower.includes("reka") ||
@@ -25,6 +28,19 @@ export function detectModelImageSupport(modelId: string): boolean {
     lower.includes("imp-v") ||
     lower.includes("qwen-vl") ||
     lower.includes("qwen2-vl") ||
+    lower.includes("qwen2.5-vl") ||
+    lower.includes("qwen3-vl") ||
+    lower.includes("gemma-3") ||
+    lower.includes("gemma3") ||
+    lower.includes("gemma-4") ||
+    lower.includes("gemma4") ||
+    lower.includes("granite-vision") ||
+    lower.includes("llama-4") ||
+    lower.includes("llama4") ||
+    lower.includes("smolvlm") ||
+    lower.includes("mistral-small3") ||
+    lower.includes("mistral-small-3") ||
+    lower.includes("ministral-3b") ||
     (lower.includes("claude") && /3(\.\d)?|4|5/.test(lower)) ||
     (lower.includes("gemini") && !lower.includes("gemma")) ||
     lower.includes("gpt-4o") ||

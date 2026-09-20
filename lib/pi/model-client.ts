@@ -4,51 +4,41 @@ import { providerStore } from "./provider-store";
 
 type ChatModel = ReturnType<ReturnType<typeof createOpenAI>["chat"]> | ReturnType<ReturnType<typeof createOpenAI>["responses"]>;
 
-// Force stream:true for every AI request — Pi harness ensures streaming
-function wrapFetchWithStreamTrue(fetchFn: typeof fetch): typeof fetch {
-  const tryPatch = (bodyStr: string): string | null => {
-    try {
-      const parsed = JSON.parse(bodyStr);
-      if (parsed && typeof parsed === "object" && (parsed as any).stream !== true && ((parsed as any).model || (parsed as any).messages || (parsed as any).input || (parsed as any).prompt)) {
-        (parsed as any).stream = true;
-        return JSON.stringify(parsed);
-      }
-    } catch {}
-    return null;
-  };
-  return (async (input: any, init?: any) => {
-    try {
-      if (init?.body && typeof init.body === "string") {
-        const patched = tryPatch(init.body);
-        if (patched) {
-          const headers = new Headers(init.headers as HeadersInit);
-          headers.delete("content-length");
-          headers.set("content-type", "application/json");
-          init = { ...init, body: patched, headers };
-        }
-      } else if (input instanceof Request) {
-        const text = await (input as Request).clone().text().catch(() => "");
-        if (text) {
-          const patched = tryPatch(text);
-          if (patched) {
-            const headers = new Headers((input as Request).headers);
-            headers.delete("content-length");
-            headers.set("content-type", "application/json");
-            const newReq: any = new Request((input as Request).url, {
-              method: (input as Request).method,
-              headers,
-              body: patched,
-              // @ts-ignore - duplex required for Node fetch with body
-              duplex: "half",
-            } as any);
-            if ((input as any).signal) newReq.signal = (input as any).signal;
-            input = newReq;
-          }
-        }
-      }
-    } catch {}
-    return (fetchFn as any)(input, init);
-  }) as typeof fetch;
+// OpenCode Zen model routing (https://opencode.ai/docs/zen/):
+// - GPT / Grok / Muse-Spark families live behind /responses (OpenAI Responses API)
+// - DeepSeek / GLM / Kimi / MiniMax / Big Pickle / free models live behind
+//   /chat/completions (OpenAI Chat Completions API)
+// - Claude / Qwen (Anthropic Messages API) and Gemini (Google Generative API)
+//   need dedicated SDKs which Qube does not bundle — surface a clear error.
+const ZEN_RESPONSES_PATTERNS = [/^gpt-/i, /^grok/i, /^muse-spark/i];
+const ZEN_ANTHROPIC_PATTERNS = [/^claude/i, /^qwen/i];
+const ZEN_GOOGLE_PATTERNS = [/^gemini/i];
+
+function isZenResponsesModel(modelId: string): boolean {
+  return ZEN_RESPONSES_PATTERNS.some((re) => re.test(modelId));
+}
+
+function zenUnsupportedReason(modelId: string): string | null {
+  if (ZEN_ANTHROPIC_PATTERNS.some((re) => re.test(modelId))) {
+    return (
+      `Zen model "${modelId}" uses the Anthropic Messages API (https://opencode.ai/zen/v1/messages), ` +
+      `which Qube does not support yet. Pick a GPT, DeepSeek, GLM, Kimi, MiniMax or Big Pickle model instead, ` +
+      `or use the provider's direct API key.`
+    );
+  }
+  if (ZEN_GOOGLE_PATTERNS.some((re) => re.test(modelId))) {
+    return (
+      `Zen model "${modelId}" uses the Google Generative API, which Qube does not support yet. ` +
+      `Pick a GPT, DeepSeek, GLM, Kimi, MiniMax or Big Pickle model instead.`
+    );
+  }
+  if (/^jev-/i.test(modelId)) {
+    return (
+      `Zen model "${modelId}" uses a custom SystemOne endpoint which Qube does not support. ` +
+      `Pick another Zen model.`
+    );
+  }
+  return null;
 }
 
 export function createPiModelClient(qualifiedModelId?: string | null): ChatModel {
@@ -82,21 +72,33 @@ export function createPiModelClient(qualifiedModelId?: string | null): ChatModel
   }
 
   const effectiveBaseURL = provider.baseURL;
-  const streamFetch = wrapFetchWithStreamTrue(globalThis.fetch.bind(globalThis) as unknown as typeof fetch);
 
   if (provider.id === "mistral") {
     const client = createMistral({
       apiKey: provider.apiKey || "",
       baseURL: effectiveBaseURL,
-      fetch: streamFetch as any,
     });
+    return client.chat(modelId);
+  }
+
+  if (provider.id === "opencode") {
+    const unsupported = zenUnsupportedReason(modelId);
+    if (unsupported) throw new Error(unsupported);
+    const client = createOpenAI({
+      apiKey: provider.apiKey || "",
+      baseURL: effectiveBaseURL || "https://opencode.ai/zen/v1",
+    });
+    // GPT/Grok/Muse-Spark live behind /responses; everything else Qube
+    // supports lives behind /chat/completions.
+    if (isZenResponsesModel(modelId)) {
+      return (client as any).responses(modelId);
+    }
     return client.chat(modelId);
   }
 
   const client = createOpenAI({
     apiKey: provider.apiKey || "",
     baseURL: effectiveBaseURL,
-    fetch: streamFetch as any,
   });
   return client.chat(modelId);
 }
@@ -132,31 +134,40 @@ export function createPiModelClientForRequest(
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { chatGptAuth } = require("@/lib/chatgpt/handler") as typeof import("@/lib/chatgpt/handler");
     const baseFetch = chatGptAuth.proxyFetch(request) as typeof fetch;
-    const streamFetch = wrapFetchWithStreamTrue(baseFetch);
     const client = createOpenAI({
       baseURL: "/api/chatgpt",
       apiKey: "login-with-chatgpt-proxy",
-      fetch: streamFetch as any,
+      fetch: baseFetch as any,
     });
     return (client as any).responses(modelId);
   }
 
   const effectiveBaseURL = provider.baseURL;
-  const streamFetch = wrapFetchWithStreamTrue(globalThis.fetch.bind(globalThis) as unknown as typeof fetch);
 
   if (provider.id === "mistral") {
     const client = createMistral({
       apiKey: provider.apiKey || "",
       baseURL: effectiveBaseURL,
-      fetch: streamFetch as any,
     });
+    return client.chat(modelId);
+  }
+
+  if (provider.id === "opencode") {
+    const unsupported = zenUnsupportedReason(modelId);
+    if (unsupported) throw new Error(unsupported);
+    const client = createOpenAI({
+      apiKey: provider.apiKey || "",
+      baseURL: effectiveBaseURL || "https://opencode.ai/zen/v1",
+    });
+    if (isZenResponsesModel(modelId)) {
+      return (client as any).responses(modelId);
+    }
     return client.chat(modelId);
   }
 
   const client = createOpenAI({
     apiKey: provider.apiKey || "",
     baseURL: effectiveBaseURL,
-    fetch: streamFetch as any,
   });
   return client.chat(modelId);
 }

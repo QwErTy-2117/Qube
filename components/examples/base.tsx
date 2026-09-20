@@ -132,7 +132,7 @@ const DESTRUCTIVE_KEYWORDS = [
 import { QubeSidebar } from "@/components/chat/qube-sidebar";
 import { ChatSearchDialog } from "@/components/chat/chat-search-dialog";
 import { ChatTitle } from "@/components/chat/chat-title";
-import { ThreadUrlSync } from "@/components/chat/chat-route";
+import { ThreadUrlSync, WorkspaceThreadReset } from "@/components/chat/chat-route";
 
 // Sidebar lives in components/chat/qube-sidebar.tsx (expandable w/ curtain
 // reveal, thread list, search). Kept here only as a thin alias.
@@ -298,6 +298,31 @@ const isNewChatView = (s: AssistantState) =>
   (!s.thread.isLoading || s.threads.isLoading);
 
 const Thread: FC = () => {
+  const isNew = useAuiState(isNewChatView);
+  const mainId = useAuiState((s) => (s.threads as any)?.mainThreadId as string | undefined);
+  // The handoff choreography (composer gliding center → bottom, welcome
+  // fading, apps strip sliding under the bar) plays ONLY when the user sends
+  // the first message from the landing composer: same thread, landing →
+  // chat. Navigating to another chat (new or existing) switches instantly.
+  const prevRef = useRef<{ isNew: boolean; id: string | undefined } | undefined>(undefined);
+  const prev = prevRef.current;
+  const sendHandoff = !!prev && prev.isNew && !isNew && prev.id === mainId;
+  useEffect(() => {
+    prevRef.current = { isNew, id: mainId };
+  });
+  const glideId = sendHandoff ? "qube-composer" : undefined;
+  // Animated handoff exits (send only); navigation switches cut instantly.
+  // Sequence: apps strip slides under the bar and vanishes first, the bar
+  // glides down only once the strip is gone, messages fade in on landing.
+  const welcomeExit = sendHandoff
+    ? { opacity: 0, y: -20, transition: { duration: 0.25, ease: "easeIn" as const } }
+    : { opacity: 0, transition: { duration: 0 } };
+  const stripExit = sendHandoff
+    ? { opacity: 0, y: 72, transition: { duration: 0.3, ease: "easeIn" as const } }
+    : { opacity: 0, transition: { duration: 0 } };
+  const glideTransition = sendHandoff
+    ? { type: "spring" as const, stiffness: 260, damping: 30, delay: 0.26 }
+    : { type: "spring" as const, stiffness: 260, damping: 30 };
   return (
     <ThreadPrimitive.Root
       className="aui-root aui-thread-root bg-background @container flex h-full flex-col"
@@ -314,40 +339,73 @@ const Thread: FC = () => {
         data-slot="aui_thread-viewport"
         className="relative flex flex-1 flex-col overflow-x-auto overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden scroll-smooth px-4 pt-4"
       >
-        <AuiIf condition={isNewChatView}>
-          <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4">
-            <ThreadWelcome />
-            <div className="flex w-full max-w-(--thread-max-width) flex-col">
-              <div className="relative z-10 w-full">
-                <Composer />
+        {/* Landing ↔ chat handoff: popLayout pulls the exiting branch out of
+            layout so the incoming layout is final instantly. On send (same
+            thread gaining its first message) the composer glides center →
+            bottom via the shared layoutId while the welcome fades up, the
+            apps strip slides down under the bar, and the messages fade in.
+            Navigation switches render statically (no layoutId, instant). */}
+        <AnimatePresence initial={false} mode="popLayout">
+          {isNew ? (
+            <motion.div
+              key="landing"
+              className="flex flex-1 flex-col items-center justify-center gap-6 px-4"
+            >
+              <motion.div exit={welcomeExit}>
+                <ThreadWelcome />
+              </motion.div>
+              <div className="flex w-full max-w-(--thread-max-width) flex-col">
+                <motion.div
+                  layoutId={glideId}
+                  transition={glideTransition}
+                  className="relative z-10 w-full"
+                >
+                  <Composer />
+                </motion.div>
+                <motion.div exit={stripExit}>
+                  <ConnectorsStrip />
+                </motion.div>
               </div>
-              <ConnectorsStrip />
-            </div>
-          </div>
-        </AuiIf>
-
-        <AuiIf condition={(s) => !isNewChatView(s)}>
-          <div
-            data-slot="aui_message-group"
-            className="mb-14 flex flex-col gap-y-6 empty:hidden"
-          >
-            <ThreadPrimitive.Messages>
-              {({ message }) => {
-                if (message.composer.isEditing) return <EditComposer />;
-                if (message.role === "user") return <UserMessage />;
-                return <AssistantMessage />;
-              }}
-            </ThreadPrimitive.Messages>
-          </div>
-          <ThreadPrimitive.ViewportFooter
-            className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-2 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
-          >
-            <ThreadScrollToBottom />
-            <GoalsPanel />
-            <QuestionPanel />
-            <Composer />
-          </ThreadPrimitive.ViewportFooter>
-        </AuiIf>
+            </motion.div>
+          ) : (
+            // NOTE: no opacity animation on this wrapper — the shared-element
+            // composer glide must stay visible while it travels. Only the
+            // messages fade in (after the bar lands).
+            <motion.div
+              key="chat"
+              className="flex flex-1 flex-col"
+            >
+              <motion.div
+                data-slot="aui_message-group"
+                initial={sendHandoff ? { opacity: 0, y: 8 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: sendHandoff ? 0.32 : 0 }}
+                className="mb-14 flex flex-col gap-y-6 empty:hidden"
+              >
+                <ThreadPrimitive.Messages>
+                  {({ message }) => {
+                    if (message.composer.isEditing) return <EditComposer />;
+                    if (message.role === "user") return <UserMessage />;
+                    return <AssistantMessage />;
+                  }}
+                </ThreadPrimitive.Messages>
+              </motion.div>
+              <ThreadPrimitive.ViewportFooter
+                className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-2 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
+              >
+                <ThreadScrollToBottom />
+                <GoalsPanel />
+                <QuestionPanel />
+                <motion.div
+                  layoutId={glideId}
+                  transition={glideTransition}
+                >
+                  <Composer />
+                </motion.div>
+              </ThreadPrimitive.ViewportFooter>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </ThreadPrimitive.Viewport>
 
       <SelectionToolbar />
@@ -498,6 +556,11 @@ const Composer: FC = () => {
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const [showAnimated, setShowAnimated] = useState(true);
   const aui = useAui();
+  // Scoped to this instance's shell: document.querySelector would grab the
+  // first shell in the document, which during branch transitions is the
+  // stale exiting copy — freezing the suggestions overlay visible while
+  // typing in the new composer.
+  const shellRef = useRef<HTMLDivElement | null>(null);
 
   // Large pastes become .txt attachments instead of flooding the input.
   useEffect(() => {
@@ -524,9 +587,7 @@ const Composer: FC = () => {
   }, [aui]);
 
   useEffect(() => {
-    const shell = document.querySelector(
-      "[data-slot='aui_composer-shell']"
-    ) as HTMLElement;
+    const shell = shellRef.current;
     if (!shell) return;
 
     const check = () => {
@@ -553,8 +614,10 @@ const Composer: FC = () => {
   const mention = unstable_useMentionAdapter({ fallbackIcon: WrenchIcon });
 
   // Installed skills (system + custom + marketplace) as / commands.
-  // Selecting one inserts "/name " so the user keeps typing the task;
-  // the Pi harness auto-applies the skill from its description.
+  // Selecting one inserts `:skill[name]` directive syntax (not plain text) so
+  // the SyncPlugin renders it as a badge chip in the composer and
+  // DirectiveText renders it as a badge in the sent message.
+  // The Pi harness auto-applies the skill from its description.
   const [slashSkills, setSlashSkills] = useState<SlashSkill[]>(() => loadSlashSkills());
   useEffect(() => {
     let cancelled = false;
@@ -585,7 +648,12 @@ const Composer: FC = () => {
   const insertSkillCommand = useCallback(
     (name: string) => {
       try {
-        aui.composer().setText(`/${name} `);
+        // Directive syntax (:skill[name]{name=name}) — renders as a badge
+        // chip in the composer (SyncPlugin → DirectiveNode → DirectiveChip)
+        // and as a Badge in the sent message (DirectiveText). The skill name
+        // stays in the text so the harness still matches it.
+        const safe = String(name).replace(/[\[\]{}:]/g, "");
+        aui.composer().setText(`:skill[${safe}]{name=${safe}} `);
       } catch (e) {
         console.error("[slash] failed to insert skill command", e);
       }
@@ -655,6 +723,7 @@ const Composer: FC = () => {
         />
         <ComposerPrimitive.AttachmentDropzone asChild>
           <div
+            ref={shellRef}
             data-slot="aui_composer-shell"
             className={cn(
               "flex w-full flex-col gap-2 rounded-(--composer-radius) p-(--composer-padding) transition-[border-color,box-shadow] data-[dragging=true]:border-dashed",
@@ -669,6 +738,7 @@ const Composer: FC = () => {
               <div className="relative">
                 <LexicalComposerInput
                   directiveChip={DirectiveChip}
+                  autoFocus
                   placeholder={PLACEHOLDERS[0]}
                   className="aui-composer-input [&_.aui-lexical-placeholder]:text-muted-foreground/50 [&_.aui-lexical-placeholder]:opacity-0 relative max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-muted [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:text-foreground [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none [&_.aui-lexical-placeholder]:pointer-events-none [&_.aui-lexical-placeholder]:absolute [&_.aui-lexical-placeholder]:top-0 [&_.aui-lexical-placeholder]:right-0 [&_.aui-lexical-placeholder]:left-0 [&_.aui-lexical-placeholder]:truncate [&_.aui-lexical-placeholder]:px-2.5 [&_.aui-lexical-placeholder]:py-1"
                 />
@@ -738,6 +808,12 @@ const SendButton: FC = () => {
 };
 
 const ComposerAction: FC = () => {
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const hasInput = useAuiState((s) => {
+    const t = (s.composer as unknown as { text?: string })?.text ?? "";
+    const atts = (s.composer as unknown as { attachments?: unknown[] })?.attachments?.length ?? 0;
+    return String(t).trim().length > 0 || atts > 0;
+  });
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
       <div className="flex items-center gap-1">
@@ -777,22 +853,23 @@ const ComposerAction: FC = () => {
             </ComposerPrimitive.StopDictation>
           </AuiIf>
         </AuiIf>
-        <AuiIf condition={(s) => !s.thread.isRunning}>
+        {!isRunning ? (
           <SendButton />
-        </AuiIf>
-        <AuiIf condition={(s) => s.thread.isRunning}>
+        ) : hasInput ? (
+          <SendButton />
+        ) : (
           <ComposerPrimitive.Cancel asChild>
             <Button
               type="button"
               variant="default"
               size="icon"
-               className="aui-composer-cancel !size-7 !rounded-full"
+              className="aui-composer-cancel !size-7 !rounded-full"
               aria-label="Stop generating"
             >
               <SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" />
             </Button>
           </ComposerPrimitive.Cancel>
-        </AuiIf>
+        )}
       </div>
     </div>
   );
@@ -1232,7 +1309,7 @@ const BrowserAutoOpener: FC = () => {
       }>) {
         const parts = m?.content || m?.parts || [];
         for (const p of parts) {
-          if (p?.type === "tool-call" && typeof p?.toolName === "string" && p.toolName.startsWith("browser_")) {
+          if (p?.type === "tool-call" && typeof p?.toolName === "string" && (p.toolName.startsWith("browser_") || ["open_tab","navigate","tabs","user_tabs","page_info","cdp","move_mouse","run_action_plan","wait_load","claim_tab","finalize_tabs","ping","info"].includes(p.toolName))) {
             ids.push(typeof p.toolCallId === "string" && p.toolCallId ? p.toolCallId : `${p.toolName}`);
           }
         }
@@ -1283,6 +1360,7 @@ export const Base: FC = () => {
       <ChatErrorWatcher />
       <BrowserAutoOpener />
       <ThreadUrlSync />
+      <WorkspaceThreadReset />
       <DebugSend />
       <ChatSearchDialog />
       <div data-tauri-no-drag-region>

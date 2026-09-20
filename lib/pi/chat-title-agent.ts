@@ -67,8 +67,9 @@ async function generateTitleText(user: string, assistant: string): Promise<strin
     return null;
   }
 
-  // NOTE: must use streamText (not generateText) — model-client forces
-  // stream:true on every fetch, which breaks generateText's JSON parsing.
+  // NOTE: streamText is used for titles so failures stream the same way as
+  // the main harness; generateText would also work (model-client no longer
+  // forces stream:true globally).
   const { streamText } = await import("ai");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);

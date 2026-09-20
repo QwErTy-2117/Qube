@@ -107,6 +107,7 @@ import Cloudflare from "@lobehub/icons/es/Cloudflare";
 import Vercel from "@lobehub/icons/es/Vercel";
 import PPIO from "@lobehub/icons/es/PPIO";
 import Github from "@lobehub/icons/es/Github";
+import OpenCode from "@lobehub/icons/es/OpenCode";
 
 interface MemoryEntry {
   id: string;
@@ -535,6 +536,14 @@ export const DEFAULT_PROVIDERS: ProviderConfig[] = [
     models: [],
   },
   {
+    id: "opencode",
+    name: "OpenCode Zen",
+    baseURL: "https://opencode.ai/zen/v1",
+    enabled: false,
+    hasApiKey: true,
+    models: [],
+  },
+  {
     id: "custom",
     name: "Custom OpenAI",
     baseURL: "",
@@ -597,6 +606,7 @@ export const LOBE_ICONS_MAP: Record<string, any> = {
   Vercel,
   PPIO,
   Github,
+  OpenCode,
 };
 
 const PROVIDER_ID_TO_ICON: Record<string, string> = {
@@ -643,6 +653,7 @@ const PROVIDER_ID_TO_ICON: Record<string, string> = {
   ppio: "PPIO",
   github: "Github",
   custom: "OpenAI",
+  opencode: "OpenCode",
   chatgpt: "OpenAI",
 };
 
@@ -713,6 +724,7 @@ export function detectModelIcon(modelId: string, providerId: string): string {
   if (lowerProv === "vercel") return "Vercel";
   if (lowerProv === "ppio") return "PPIO";
   if (lowerProv === "github") return "Github";
+  if (lowerProv === "opencode") return "OpenCode";
 
   return "OpenAI";
 }
@@ -726,13 +738,13 @@ interface FetchedModel {
   reasoning: boolean;
 }
 
-async function fetchProviderModels(baseURL: string, apiKey: string): Promise<FetchedModel[]> {
+async function fetchProviderModels(baseURL: string, apiKey: string, providerId?: string): Promise<FetchedModel[]> {
   const res = await fetch("/api/providers/models", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ baseURL, apiKey }),
+    body: JSON.stringify({ baseURL, apiKey, providerId }),
   });
 
   if (!res.ok) {
@@ -749,24 +761,62 @@ async function fetchProviderModels(baseURL: string, apiKey: string): Promise<Fet
       if (m.object === "model" || !m.object) {
         if (seen.has(m.id)) continue;
         seen.add(m.id);
+        // Prefer ground-truth capabilities when the server provides them
+        // (Ollama /api/show: ["completion","vision","thinking","tools"...]).
+        const caps: string[] = Array.isArray(m.capabilities)
+          ? m.capabilities.map((c: unknown) => String(c).toLowerCase())
+          : [];
+        const hasCaps = caps.length > 0;
         const imageInput =
-          m.architecture?.modality === "text+image" ||
-          m.capabilities?.vision === true ||
-          m.capabilities?.image_input === true ||
-          detectModelImageSupport(m.id);
+          (hasCaps ? caps.includes("vision") : false) ||
+          (!hasCaps &&
+            (m.architecture?.modality === "text+image" ||
+              m.capabilities?.vision === true ||
+              m.capabilities?.image_input === true ||
+              detectModelImageSupport(m.id)));
         const reasoning =
-          m.capabilities?.reasoning?.supported === true ||
-          m.capabilities?.reasoning === true ||
-          m.reasoning?.supported === true ||
-          m.reasoning === true ||
-          m.architecture?.reasoning === true ||
-          detectModelThinkingSupport(m.id);
+          (hasCaps ? caps.includes("thinking") : false) ||
+          (!hasCaps &&
+            (m.capabilities?.reasoning?.supported === true ||
+              m.capabilities?.reasoning === true ||
+              m.reasoning?.supported === true ||
+              m.reasoning === true ||
+              m.architecture?.reasoning === true ||
+              detectModelThinkingSupport(m.id)));
         models.push({ id: m.id, imageInput, reasoning });
       }
     }
     return models;
   }
   throw new Error(`Unexpected response format from ${url}`);
+}
+
+/**
+ * Minimal no-tools chat probe: verifies the key can actually run inference.
+ * Listing /models alone is NOT enough (it passes even when chat quota is
+ * gone, the workspace is blocked, or the model needs another endpoint).
+ * Returns null when chat works, otherwise the human-readable reason.
+ */
+async function probeProviderChat(
+  providerId: string,
+  baseURL: string,
+  apiKey: string,
+  modelId: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch("/api/providers/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providerId, baseURL, apiKey, modelId }),
+    });
+    const body = await res.json().catch(() => null);
+    if (body?.ok) return null;
+    const err = body?.error || "Chat probe failed";
+    const hint = body?.hint ? ` ${body.hint}` : "";
+    return `${err}${hint}`;
+  } catch (e) {
+    return e instanceof Error ? e.message : "Chat probe failed";
+  }
 }
 
 function SwitchToggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (v: boolean) => void }) {
@@ -1289,9 +1339,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     setSavingConfigure(true);
 
     try {
-      const fetchedModels = await fetchProviderModels(configBaseUrl || "", configApiKey || "");
+      const fetchedModels = await fetchProviderModels(configBaseUrl || "", configApiKey || "", configureProvider.id);
       const provId = configureProvider.id;
-      const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter"];
+      const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter", "opencode"];
       const providerIcon = PROVIDER_ID_TO_ICON[provId] || provId.charAt(0).toUpperCase() + provId.slice(1);
       const qualifiedModels = fetchedModels.map((model) => ({
         id: `${provId}:${model.id}`,
@@ -1301,6 +1351,25 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         imageInput: model.imageInput,
         reasoning: model.reasoning,
       }));
+
+      // Chat probe: listing models only checks the key. A 1-token test chat
+      // catches quota/blocked/endpoint problems upfront with a clear message.
+      // Rate limits are temporary so they warn but don't block saving.
+      if (fetchedModels.length > 0 && configApiKey) {
+        const probeId =
+          provId === "opencode"
+            ? fetchedModels.find((m) => /^(gpt-|deepseek|glm|kimi|minimax|big-pickle|mimo|ling|nemotron)/i.test(m.id))?.id ||
+              fetchedModels[0].id
+            : fetchedModels[0].id;
+        const probeError = await probeProviderChat(provId, configBaseUrl || "", configApiKey || "", probeId);
+        if (probeError) {
+          const temporary = /rate limit|quota exceeded|429/i.test(probeError);
+          if (!temporary) {
+            throw new Error(`Models listed OK, but a test chat with "${probeId}" failed:\n${probeError}`);
+          }
+          console.warn(`[SettingsDialog] Chat probe rate-limited (saving anyway): ${probeError}`);
+        }
+      }
 
       await new Promise((r) => setTimeout(r, 400));
       setSavedConfigure(true);
@@ -1461,7 +1530,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     await new Promise((r) => setTimeout(r, 600));
 
     const provId = manageProvider?.id || "";
-    const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter"];
+    const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter", "opencode"];
     const providerIcon = PROVIDER_ID_TO_ICON[provId] || provId.charAt(0).toUpperCase() + provId.slice(1);
     const newModel = {
       id: customModelCode.trim(),
@@ -1485,9 +1554,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     if (!manageProvider) return;
     setRefreshingModels(true);
     try {
-      const fetchedModels = await fetchProviderModels(manageProvider.baseURL || "", manageProvider.apiKey || "");
+      const fetchedModels = await fetchProviderModels(manageProvider.baseURL || "", manageProvider.apiKey || "", manageProvider.id);
       const provId = manageProvider.id;
-      const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter"];
+      const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter", "opencode"];
       const providerIcon = PROVIDER_ID_TO_ICON[provId] || provId.charAt(0).toUpperCase() + provId.slice(1);
       const qualified = fetchedModels.map((model) => {
         const existing = manageModels.find((m) => m.id === `${provId}:${model.id}`);

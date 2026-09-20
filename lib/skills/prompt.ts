@@ -35,7 +35,7 @@ export function buildSkillsPromptSection(skills: SkillConfig[]): string {
   const parts: string[] = [];
   parts.push(`## Skills (${usable.length} installed — Claude Code SKILL.md format)`);
   parts.push(
-    `Skills are reusable playbooks. Auto-apply one when its description matches the request; the user can also invoke one manually with /name. When a skill applies, follow its instructions exactly (they override generic defaults). Keep the response grounded in real tool results.`
+    `Skills are reusable playbooks. Auto-apply one when its description matches the request; the user can also invoke one manually with /name (arrives as a :skill[name] badge in the message text — treat it exactly like /name). When a skill applies, follow its instructions exactly (they override generic defaults). Keep the response grounded in real tool results.`
   );
   if (auto.length > 0) {
     parts.push(`### Auto-applicable`);

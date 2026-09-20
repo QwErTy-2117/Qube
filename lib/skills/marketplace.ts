@@ -20,6 +20,15 @@ export interface MarketplaceSkill {
   marketplace: "skills.sh" | "SkillsMP" | "ClawHub" | "Anthropic Official";
   marketplaceUrl: string;
   version: string;
+  // Live-catalog extensions (absent on the static curated snapshot rows
+  // unless the route fills them in).
+  installs?: number;
+  live?: boolean;
+  safety?: { risk: "safe" | "medium" | "unaudited" | "curated"; alerts?: number };
+  /** Upstream "owner/repo" for live rows (detail + audit provenance). */
+  source?: string;
+  /** Stable upstream id "owner/repo/slug" for lazy detail fetch. */
+  detailId?: string;
 }
 
 export const MARKETPLACE_URLS: Record<string, string> = {

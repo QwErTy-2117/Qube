@@ -14,6 +14,7 @@ type MCPClient = Awaited<ReturnType<typeof import("@ai-sdk/mcp").createMCPClient
 // npx -y downloads on first run can take a while; beyond this we fail that one
 // server only (never the whole chat) so the user gets a clear warning.
 const MCP_STARTUP_TIMEOUT_MS = parseInt(process.env.PI_MCP_TIMEOUT_MS || "45000", 10);
+let _fallbackCdpId = 1;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -42,37 +43,271 @@ async function probeCdpEndpoint(args: string[]): Promise<boolean> {
 }
 
 /**
+ * Fallback browser via managed Chrome CDP (for when obu not set up).
+ * Tries to perform basic navigation via http://127.0.0.1:9222 when obu fails.
+ */
+async function fallbackBrowserViaManagedChrome(toolName: string, args: unknown): Promise<string | null> {
+  const isObuSocketError = (msg: string) => /socket not provided|active\.json|no connectable socket/i.test(msg);
+  // Only fallback for navigation-type tools
+  const fallbackTools = new Set(["open_tab", "navigate", "tabs", "user_tabs", "page_info", "cdp", "ping", "info", "wait_load", "move_mouse", "name_session", "turn_ended", "finalize_tabs"]);
+  if (!fallbackTools.has(toolName)) return null;
+  try {
+    const { getBrowserPort } = await import("@/lib/browser/managed-chrome");
+    const port = getBrowserPort();
+    const base = `http://127.0.0.1:${port}`;
+    // Quick probe
+    const probe = await fetch(`${base}/json/version`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
+    if (!probe || !probe.ok) return null;
+
+    const a = args as Record<string, unknown>;
+    if (toolName === "open_tab" || toolName === "navigate") {
+      const url = (a.url as string) || "";
+      if (!url || !/^https?:\/\//i.test(url)) return null;
+      // Try CDP Page.navigate on existing tab, fallback to /json/new
+      try {
+        const res = await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(3000) });
+        const targets = (await res.json()) as Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>;
+        const page = targets.filter((t) => t.type === "page")[0];
+        if (page?.webSocketDebuggerUrl) {
+          const { default: WebSocket } = await import("ws");
+          const wsUrl = page.webSocketDebuggerUrl;
+          await new Promise<void>((resolve, reject) => {
+            const ws = new WebSocket(wsUrl, { handshakeTimeout: 5000 });
+            let done = false;
+            const t = setTimeout(() => { if (!done) { done = true; try { ws.close(); } catch {} reject(new Error("CDP timeout")); } }, 5000);
+            ws.on("open", () => {
+              const id = _fallbackCdpId++ % 100000;
+              ws.send(JSON.stringify({ id, method: "Page.navigate", params: { url } }));
+              ws.on("message", (raw: Buffer) => {
+                try {
+                  const msg = JSON.parse(raw.toString());
+                  if (msg.id === id) {
+                    clearTimeout(t);
+                    done = true;
+                    try { ws.close(); } catch {}
+                    resolve();
+                  }
+                } catch {}
+              });
+            });
+            ws.on("error", (e) => { if (!done) { done = true; clearTimeout(t); reject(e); } });
+          });
+          await new Promise((r) => setTimeout(r, 800));
+          return JSON.stringify({ fallback: true, via: "managed-chrome-cdp", url, note: "Navigated via fallback managed Chrome (obu not set up). Ask user to run `npx open-browser-use setup` for full extension features." });
+        }
+      } catch {}
+      // Fallback to /json/new
+      const res = await fetch(`${base}/json/new?${encodeURIComponent(url)}`, { method: "PUT", signal: AbortSignal.timeout(5000) }).catch(() => null);
+      if (res && res.ok) {
+        return JSON.stringify({ fallback: true, via: "managed-chrome-new-tab", url, note: "Opened via fallback managed Chrome. Run `npx open-browser-use setup` for full features." });
+      }
+    }
+    if (toolName === "tabs") {
+      const res = await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(3000) });
+      if (res.ok) {
+        const data = await res.json();
+        return JSON.stringify({ fallback: true, via: "managed-chrome", tabs: data });
+      }
+    }
+    if (toolName === "ping" || toolName === "info") {
+      const res = await fetch(`${base}/json/version`, { signal: AbortSignal.timeout(3000) });
+      if (res.ok) {
+        const data = await res.json();
+        return JSON.stringify({ fallback: true, via: "managed-chrome", info: data, note: "obu not set up — using managed Chrome fallback. Run `npx open-browser-use setup`." });
+      }
+    }
+    if (toolName === "user_tabs") {
+      const res = await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(3000) });
+      if (res.ok) {
+        const data = await res.json();
+        return JSON.stringify({ fallback: true, via: "managed-chrome", tabs: data });
+      }
+    }
+    if (toolName === "page_info") {
+      try {
+        const res = await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(3000) });
+        const targets = (await res.json()) as Array<{ id: string; type: string; webSocketDebuggerUrl?: string; url?: string; title?: string }>;
+        const page = targets.filter((t) => t.type === "page")[0];
+        if (page?.webSocketDebuggerUrl) {
+          const { default: WebSocket } = await import("ws");
+          const wsUrl = page.webSocketDebuggerUrl;
+          const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+            const ws = new WebSocket(wsUrl, { handshakeTimeout: 5000 });
+            let done = false;
+            const t = setTimeout(() => { if (!done) { done = true; try { ws.close(); } catch {} reject(new Error("CDP timeout")); } }, 6000);
+            ws.on("open", () => {
+              const id = _fallbackCdpId++ % 100000;
+              ws.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression: "({title: document.title, url: location.href, text: document.body.innerText.slice(0,8000)})", returnByValue: true } }));
+              ws.on("message", (raw: Buffer) => {
+                try {
+                  const msg = JSON.parse(raw.toString());
+                  if (msg.id === id) {
+                    clearTimeout(t);
+                    done = true;
+                    try { ws.close(); } catch {}
+                    resolve(msg.result?.result?.value || {});
+                  }
+                } catch {}
+              });
+            });
+            ws.on("error", (e) => { if (!done) { done = true; clearTimeout(t); reject(e); } });
+          });
+          return JSON.stringify({ fallback: true, via: "managed-chrome-cdp", ...result });
+        }
+      } catch {}
+    }
+    if (toolName === "cdp") {
+      const method = (a.method as string) || "";
+      const params = (a.params as Record<string, unknown>) || {};
+      if (!method) return null;
+      try {
+        const res = await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(3000) });
+        const targets = (await res.json()) as Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>;
+        const page = targets.filter((t) => t.type === "page")[0];
+        if (page?.webSocketDebuggerUrl) {
+          const { default: WebSocket } = await import("ws");
+          const wsUrl = page.webSocketDebuggerUrl;
+          const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
+            const ws = new WebSocket(wsUrl, { handshakeTimeout: 5000 });
+            let done = false;
+            const t = setTimeout(() => { if (!done) { done = true; try { ws.close(); } catch {} reject(new Error("CDP timeout")); } }, 8000);
+            ws.on("open", () => {
+              const id = _fallbackCdpId++ % 100000;
+              ws.send(JSON.stringify({ id, method, params }));
+              ws.on("message", (raw: Buffer) => {
+                try {
+                  const msg = JSON.parse(raw.toString());
+                  if (msg.id === id) {
+                    clearTimeout(t);
+                    done = true;
+                    try { ws.close(); } catch {}
+                    if (msg.error) reject(new Error(msg.error.message));
+                    else resolve(msg.result || {});
+                  }
+                } catch {}
+              });
+            });
+            ws.on("error", (e) => { if (!done) { done = true; clearTimeout(t); reject(e); } });
+          });
+          return JSON.stringify({ fallback: true, via: "managed-chrome-cdp", method, result });
+        }
+      } catch (e) {
+        return JSON.stringify({ fallback: true, error: String(e).slice(0,500) });
+      }
+    }
+    if (toolName === "wait_load") {
+      await new Promise((r) => setTimeout(r, 1200));
+      return JSON.stringify({ fallback: true, via: "managed-chrome", waited: true });
+    }
+    if (toolName === "move_mouse") {
+      const x = (a.x as number) ?? 0, y = (a.y as number) ?? 0;
+      try {
+        const res = await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(3000) });
+        const targets = (await res.json()) as Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>;
+        const page = targets.filter((t) => t.type === "page")[0];
+        if (page?.webSocketDebuggerUrl) {
+          const { default: WebSocket } = await import("ws");
+          const wsUrl = page.webSocketDebuggerUrl;
+          await new Promise<void>((resolve, reject) => {
+            const ws = new WebSocket(wsUrl, { handshakeTimeout: 5000 });
+            let done = false;
+            const t = setTimeout(() => { if (!done) { done = true; try { ws.close(); } catch {} reject(new Error("CDP timeout")); } }, 4000);
+            ws.on("open", () => {
+              const id = _fallbackCdpId++ % 100000;
+              ws.send(JSON.stringify({ id, method: "Input.dispatchMouseEvent", params: { type: "mouseMoved", x, y } }));
+              ws.on("message", (raw: Buffer) => {
+                try {
+                  const msg = JSON.parse(raw.toString());
+                  if (msg.id === id) { clearTimeout(t); done = true; try { ws.close(); } catch {} resolve(); }
+                } catch {}
+              });
+            });
+            ws.on("error", (e) => { if (!done) { done = true; clearTimeout(t); reject(e); } });
+          });
+          return JSON.stringify({ fallback: true, via: "managed-chrome-cdp", moved: { x, y } });
+        }
+      } catch {}
+    }
+    if (toolName === "name_session" || toolName === "turn_ended" || toolName === "finalize_tabs") {
+      return JSON.stringify({ fallback: true, via: "managed-chrome", handled: toolName, note: "obu not set up — no-op fallback, continuing" });
+    }
+  } catch {}
+  return null;
+}
+
+/**
  * Wrap an MCP tool so execution failures come back as detailed JSON
  * (server, args, real error) instead of a generic "An error occurred."
  * throw that leaves the agent guessing. The model can then narrate the
  * failure and retry or fall back instead of apologizing blindly.
+ * For obu socket errors, tries managed-Chrome fallback automatically.
  */
 function withMcpErrorDetail(toolName: string, serverName: string, tool: Record<string, any>): Record<string, any> {
   const inner = tool?.execute;
   if (typeof inner !== "function") return tool;
+  // Helper to return a proper CallToolResult shape (so mcpToModelOutput doesn't do 'content' in string)
+  const asCallToolResult = (text: string, isError = false) => ({
+    content: [{ type: "text", text }],
+    isError,
+  });
+
   return {
     ...tool,
     execute: async (args: unknown, opts?: unknown) => {
       try {
-        return await inner(args, opts);
+        const result = await inner(args, opts);
+        // Detect obu socket error returned as successful result with error content
+        // (obu mcp returns isError or text containing socket message rather than throwing)
+        let resultStr = "";
+        try {
+          if (typeof result === "string") resultStr = result;
+          else if (result && typeof result === "object") resultStr = JSON.stringify(result);
+        } catch {}
+        if (/socket not provided|active\.json|no connectable socket/i.test(resultStr)) {
+          console.warn(`[pi-mcp] Tool "${toolName}" obu socket missing — trying managed-Chrome fallback`);
+          const fb = await fallbackBrowserViaManagedChrome(toolName, args);
+          if (fb) return asCallToolResult(fb, false);
+          // No fallback available — return helpful hint as CallToolResult
+          return asCallToolResult(
+            JSON.stringify({
+              error: true,
+              tool: toolName,
+              server: serverName,
+              message: "Browser backend not reachable: open-browser-use extension not set up (socket missing).",
+              hint: "Tell the user: run `npx open-browser-use setup` once to install the Chrome extension and native host, then restart Chrome. Meanwhile, I tried a managed-Chrome fallback for navigation — if that also failed, use web_search/web_fetch as alternative or ask user to do the click in the side panel (you share the same live browser).",
+            }),
+            true,
+          );
+        }
+        return result;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error(`[pi-mcp] Tool "${toolName}" (${serverName}) failed:`, msg.slice(0, 500));
+        // Try fallback for obu socket errors thrown as exceptions
+        if (/socket not provided|active\.json|no connectable socket/i.test(msg)) {
+          const fb = await fallbackBrowserViaManagedChrome(toolName, args);
+          if (fb) return asCallToolResult(fb, false);
+        }
         let hint = "Retry once with simpler args; if it fails again, use the closest alternative tool and say what failed.";
-        if (/executable doesn't exist|browser.*not found|playwright.*install/i.test(msg)) {
+        if (/socket not provided|active\.json/i.test(msg)) {
+          hint = "Browser backend not set up. Tell user to run `npx open-browser-use setup` once, then restart Chrome. Meanwhile try managed-Chrome fallback or web_search/web_fetch.";
+        } else if (/executable doesn't exist|browser.*not found|playwright.*install/i.test(msg)) {
           hint = "The browser binary is missing. Tell the user to run `npx playwright install chromium` once, then retry.";
         } else if (/timeout|timed out/i.test(msg)) {
           hint = "The page or browser took too long. Retry once; if it persists, try a lighter page or web_fetch instead.";
         } else if (/closed|crash|disconnected|EPIPE|SIGTERM/i.test(msg)) {
           hint = "The browser process died. Retry once (it relaunches per call); if it persists, fall back to web_search/web_fetch.";
         }
-        return JSON.stringify({
-          error: true,
-          tool: toolName,
-          server: serverName,
-          message: msg.slice(0, 1000),
-          hint,
-        });
+        return asCallToolResult(
+          JSON.stringify({
+            error: true,
+            tool: toolName,
+            server: serverName,
+            message: msg.slice(0, 1000),
+            hint,
+          }),
+          true,
+        );
       }
     },
   };

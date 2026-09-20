@@ -18,6 +18,13 @@ import { createPiTools } from "./tools";
 import { providerStore } from "./provider-store";
 import { createPiModelClient, createPiModelClientForRequest } from "./model-client";
 import { loadMcpTools, closeMcpClients } from "./mcp";
+import {
+  maxSilentRounds,
+  getIncompleteTodos,
+  hasUnfinishedGoals,
+  buildContinuationNudge,
+  type TodoSnapshotItem,
+} from "./continuation";
 import type { McpServerConfig } from "./mcp-store";
 import type { SkillConfig } from "@/lib/skills/types";
 
@@ -49,6 +56,64 @@ export function resolveMemoryEnabled(explicit?: boolean): boolean {
   } catch {
     return true;
   }
+}
+
+/**
+ * Turn raw provider errors into actionable messages.
+ *
+ * Key insight: listing /models succeeding does NOT mean chat will work —
+ * /models checks the key, chat checks quota/billing/workspace/endpoint.
+ * Classify by status/type so users get the right fix instead of a raw dump.
+ */
+export function formatProviderError(raw: string, modelName?: string, prefixError = false): string {
+  const model = modelName ? `"${modelName}"` : "The model";
+  const base = prefixError && !/^error/i.test(raw.trim()) ? `Error: ${raw.slice(0, 2000)}` : raw.slice(0, 2000);
+
+  if (/only be used from within OpenCode|FreeTier/i.test(raw)) {
+    return (
+      `${base}\n\n${model} is an OpenCode Zen free-tier model, which OpenCode only serves to its own official client. ` +
+      `This block comes from OpenCode, not Qube.\n` +
+      `Fix: in Settings → Model use a paid Zen model (add billing at https://opencode.ai/zen), ` +
+      `or switch to another provider (Ollama works locally with no key).`
+    );
+  }
+  if (/rate limit|rate_limited|429|FreeUsageLimit/i.test(raw)) {
+    return (
+      `${base}\n\n${model} is rate-limited / out of chat quota (429). ` +
+      `Note: Settings checks the key by listing models — that passes even when chat quota is gone.\n` +
+      `Fix: check billing/credits on the provider dashboard, wait 1-2 min, try a smaller/cheaper model, ` +
+      `or use Ollama locally. For Mistral free keys the chat quota is often 0.`
+    );
+  }
+  if (/401|invalid.*api.*key|unauthorized|authentication_failed|AuthError.*[Ii]nvalid/i.test(raw)) {
+    return (
+      `${base}\n\n${model} rejected the API key (401).\n` +
+      `Fix: open Settings → Model, re-enter the key for this provider, then pick the model again.`
+    );
+  }
+  if (/blocked by upstream|workspace.*blocked|403/i.test(raw)) {
+    return (
+      `${base}\n\n${model} was blocked upstream (403) — account/workspace flagged or model disabled.\n` +
+      `Fix: check the provider dashboard (billing, workspace status, enabled models).`
+    );
+  }
+  if (/404|not found|no such model/i.test(raw)) {
+    return (
+      `${base}\n\n${model} was not found on this endpoint (404).\n` +
+      `Fix: refresh models in Settings (the model may be deprecated/renamed), ` +
+      `or check the base URL. Zen GPT models need /responses, others /chat/completions — Qube routes this automatically for the built-in Zen provider.`
+    );
+  }
+  if (/Anthropic Messages API|Google Generative API|SystemOne/i.test(raw)) {
+    return base;
+  }
+  if (/an error occurred/i.test(raw)) {
+    return (
+      `${base}\n\n${model} failed. Open Settings → Model and try another model, or wait 1-2 min. ` +
+      `If it persists, check billing/quota on the provider dashboard.`
+    );
+  }
+  return base;
 }
 
 // ---------- Lifecycle ownership ----------
@@ -187,19 +252,30 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
     throw e;
   }
 
-  // 3) Concurrency guard
+  // 3) Concurrency: steer-while-running — same thread can be steered without a new UI.
+  // If a run is already active on this thread, treat the new request as a steer
+  // (user sent a follow-up while the agent is working). Abort the prior run
+  // gracefully and let the new one start with the latest messages (which include
+  // the steer). This keeps the UX as one chat thread, no harness rewrite.
   if (activeRuns.has(threadId)) {
-    const err = new Error(
-      `Concurrent run rejected: thread ${threadId} already has an active Pi run. Wait for previous run to complete or cancel it.`
-    );
-    console.warn(`[pi-harness] Concurrent guard [${threadId}]:`, err.message);
+    console.log(`[pi-harness] Steering active run [${threadId}] — aborting prior turn for new messages`);
     try {
-      const id = `pi-concurrent-${Date.now()}`;
+      const prev = activeRuns.get(threadId)!;
+      prev.abortController.abort(new Error("Steered by new user message"));
+      if (prev.timeoutId) clearTimeout(prev.timeoutId);
+    } catch {}
+    // Brief yield so the prior writer can settle before we claim the slot.
+    await new Promise((r) => setTimeout(r, 120));
+    // If still present (race), force clear — the new turn owns the thread now.
+    if (activeRuns.has(threadId)) {
+      try { activeRuns.delete(threadId); } catch {}
+    }
+    try {
+      const id = `pi-steer-${Date.now()}`;
       writer.write({ type: "text-start", id } as any);
-      writer.write({ type: "text-delta", id, delta: err.message } as any);
+      writer.write({ type: "text-delta", id, delta: `Steered — incorporating your latest message…` } as any);
       writer.write({ type: "text-end", id } as any);
     } catch {}
-    throw err;
   }
   if (activeRuns.size >= MAX_CONCURRENT_RUNS) {
     const err = new Error(`Concurrent run limit exceeded (${MAX_CONCURRENT_RUNS} active). Try again shortly.`);
@@ -358,6 +434,30 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     }
   }
 
+  // Rakazo parity: open scratchpad items as bounded <scratchpad_open> context
+  // (data, not instructions) so open work survives turns without bloating.
+  try {
+    const { readScratchpad } = await import("./scratchpad");
+    const { formatScratchpadOpen } = await import("./prompt-context");
+    const raw = await readScratchpad(config.threadId).catch(() => null);
+    if (raw && raw.trim()) {
+      const items = raw
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => /^\s*[-*]\s*\[[ xX]?\]/u.test(l) || /^\s*[-*]\s+/u.test(l))
+        .slice(0, 40)
+        .map((line, i) => ({
+          id: `s${i + 1}`,
+          title: line.replace(/^\s*[-*]\s*(\[[ xX]?\]\s*)?/u, "").slice(0, 160) || line.slice(0, 160),
+          notes: "",
+          status: /\[x\]/iu.test(line) ? "done" : "open",
+        }))
+        .filter((it) => it.status !== "done");
+      const block = formatScratchpadOpen(items);
+      if (block) systemPrompt += `\n\n${block}`;
+    }
+  } catch {}
+
   // Provider/type resolution with reasoning effort mapping (preserve thinking-support behavior)
   const provResult = providerStore.getProviderByModel(config.modelName || "");
   const providerId = provResult?.provider.id;
@@ -397,6 +497,7 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
       includeTodos: true,
       parentModelName: config.modelName,
       request: config.request,
+      threadIdForScratchpad: config.threadId,
     });
     // Agent tools: schedules, heartbeat, user questions (goals=TodoWrite above)
     try {
@@ -472,6 +573,54 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     }
   }
 
+  // Silent goal continuation: observe the latest TodoWrite snapshot and the
+  // most recent tool failure so that when a turn ends with unfinished goals,
+  // the harness can nudge the model (via a server-side-only message, never
+  // shown in the UI) to recover and keep working.
+  // The transcript remains the store — this is just an in-run observer.
+  let lastTodoSnapshot: TodoSnapshotItem[] | null = null;
+  let lastToolError: string | null = null;
+  try {
+    for (const [toolName, toolDef] of Object.entries(tools as Record<string, any>)) {
+      const origExecute = (toolDef as any)?.execute;
+      if (typeof origExecute !== "function") continue;
+      (toolDef as any).execute = async (...args: any[]) => {
+        try {
+          const input = args?.[0];
+          if (toolName === "TodoWrite" && input && Array.isArray(input.todos)) {
+            lastTodoSnapshot = input.todos as TodoSnapshotItem[];
+          }
+        } catch {}
+        try {
+          const out = await (origExecute as (...a: any[]) => unknown)(...args);
+          if (out && typeof out === "object" && (out as any).isError === true) {
+            // MCP-style error result (e.g. stale browser ref): remember it for
+            // the continuation nudge, still return it so the model sees it now.
+            try {
+              const parts = (out as any).content;
+              const text = Array.isArray(parts)
+                ? parts.map((p: any) => (typeof p?.text === "string" ? p.text : "")).join(" ").trim()
+                : "";
+              lastToolError = `${toolName}: ${(text || JSON.stringify(out)).slice(0, 400)}`;
+            } catch {
+              lastToolError = `${toolName}: tool reported an error`;
+            }
+          } else if (typeof out === "string" && /^error:/i.test(out.trim())) {
+            lastToolError = `${toolName}: ${out.trim().slice(0, 400)}`;
+          } else {
+            // A clean result supersedes any earlier failure.
+            lastToolError = null;
+          }
+          return out;
+        } catch (e: any) {
+          const msg = e instanceof Error ? e.message : String(e);
+          lastToolError = `${toolName}: ${msg.slice(0, 400)}`;
+          throw e;
+        }
+      };
+    }
+  } catch {}
+
   // Ensure MCP clients are closed when streaming ends or aborts — attach to signal and finally
   const closeMcp = async () => {
     // Snapshot open browser tabs FIRST: MCP teardown closes the agent's
@@ -546,14 +695,23 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
 
   // Stream to writer with interruption handling. Up to 2 attempts: a provider
   // context-overflow error triggers one aggressive compaction + retry.
+  // Separately, when a turn ends with unfinished TodoWrite goals, silent
+  // server-side-only nudges (never shown in the UI) continue the work.
   let sawError = false;
   let toolCallCount = 0;
   let reader: ReadableStreamDefaultReader<any> | null = null;
   let overflowRetried = false;
+  let silentRounds = 0;
+  const silentBudget = maxSilentRounds();
+  // Server-side-only continuation history: this round's assistant/tool
+  // messages plus the silent nudge. Never merged into activeUiMessages
+  // (the client-visible history), so the nudge stays invisible in the UI.
+  let pendingNudge: Array<Record<string, unknown>> = [];
 
   try {
     for (let attempt = 0; ; attempt++) {
-      const modelMessages = await toModelMessages(activeUiMessages);
+      const baseMessages = await toModelMessages(activeUiMessages);
+      const modelMessages = [...baseMessages, ...pendingNudge];
 
       let result: any;
       try {
@@ -616,11 +774,7 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
             break;
           }
           sawError = true;
-          const isGeneric = errText.includes("An error occurred");
-          const hint =
-            isGeneric || /rate limit|FreeUsageLimit/i.test(errText)
-              ? `${errText}\n\nModel "${config.modelName}" failed (likely rate-limited free tier). Open Settings → Model and try e.g. "mistral:mistral-medium-2505" or another model — or wait 1-2 min.`
-              : errText;
+          const hint = formatProviderError(errText, config.modelName);
           const id = `pi-error-${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
           try {
             writer.write({ type: "text-start", id } as any);
@@ -651,6 +805,36 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
         console.warn(`[pi-harness] Context overflow [${config.threadId}] — compacting + retrying`);
         const recovered = await recoverFromOverflow(activeUiMessages);
         if (recovered) continue;
+      }
+
+      // Silent goal continuation: the turn ended but TodoWrite goals are
+      // unfinished. Append this round's messages plus a silent nudge
+      // (server-side only — never written to the UI stream) and run another
+      // round so the agent finishes all goals within the same turn.
+      if (!sawError && !signal.aborted && hasUnfinishedGoals(lastTodoSnapshot) && silentRounds < silentBudget) {
+        const incomplete = getIncompleteTodos(lastTodoSnapshot);
+        let roundMessages: Array<Record<string, unknown>> = [];
+        try {
+          const response = await result?.response;
+          if (response && Array.isArray((response as any).messages)) {
+            roundMessages = (response as any).messages as Array<Record<string, unknown>>;
+          }
+        } catch {}
+        pendingNudge = [
+          ...pendingNudge,
+          ...roundMessages,
+          { role: "user", content: buildContinuationNudge(incomplete, lastToolError) } as Record<string, unknown>,
+        ];
+        silentRounds++;
+        console.log(
+          `[pi-harness] Silent continuation ${silentRounds}/${silentBudget} [${config.threadId}] — ${incomplete.length} goal(s) unfinished`
+        );
+        continue;
+      }
+      if (lastTodoSnapshot && silentRounds >= silentBudget && hasUnfinishedGoals(lastTodoSnapshot)) {
+        console.warn(
+          `[pi-harness] Silent continuation budget exhausted [${config.threadId}] — ${getIncompleteTodos(lastTodoSnapshot).length} goal(s) still unfinished`
+        );
       }
       break;
     }
@@ -694,10 +878,7 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
 
     // Tool failures already handled via error chunks; for unexpected failures, emit text
     const msg = e?.message || String(e);
-    const isRateLimit = /rate limit|429|FreeUsageLimit/i.test(msg);
-    const hint = isRateLimit
-      ? `${msg}\n\nThe model "${config.modelName}" is rate-limited. Switch model in Settings or wait.`
-      : `Error: ${msg.slice(0, 2000)}`;
+    const hint = formatProviderError(msg, config.modelName, true);
     const id = `pi-stream-error-${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
     try {
       writer.write({ type: "text-start", id } as any);

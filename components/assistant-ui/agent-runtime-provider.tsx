@@ -40,6 +40,9 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "delete_file", render: DeleteFileToolUI });
   useAssistantToolUI({ toolName: "list_directory", render: ListDirectoryToolUI });
   useAssistantToolUI({ toolName: "run_command", render: RunCommandToolUI });
+  useAssistantToolUI({ toolName: "read_scratchpad", render: ReadFileToolUI });
+  useAssistantToolUI({ toolName: "write_scratchpad", render: WriteFileToolUI });
+  useAssistantToolUI({ toolName: "append_scratchpad", render: WriteFileToolUI });
   useAssistantToolUI({ toolName: "present_file", render: ShowFileToolUI });
   useAssistantToolUI({ toolName: "ask_question", render: AskUserToolUI });
   useAssistantToolUI({ toolName: "ask_user", render: AskUserToolUI });
@@ -47,32 +50,27 @@ function ToolUIRegistrar() {
   // Pi automation tools — schedules, heartbeat
   useAssistantToolUI({ toolName: "schedule_task", render: ScheduleTaskToolUI });
   useAssistantToolUI({ toolName: "update_heartbeat", render: UpdateHeartbeatToolUI });
-  // Browser Use MCP tools (live browser; panel renders the real page)
-  useAssistantToolUI({ toolName: "browser_navigate", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_navigate_back", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_navigate_forward", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_search", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_read", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_snapshot", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_screenshot", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_click", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_hover", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_drag", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_type", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_find", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_fill", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_fill_form", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_press_key", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_select_option", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_file_upload", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_handle_dialog", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_back", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_wait_for", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_evaluate", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_console_messages", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_network_requests", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_tabs", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_close", render: BrowserToolUI });
+  // open-browser-use (obu mcp) — live Chrome via extension, panel mirrors it
+  useAssistantToolUI({ toolName: "open_tab", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "navigate", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "tabs", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "user_tabs", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "page_info", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "snapshot", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "act", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "click", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "type", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "press_key", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "cdp", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "move_mouse", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "run_action_plan", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "wait_load", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "claim_tab", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "finalize_tabs", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "name_session", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "turn_ended", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "ping", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "info", render: BrowserToolUI });
   // Legacy Codex native events kept for forward compat (if old sessions contain them)
   useAssistantToolUI({ toolName: "command_execution", render: RunCommandToolUI });
   useAssistantToolUI({ toolName: "file_change", render: WriteFileToolUI });

@@ -4,6 +4,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -568,47 +569,6 @@ function ModelSelectorItem({
   );
 }
 
-function EffortIndicator({
-  efforts,
-  effort,
-}: {
-  efforts: readonly ModelSelectorEffortOption[];
-  effort: string | undefined;
-}) {
-  const [style, setStyle] = useState<{ left: string; width: string }>({ left: "0px", width: "0px" });
-
-  useEffect(() => {
-    const container = document.querySelector('[data-slot="model-selector-effort"] [role="group"]') as HTMLElement | null;
-    if (!container) return;
-    const update = () => {
-      const active = container.querySelector(`[data-effort="${effort}"]`) as HTMLElement | null;
-      if (active) {
-        setStyle({ left: `${active.offsetLeft}px`, width: `${active.offsetWidth}px` });
-      }
-    };
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(container, { attributes: true, subtree: true, attributeFilter: ["data-state"] });
-    window.addEventListener("resize", update);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, [efforts, effort]);
-
-  if (style.width === "0px") return null;
-
-  return (
-    <motion.div
-      className="absolute inset-y-0 rounded-md bg-accent shadow-sm"
-      initial={false}
-      animate={{ left: style.left, width: style.width }}
-      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-      style={style}
-    />
-  );
-}
-
 export type ModelSelectorEffortProps = ComponentPropsWithoutRef<"div"> & {
   label?: ReactNode;
 };
@@ -620,6 +580,8 @@ function ModelSelectorEffort({
   ...props
 }: ModelSelectorEffortProps) {
   const { efforts, effort, setEffort } = useModelSelectorEfforts();
+  // Unique per selector instance so concurrent popovers never share the pill.
+  const pillId = useId();
 
   if (!efforts?.length) return null;
 
@@ -644,8 +606,6 @@ function ModelSelectorEffort({
         aria-label="Reasoning effort"
         className="relative flex items-center gap-0.5"
       >
-        {/* Sliding indicator — width/left measured from active button, not fixed percentage */}
-        <EffortIndicator efforts={efforts} effort={effort} />
         <AnimatePresence mode="popLayout">
           {efforts.map((option) => {
             const isActive = option.id === effort;
@@ -666,11 +626,20 @@ function ModelSelectorEffort({
                   data-effort={option.id}
                   onClick={() => setEffort(option.id)}
                   className={cn(
-                    "relative z-10 flex items-center justify-center rounded-md px-2.5 py-1 text-xs transition-colors focus-visible:outline-none",
+                    "relative flex items-center justify-center rounded-md px-2.5 py-1 text-xs transition-colors focus-visible:outline-none",
                     isActive ? "text-accent-foreground font-medium" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  {option.name}
+                  {/* Active pill positioned by motion (layoutId) — no DOM
+                      measurement, so it can never strand after close/reopen. */}
+                  {isActive && (
+                    <motion.span
+                      layoutId={`model-selector-effort-pill-${pillId}`}
+                      className="absolute inset-0 rounded-md bg-accent shadow-sm"
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    />
+                  )}
+                  <span className="relative">{option.name}</span>
                 </button>
               </motion.div>
             );

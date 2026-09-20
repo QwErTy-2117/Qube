@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   SearchIcon,
@@ -39,6 +39,49 @@ interface MarketplaceSkill {
   marketplace: string;
   marketplaceUrl: string;
   version: string;
+  installs?: number;
+  live?: boolean;
+  safety?: { risk: "safe" | "medium" | "unaudited" | "curated"; alerts?: number };
+  source?: string;
+  detailId?: string;
+}
+
+function formatInstalls(n?: number): string | null {
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return null;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}K installs`;
+  return `${n} installs`;
+}
+
+function SafetyBadge({ safety }: { safety?: MarketplaceSkill["safety"] }) {
+  if (!safety) return null;
+  const map: Record<string, { label: string; cls: string; title: string }> = {
+    safe: {
+      label: "safe",
+      cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+      title: "Security-audited (Snyk/Socket): no high or critical findings",
+    },
+    medium: {
+      label: "review",
+      cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+      title: "Audit found medium-severity notes — review the preview before installing",
+    },
+    unaudited: {
+      label: "unaudited",
+      cls: "bg-muted text-muted-foreground",
+      title: "No security audit data — review the preview before installing",
+    },
+    curated: {
+      label: "curated",
+      cls: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+      title: "Hand-reviewed offline snapshot bundled with Qube",
+    },
+  };
+  const entry = map[safety.risk] || map.unaudited;
+  return (
+    <span title={entry.title} className={cn("px-1.5 py-0.5 rounded-full text-[10px] font-semibold", entry.cls)}>
+      {entry.label}
+    </span>
+  );
 }
 
 const MARKETPLACE_COLORS: Record<string, string> = {
@@ -279,9 +322,9 @@ function SkillFormFields({
   };
 
   return (
-    <div className="py-2">
-      <Tabs value={tab} onValueChange={setTab} className="w-full">
-        <div className="flex justify-center pb-3">
+    <div className="py-2 flex-1 min-h-0 flex flex-col">
+      <Tabs value={tab} onValueChange={setTab} className="w-full flex-1 min-h-0 flex flex-col">
+        <div className="flex justify-center pb-3 shrink-0">
           <TabsList variant="pills" className="bg-muted rounded-full p-1">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="details">Details</TabsTrigger>
@@ -289,7 +332,7 @@ function SkillFormFields({
           </TabsList>
         </div>
 
-        <div className="h-[380px] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden px-0.5">
+        <div className="flex-1 min-h-0 flex flex-col px-0.5 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <TabsContent value="general" className="space-y-4 mt-0">
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground">Name</label>
@@ -318,16 +361,15 @@ function SkillFormFields({
           </div>
         </TabsContent>
 
-        <TabsContent value="details" className="space-y-4 mt-0">
-          <div className="space-y-1.5">
+        <TabsContent value="details" className="space-y-4 mt-0 flex-1 min-h-0 flex flex-col">
+          <div className="space-y-1.5 flex-1 min-h-0 flex flex-col">
             <label className="text-xs font-semibold text-foreground">Instructions (SKILL.md body)</label>
             <textarea
               placeholder="## Procedure&#10;1. …&#10;&#10;## Rules&#10;- …"
               value={form.instructions}
               disabled={readOnly}
               onChange={(e) => setForm({ ...form, instructions: e.target.value })}
-              rows={10}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-y leading-relaxed font-mono disabled:opacity-60"
+              className="w-full flex-1 min-h-[220px] px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed font-mono disabled:opacity-60 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             />
           </div>
         </TabsContent>
@@ -439,12 +481,17 @@ export function SkillsTab({ onDialogOpenChange }: { onDialogOpenChange?: (open: 
   }, []);
 
   const [mpError, setMpError] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailLoadingKey, setDetailLoadingKey] = useState<string | null>(null);
 
-  const fetchMarketplace = useCallback(async () => {
+  const fetchMarketplace = useCallback(async (search?: string) => {
     setMpLoading(true);
     setMpError(false);
     try {
-      const res = await fetch("/api/skills/marketplace");
+      const params = new URLSearchParams();
+      if (search && search.trim()) params.set("q", search.trim());
+      const qs = params.toString();
+      const res = await fetch(`/api/skills/marketplace${qs ? `?${qs}` : ""}`);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.skills)) {
@@ -465,18 +512,57 @@ export function SkillsTab({ onDialogOpenChange }: { onDialogOpenChange?: (open: 
     if (managerOpen && marketplace.length === 0 && !mpLoading) fetchMarketplace();
   }, [managerOpen, marketplace.length, mpLoading, fetchMarketplace]);
 
+  // Live server-side search (debounced) — the catalog is dynamic, so the
+  // server filters live + curated together instead of the client. Skips the
+  // first run (the open-effect above already loads the full catalog).
+  const queryFirstRun = useRef(true);
+  useEffect(() => {
+    if (!managerOpen) return;
+    if (queryFirstRun.current) {
+      queryFirstRun.current = false;
+      return;
+    }
+    const t = setTimeout(() => {
+      fetchMarketplace(query);
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, managerOpen]);
+
   const installedNames = new Set(skills.map((s) => s.name));
 
-  const q = query.trim().toLowerCase();
-  const filtered = q
-    ? marketplace.filter(
-        (s) =>
-          s.slug.toLowerCase().includes(q) ||
-          s.name.toLowerCase().includes(q) ||
-          s.description.toLowerCase().includes(q) ||
-          s.marketplace.toLowerCase().includes(q)
-      )
-    : marketplace;
+  const filtered = marketplace;
+
+  const openDetail = useCallback(async (mp: MarketplaceSkill) => {
+    if (installedNames.has(mp.name)) return;
+    // Live rows arrive without the SKILL.md body — fetch it for preview/install.
+    if (mp.live && !mp.instructions && mp.detailId) {
+      const key = `${mp.marketplace}:${mp.slug}`;
+      setDetailLoading(true);
+      setDetailLoadingKey(key);
+      try {
+        const res = await fetch(`/api/skills/marketplace?detail=${encodeURIComponent(mp.detailId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.ok && data?.detail) {
+            setDetail({
+              ...mp,
+              name: typeof data.detail.name === "string" && data.detail.name ? data.detail.name : mp.name,
+              description: typeof data.detail.description === "string" && data.detail.description ? data.detail.description : mp.description,
+              instructions: typeof data.detail.instructions === "string" ? data.detail.instructions : "",
+            });
+            return;
+          }
+        }
+      } catch {}
+      finally {
+        setDetailLoading(false);
+        setDetailLoadingKey(null);
+      }
+    }
+    setDetail(mp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skills]);
 
   const validate = (f: FormState, isNew: boolean): string | null => {
     if (!f.name.trim()) return "Skill name is required.";
@@ -690,7 +776,7 @@ export function SkillsTab({ onDialogOpenChange }: { onDialogOpenChange?: (open: 
             ) : mpError && marketplace.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
                 <p className="text-xs text-muted-foreground/60">Couldn’t load the skills catalog.</p>
-                <Button variant="outline" size="sm" onClick={fetchMarketplace} className="rounded-full h-8 px-4">
+                <Button variant="outline" size="sm" onClick={() => void fetchMarketplace()} className="rounded-full h-8 px-4">
                   Retry
                 </Button>
               </div>
@@ -702,11 +788,13 @@ export function SkillsTab({ onDialogOpenChange }: { onDialogOpenChange?: (open: 
               <div className="space-y-2 py-1">
                 {filtered.map((mp) => {
                   const installed = installedNames.has(mp.name);
+                  const installs = formatInstalls(mp.installs);
+                  const loadingRow = detailLoadingKey === `${mp.marketplace}:${mp.slug}`;
                   return (
                     <div
-                      key={mp.slug}
+                      key={`${mp.marketplace}:${mp.slug}`}
                       onClick={() => {
-                        if (!installed) setDetail(mp);
+                        if (!installed) void openDetail(mp);
                       }}
                       className={cn(
                         "flex items-start gap-3 p-3 rounded-xl border border-border bg-muted/10 gap-3 transition-colors",
@@ -719,9 +807,14 @@ export function SkillsTab({ onDialogOpenChange }: { onDialogOpenChange?: (open: 
                           <span className={cn("px-1.5 py-0.5 rounded-full text-[10px] font-semibold", MARKETPLACE_COLORS[mp.marketplace] || "bg-muted text-muted-foreground")}>
                             {mp.marketplace}
                           </span>
+                          <SafetyBadge safety={mp.safety} />
+                          {installs && (
+                            <span className="text-[10px] tabular-nums text-muted-foreground">{installs}</span>
+                          )}
+                          {loadingRow && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
                           {installed && <CheckIcon className="size-3.5 text-emerald-500" />}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">{mp.description}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">{mp.description || (mp.live ? "Open for preview…" : "")}</p>
                       </div>
                     </div>
                   );
@@ -734,12 +827,13 @@ export function SkillsTab({ onDialogOpenChange }: { onDialogOpenChange?: (open: 
 
       {/* Marketplace detail popup — read-only twin of create/edit, Add instead of Save */}
       <Dialog open={detail !== null} onOpenChange={(v) => { if (!v) setDetail(null); }}>
-        <DialogContent className="sm:max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <DialogContent className="sm:max-w-lg rounded-3xl max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>{detail?.name}</DialogTitle>
             {detail && (
               <DialogDescription>
-                From {detail.marketplace} · v{detail.version} — preview only, nothing here is editable.
+                From {detail.marketplace}{detail.source ? ` · ${detail.source}` : ""} · {detail.version === "live" ? "live" : `v${detail.version}`}
+                {formatInstalls(detail.installs) ? ` · ${formatInstalls(detail.installs)}` : ""} — preview only, nothing here is editable.
               </DialogDescription>
             )}
           </DialogHeader>
@@ -748,12 +842,17 @@ export function SkillsTab({ onDialogOpenChange }: { onDialogOpenChange?: (open: 
               <span className={cn("px-1.5 py-0.5 rounded-full text-[10px] font-semibold", MARKETPLACE_COLORS[detail.marketplace] || "bg-muted text-muted-foreground")}>
                 {detail.marketplace}
               </span>
+              <SafetyBadge safety={detail.safety} />
             </div>
           )}
-          {detail && (
+          {detailLoading && !detail ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2Icon className="size-5 animate-spin text-muted-foreground/40" />
+            </div>
+          ) : detail ? (
             <SkillFormFields form={marketplaceToForm(detail)} setForm={() => {}} nameLocked readOnly error={null} />
-          )}
-          <DialogFooter className="pt-2">
+          ) : null}
+          <DialogFooter className="pt-2 shrink-0">
             <div className="w-fit ml-auto flex items-center gap-2 rounded-full border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-1.5 py-1.5 shrink-0">
               <button
                 onClick={() => setDetail(null)}

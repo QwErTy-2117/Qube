@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { XIcon, GlobeIcon, AlertTriangleIcon, RotateCwIcon, SquareArrowOutUpRightIcon } from "lucide-react";
+import { XIcon, GlobeIcon, AlertTriangleIcon, RotateCwIcon, SquareArrowOutUpRightIcon, ArrowUpIcon } from "lucide-react";
 import { useWorkspaceStore } from "@/lib/workspace/store";
 
 type Health = {
@@ -23,11 +23,11 @@ async function openInBrowser(url: string): Promise<void> {
 }
 
 /**
- * Browser side panel: mirrors the live headed Chromium window the agent
- * drives (frames via /api/browser/frames). Read-only view — the agent
- * does the clicking. The window is never closed automatically; only the
- * X button (or app shutdown) ends the session. A Retry control recovers
- * a wedged browser without touching anything else.
+ * Browser side panel: mirrors the live Chromium the browser-use agent drives
+ * (frames via /api/browser/frames). Fully interactive — the user can click,
+ * scroll, type alongside the agent (same CDP pipe, so they compose). The
+ * window is never closed automatically; only the X button (or app shutdown)
+ * ends the session. A Retry control recovers a wedged browser.
  */
 export function BrowserPanel() {
   const open = useWorkspaceStore((s) => s.open);
@@ -49,6 +49,10 @@ export function BrowserPanel() {
   const lastActivityRef = useRef(0);
   const lastReconnectRef = useRef(0);
   const show = open && artifact?.kind === "browser";
+  const [navUrl, setNavUrl] = useState("");
+  const [meta, setMeta] = useState<{ deviceWidth: number; deviceHeight: number } | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const noteActivity = () => {
     lastActivityRef.current = Date.now();
@@ -112,11 +116,13 @@ export function BrowserPanel() {
       es = new EventSource("/api/browser/frames");
       es.addEventListener("frame", (ev) => {
         try {
-          const data = JSON.parse((ev as MessageEvent).data) as { jpg?: string; url?: string };
+          const data = JSON.parse((ev as MessageEvent).data) as { jpg?: string; url?: string; meta?: { deviceWidth: number; deviceHeight: number } };
           if (typeof data.url === "string" && data.url) {
             setLiveUrl(data.url);
+            setNavUrl(data.url);
             noteActivity();
           }
+          if (data.meta && typeof data.meta.deviceWidth === "number") setMeta(data.meta);
           // Ignore trivial/empty captures — only real frames clear waiting UI.
           if (typeof data.jpg === "string" && data.jpg.length >= MIN_FRAME_LEN) {
             noteActivity();
@@ -135,6 +141,7 @@ export function BrowserPanel() {
           const data = JSON.parse((ev as MessageEvent).data) as { url?: string };
           if (typeof data.url === "string" && data.url) {
             setLiveUrl(data.url);
+            setNavUrl(data.url);
             noteActivity();
           }
         } catch {}
@@ -235,8 +242,21 @@ export function BrowserPanel() {
             className="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize touch-none">
             <div className="mx-auto mt-[45%] h-10 w-1 rounded-full bg-border/70 opacity-0 transition hover:opacity-100" />
           </div>
-          {/* Live view */}
-          <div className="relative min-h-0 flex-1 overflow-hidden bg-black/90">
+
+          {/* Live view — interactive: user clicks/type/scroll coexists with agent */}
+          <div
+            ref={containerRef}
+            className="relative min-h-0 flex-1 overflow-hidden bg-black/90"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              // Forward typing to the page when the panel has focus
+              const k = e.key;
+              if (k.length === 1 || ["Enter", "Backspace", "Tab", "Escape", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(k)) {
+                fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "key", key: k }) }).catch(() => {});
+                if (k !== "Tab") e.preventDefault();
+              }
+            }}
+          >
             {showDiagnostics ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
                 <AlertTriangleIcon className="size-8 text-muted-foreground/40" />
@@ -272,40 +292,89 @@ export function BrowserPanel() {
               <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
                 <GlobeIcon className="size-8 text-muted-foreground/40" />
                 <p className="text-sm font-medium text-foreground/80">Waiting for the browser…</p>
-                <p className="max-w-[260px] text-xs text-muted-foreground">Ask the agent to browse and the live window appears here.</p>
+                <p className="max-w-[260px] text-xs text-muted-foreground">Ask the agent to browse and the live window appears here — you can also type a URL above and click around.</p>
               </div>
             ) : (
               <div className="absolute inset-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img} alt={liveUrl || "Live browser"} className="absolute inset-0 h-full w-full object-contain" draggable={false} />
+                <img
+                  ref={imgRef}
+                  src={img}
+                  alt={liveUrl || "Live browser"}
+                  className="absolute inset-0 h-full w-full object-contain cursor-pointer"
+                  draggable={false}
+                  onClick={(e) => {
+                    const rect = (e.currentTarget as HTMLImageElement).getBoundingClientRect();
+                    const cont = containerRef.current?.getBoundingClientRect();
+                    // object-contain letterbox compensation
+                    const imgW = rect.width, imgH = rect.height;
+                    const xInImg = e.clientX - rect.left;
+                    const yInImg = e.clientY - rect.top;
+                    const deviceWidth = meta?.deviceWidth || 1280;
+                    // Assume viewport scales to fit width (height letterboxed)
+                    const scale = deviceWidth / imgW;
+                    const x = xInImg * scale;
+                    const y = yInImg * scale;
+                    fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "click", x, y }) }).catch(() => {});
+                    containerRef.current?.focus();
+                  }}
+                  onWheel={(e) => {
+                    const rect = (e.currentTarget as HTMLImageElement).getBoundingClientRect();
+                    const xInImg = e.clientX - rect.left;
+                    const yInImg = e.clientY - rect.top;
+                    const deviceWidth = meta?.deviceWidth || 1280;
+                    const scale = deviceWidth / rect.width;
+                    fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "wheel", x: xInImg * scale, y: yInImg * scale, deltaX: e.deltaX, deltaY: e.deltaY }) }).catch(() => {});
+                  }}
+                />
               </div>
             )}
           </div>
-          {/* Footer bar (no tabs — browser only). Kept at the bottom so the
-              Tauri frameless window controls (top-right close/max/min) never
-              cover it. */}
-          <div className="flex items-center gap-2 border-t border-border/60 px-2.5 py-2">
-            <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />
-            <span
-              title={live ? "Live view" : "View may be stale — reconnecting"}
-              aria-label={live ? "Live view" : "View may be stale"}
-              className={`size-1.5 shrink-0 rounded-full transition-colors ${live ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`}
-            />
-            <span className="truncate text-[13px] font-semibold text-foreground">
-              {liveUrl || "Browser"}
-            </span>
-            <span className="flex-1" />
+          {/* Bottom bar — single rounded typing container (Go centered inside, outer buttons same height, all rounded) */}
+          <div className="flex items-center gap-1.5 border-t border-border/60 px-2 py-1.5">
+            <div className="flex h-8 flex-1 items-center gap-2 rounded-full bg-muted/60 pl-3 pr-1 border border-border/50 focus-within:border-border focus-within:bg-background transition-colors">
+              <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />
+              <input
+                value={navUrl}
+                onChange={(e) => setNavUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const v = navUrl.trim();
+                    if (!v) return;
+                    const url = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+                    setLiveUrl(url);
+                    fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "navigate", url }) }).catch(() => {});
+                  }
+                }}
+                placeholder={liveUrl || "https://"}
+                className="min-w-0 flex-1 bg-transparent text-[13px] leading-none outline-none placeholder:text-muted-foreground"
+              />
+              <button
+                onClick={() => {
+                  const v = navUrl.trim();
+                  if (!v) return;
+                  const url = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+                  setLiveUrl(url);
+                  setNavUrl(url);
+                  fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "navigate", url }) }).catch(() => {});
+                }}
+                aria-label="Go"
+                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <ArrowUpIcon className="size-3.5" />
+              </button>
+            </div>
             <button
               onClick={() => void openInBrowser(liveUrl)}
               disabled={!/^https?:\/\//i.test(liveUrl)}
               title={liveUrl ? `Open ${liveUrl} in browser` : "Open in browser"}
               aria-label="Open in browser"
-              className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40"
+              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/50 bg-muted/60 text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40"
             >
               <SquareArrowOutUpRightIcon className="size-4" />
             </button>
             <button onClick={closeWorkspace} aria-label="Close browser panel"
-              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground">
+              className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/60 text-muted-foreground transition hover:bg-accent hover:text-foreground">
               <XIcon className="size-4" />
             </button>
           </div>

@@ -49,6 +49,7 @@ export type PiToolsOptions = {
   includeAskUser?: boolean;
   parentModelName?: string | null;
   request?: Request;
+  threadIdForScratchpad?: string;
 };
 
 export function createPiTools(threadId: string, opts?: PiToolsOptions) {
@@ -128,6 +129,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
         "ALWAYS create the list FIRST before starting any task with 3+ steps, multiple tool calls, or subagents — then work through it in order and respect it (add new work to the list before doing it). Exactly one item should be in_progress at a time. " +
         "Always provide both `content` (imperative, e.g. 'Run tests') and `activeForm` (present continuous, e.g. 'Running tests') so the UI can show what is happening now. " +
         "ALWAYS mark items complete the moment each sub-task finishes — even when there is only ONE item, call TodoWrite again to flip it to completed. Never end a task with items still in_progress. " +
+        "If your turn ends with items unfinished you will get a silent nudge to continue — keep working until everything is completed, then summarize. " +
         "Update immediately after finishing a sub-task. If you change direction, rewrite the list with dropped items removed. " +
         "When all items are completed the goals panel clears (session-scoped, ephemeral).",
       inputSchema: z.object({
@@ -205,6 +207,204 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
       },
     });
   }
+
+  // Scratchpad — per-thread markdown file for multi-step state (agent decides when to use).
+  const scratchId = opts?.threadIdForScratchpad || threadId;
+  extraTools.read_scratchpad = tool({
+    description: "Read the thread scratchpad (per-thread markdown notes for multi-step work). Cheap, outside context — use JIT when you need to recall plan/findings.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      try {
+        const { readScratchpad } = await import("./scratchpad");
+        const content = await readScratchpad(scratchId);
+        if (!content) return "Scratchpad is empty (no notes yet). Create it with write_scratchpad when the task has >3 steps or state to carry.";
+        return content.slice(0, 20000);
+      } catch (e: any) {
+        return `Error: ${e?.message || String(e)}`;
+      }
+    },
+  });
+  extraTools.write_scratchpad = tool({
+    description: "Create or overwrite the thread scratchpad. Use for multi-step tasks: keep Goal, Constraints, Plan (checkboxes), Findings, Next. Update before/after each TodoWrite flip. Overwrites the whole file.",
+    inputSchema: z.object({ content: z.string().describe("Markdown content for the scratchpad") }),
+    execute: async ({ content }: { content: string }) => {
+      try {
+        const { writeScratchpad, scratchpadPath } = await import("./scratchpad");
+        await writeScratchpad(scratchId, content);
+        return JSON.stringify({ path: scratchpadPath(scratchId), status: "written", chars: content.length });
+      } catch (e: any) {
+        return JSON.stringify({ error: e?.message || String(e) });
+      }
+    },
+  });
+  extraTools.append_scratchpad = tool({
+    description: "Append a section to the scratchpad (cheaper than rewriting the whole file for incremental notes).",
+    inputSchema: z.object({ chunk: z.string().describe("Markdown chunk to append") }),
+    execute: async ({ chunk }: { chunk: string }) => {
+      try {
+        const { appendScratchpad } = await import("./scratchpad");
+        await appendScratchpad(scratchId, chunk);
+        return "Appended to scratchpad.";
+      } catch (e: any) {
+        return `Error: ${e?.message || String(e)}`;
+      }
+    },
+  });
+
+  // Computer-use + page-browser (Rakazo parity: computer_observe /
+  // computer_act / browser_navigate / browser_snapshot / browser_act /
+  // request_takeover). Backed by local managed Chrome via CDP.
+  extraTools.computer_observe = tool({
+    description:
+      "Capture the current screen of the local computer (managed Chrome). Returns frame metadata and an image. Observe before coordinate-based actions and whenever another actor may have changed the desktop. Identical consecutive frames omit image bytes.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      try {
+        const { computerObserve, screenClaim } = await import("./computer-use");
+        try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
+        const obs = await computerObserve("computer observed");
+        if (obs.error && !obs.imageBase64) return JSON.stringify({ error: obs.error, text: obs.text });
+        return JSON.stringify({ text: obs.text, frameId: obs.frameId, unchanged: !!obs.unchanged, imageChars: obs.imageBase64?.length || 0 });
+      } catch (e: any) {
+        return JSON.stringify({ error: e?.message || String(e) });
+      }
+    },
+  });
+  extraTools.computer_act = tool({
+    description:
+      "Perform up to 24 ordered desktop actions and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Kinds: click, move, down, up, type, key, scroll, wait. On failure, inspect current state before continuing; never replay completed or uncertain actions.",
+    inputSchema: z.object({
+      actions: z.array(z.record(z.string(), z.any())).describe("Ordered actions (max 24)"),
+      observe: z.boolean().optional().describe("Observe after acting (default true)"),
+      settle_ms: z.number().optional().describe("Ms to wait before the screenshot (0-5000)"),
+    }),
+    execute: async ({ actions, observe, settle_ms }: { actions: unknown; observe?: boolean; settle_ms?: number }) => {
+      return withPerm("computer_act", { actions }, async () => {
+        try {
+          const { computerAct, screenClaim } = await import("./computer-use");
+          try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
+          const res = await computerAct(actions as any, { observe, settleMs: settle_ms });
+          return JSON.stringify(res).slice(0, 12000);
+        } catch (e: any) {
+          return JSON.stringify({ error: e?.message || String(e) });
+        }
+      });
+    },
+  });
+  // open_path (Rakazo parity): open a workspace file in its default graphical
+  // application, or an http(s) URL in the managed browser, then observe.
+  extraTools.open_path = tool({
+    description:
+      "Open a workspace file in its default graphical application, or an http(s) URL in the managed browser, and return the resulting screen. Use for visual/binary files that read_file cannot show (images, PDFs, decks).",
+    inputSchema: z.object({
+      path: z.string().describe("Workspace-relative file path or http(s) URL to open"),
+    }),
+    execute: async ({ path }: { path: string }) => {
+      return withPerm("open_path", { path }, async () => {
+        try {
+          const target = String(path || "").trim();
+          if (!target) return JSON.stringify({ error: "path is required" });
+          const { computerObserve, browserNavigate, screenClaim } = await import("./computer-use");
+          try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
+          if (/^https?:\/\//i.test(target)) {
+            const nav = await browserNavigate(target);
+            const obs = await computerObserve(`open_path ${target}`);
+            return JSON.stringify({ url: (nav as any).url || target, title: (nav as any).title || "", screen: obs.text }).slice(0, 6000);
+          }
+          const resolved = resolveAgentPath(target, "read");
+          const { execFile } = await import("node:child_process");
+          const plat = process.platform;
+          const cmd = plat === "darwin" ? "open" : plat === "win32" ? "cmd" : "xdg-open";
+          const args = plat === "darwin" ? [resolved] : plat === "win32" ? ["/c", "start", "", resolved] : [resolved];
+          await new Promise<void>((resolve, reject) => {
+            const child = execFile(cmd, args, { timeout: 10000, windowsHide: true }, (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+            // Don't keep the agent waiting on the opened app: detach the timer.
+            try { child.unref(); } catch {}
+          });
+          await new Promise((r) => setTimeout(r, 800));
+          const obs = await computerObserve(`open_path ${displayAgentPath(resolved)}`);
+          return JSON.stringify({ path: resolved, screen: obs.text }).slice(0, 6000);
+        } catch (e: any) {
+          return JSON.stringify({ error: e?.message || String(e) });
+        }
+      });
+    },
+  });
+  extraTools.browser_navigate = tool({
+    description:
+      'Open a URL in the page browser and return the document title. Prefer this over pixel clicks for web pages. If the result includes fallback:"computer_act", use computer_act on the desktop browser instead.',
+    inputSchema: z.object({ url: z.string().describe("http(s) URL to open") }),
+    execute: async ({ url }: { url: string }) => {
+      try {
+        const { browserNavigate } = await import("./computer-use");
+        const res = await browserNavigate(String(url || ""));
+        return JSON.stringify(res).slice(0, 4000);
+      } catch (e: any) {
+        return JSON.stringify({ error: e?.message || String(e), fallback: "computer_act" });
+      }
+    },
+  });
+  extraTools.browser_snapshot = tool({
+    description:
+      "Capture a bounded snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over computer_observe for web pages. If fallback is computer_act, use desktop tools instead.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      try {
+        const { browserSnapshot } = await import("./computer-use");
+        const res = await browserSnapshot();
+        const out = { url: res.url, title: res.title, tree: res.tree?.slice(0, 8000), elements: res.elements, fallback: (res as any).fallback, error: (res as any).error, note: (res as any).note };
+        return JSON.stringify(out).slice(0, 12000);
+      } catch (e: any) {
+        return JSON.stringify({ error: e?.message || String(e), fallback: "computer_act" });
+      }
+    },
+  });
+  extraTools.browser_act = tool({
+    description:
+      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type). Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead. Never replay completed or uncertain actions.',
+    inputSchema: z.object({
+      actions: z.array(z.record(z.string(), z.any())).describe("Page actions by ref (max 24)"),
+    }),
+    execute: async ({ actions }: { actions: unknown }) => {
+      try {
+        const { browserAct } = await import("./computer-use");
+        const res = await browserAct(actions as any);
+        return JSON.stringify(res).slice(0, 6000);
+      } catch (e: any) {
+        return JSON.stringify({ error: e?.message || String(e), fallback: "computer_act", uncertain: true });
+      }
+    },
+  });
+  extraTools.request_takeover = tool({
+    description:
+      "Ask the user to take control for protected input or human judgment (site login, captcha, 2FA, payment). The run pauses as waiting_takeover; the user acts in the Browser panel, then the run continues. Use when page/desktop tools cannot operate or credentials must stay with the user.",
+    inputSchema: z.object({ reason: z.string().describe("Why human input is needed") }),
+    execute: async ({ reason }: { reason: string }) => {
+      if (!interactive) {
+        return JSON.stringify({ queued: false, error: "No interactive user in this run (background/subagent). Proceed autonomously or report the blocker." });
+      }
+      return withPerm("request_takeover", { reason }, async () => {
+        try {
+          const { normalizeQuestions, createQuestionnaire } = await import("@/lib/agent/tools/ask-user-tool");
+          const { takeoverLeaseMs } = await import("./computer-use");
+          const normalized = normalizeQuestions([{ id: "takeover", question: `Takeover needed: ${String(reason || "protected input")}. Take control in the Browser panel, then confirm to continue.` }]);
+          if ("error" in normalized) return JSON.stringify({ error: normalized.error });
+          const { promise } = createQuestionnaire(threadId, normalized);
+          // Takeover lease TTL (Rakazo parity: 15 min — logins/captchas take
+          // longer than a permission click), not the generic approval timeout.
+          const timeoutMs = takeoverLeaseMs();
+          const answers = await Promise.race([promise, new Promise<null>((r) => setTimeout(() => r(null), timeoutMs))]);
+          if (answers === null) return JSON.stringify({ timedOut: true, status: "waiting_takeover", note: "User did not respond. Re-observe and continue or ask again once." });
+          return JSON.stringify({ status: "takeover_complete", answers });
+        } catch (e: any) {
+          return JSON.stringify({ error: e?.message || String(e) });
+        }
+      });
+    },
+  });
 
   return {
     ...extraTools,
@@ -401,11 +601,14 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     }),
 
     web_search: tool({
-      description: "Search the web (DuckDuckGo) for up-to-date information. Returns 6 results with title, URL, snippet. No approval needed — batch needed searches together.",
+      description: "Search the web (DuckDuckGo) for up-to-date information. Returns up to maxResults (default 6, max 10) with title, URL, snippet. No approval needed — batch needed searches together.",
       inputSchema: z.object({
         query: z.string(),
+        maxResults: z.number().optional().describe("Max results 1-10 (default 6)"),
       }),
-      execute: async ({ query }: { query: string }) => {
+      execute: async ({ query, maxResults }: { query: string; maxResults?: number }) => {
+        const { clampMaxResults } = await import("@/lib/agent/browser/ssrf-dns");
+        const limit = clampMaxResults(maxResults);
         const run = async (): Promise<string> => {
         try {
           const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
@@ -417,7 +620,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           const links: any[] = [];
           const re = /<a[^>]+class="result__url"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
           let m;
-          while ((m = re.exec(html)) && links.length < 6) {
+          while ((m = re.exec(html)) && links.length < limit) {
             try {
               const href = m[1];
               const title = m[2]?.trim() || href;
@@ -435,7 +638,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
             const DDGS = mod.DDGS || mod.default;
             if (DDGS) {
               const ddgs = new DDGS({ timeout: 8000 });
-              const raw: any[] = await ddgs.text({ keywords: query, maxResults: 6 });
+              const raw: any[] = await ddgs.text({ keywords: query, maxResults: limit });
               const results = raw
                 .map((r: any) => ({
                   title: r.title,
@@ -458,14 +661,23 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     }),
 
     web_fetch: tool({
-      description: "Fetch and extract cleaned text from a URL. Truncated to 25k chars. No approval needed — batch needed fetches together.",
+      description: "Fetch and extract cleaned text from a URL. Truncated to maxChars (default 25000, min 100, max 50000). No approval needed — batch needed fetches together.",
       inputSchema: z.object({
         url: z.string(),
         selector: z.string().optional().describe("CSS selector to extract specific section"),
+        maxChars: z.number().optional().describe("Max chars 100-50000 (default 25000)"),
       }),
-      execute: async ({ url, selector }: { url: string; selector?: string }) => {
+      execute: async ({ url, selector, maxChars }: { url: string; selector?: string; maxChars?: number }) => {
         const run = async (): Promise<string> => {
         try {
+          // Rakazo web-ssrf parity: DNS + private-address + redirect + size guards.
+          const { assertSafeWebUrl, clampMaxChars } = await import("@/lib/agent/browser/ssrf-dns");
+          const charBudget = maxChars === undefined ? 25000 : clampMaxChars(maxChars);
+          try {
+            await assertSafeWebUrl(url);
+          } catch (e: any) {
+            return JSON.stringify({ error: e?.message || String(e), url });
+          }
           const controller = new AbortController();
           const t = setTimeout(() => controller.abort(), 15000);
           const res = await fetch(url, {
@@ -486,7 +698,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           } else {
             text = doc.body.textContent || "";
           }
-          text = text.replace(/\s+/g, " ").trim().slice(0, 25000);
+          text = text.replace(/\s+/g, " ").trim().slice(0, charBudget);
           return JSON.stringify({ url, content: text, length: text.length });
         } catch (e: any) {
           return JSON.stringify({ error: e.message || String(e), url });

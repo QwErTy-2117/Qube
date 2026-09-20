@@ -4,6 +4,7 @@ import { memo, type FC } from "react";
 import type { TextMessagePartComponent } from "@assistant-ui/react";
 import type { Unstable_DirectiveFormatter } from "@assistant-ui/react";
 import { unstable_defaultDirectiveFormatter } from "@assistant-ui/react";
+import { WrenchIcon } from "lucide-react";
 import { Badge } from "./badge";
 
 type IconComponent = FC<{ className?: string }>;
@@ -95,6 +96,9 @@ export function createDirectiveText(
 
 const DirectiveTextImpl = createDirectiveText(
   unstable_defaultDirectiveFormatter,
+  // Skill invocations (:skill[name]) render as badges with an icon;
+  // other directive types keep their existing label-only look.
+  { iconMap: { skill: WrenchIcon } },
 );
 
 /** `Text` message part component that renders directive syntax as inline chips. */

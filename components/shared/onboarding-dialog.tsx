@@ -31,6 +31,8 @@ import {
   renderLobeIcon,
   detectModelIcon,
 } from "./settings-dialog";
+import { detectModelImageSupport } from "@/lib/agent/vision-support";
+import { detectModelThinkingSupport } from "@/lib/agent/thinking-support";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
 import { ChatGPTOnboardingSection } from "@/components/chatgpt/chatgpt-onboarding";
 import { TermsPrivacyContent } from "./terms-content";
@@ -59,6 +61,7 @@ const PROVIDER_ID_TO_ICON: Record<string, string> = {
   ollama: "Ollama",
   lmstudio: "LmStudio",
   custom: "OpenAI",
+  opencode: "OpenCode",
   chatgpt: "OpenAI",
 };
 
@@ -68,13 +71,13 @@ interface FetchedModel {
   reasoning: boolean;
 }
 
-async function fetchProviderModels(baseURL: string, apiKey: string): Promise<FetchedModel[]> {
+async function fetchProviderModels(baseURL: string, apiKey: string, providerId?: string): Promise<FetchedModel[]> {
   const res = await fetch("/api/providers/models", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ baseURL, apiKey }),
+    body: JSON.stringify({ baseURL, apiKey, providerId }),
   });
 
   if (!res.ok) {
@@ -90,16 +93,44 @@ async function fetchProviderModels(baseURL: string, apiKey: string): Promise<Fet
       if (m.object === "model" || !m.object) {
         if (seen.has(m.id)) continue;
         seen.add(m.id);
+        // Prefer ground-truth capabilities when the server provides them
+        // (Ollama /api/show: ["completion","vision","thinking","tools"...]).
+        const caps: string[] = Array.isArray(m.capabilities)
+          ? m.capabilities.map((c: unknown) => String(c).toLowerCase())
+          : [];
+        const hasCaps = caps.length > 0;
         models.push({
           id: m.id,
-          imageInput: false,
-          reasoning: false,
+          imageInput: hasCaps ? caps.includes("vision") : detectModelImageSupport(m.id),
+          reasoning: hasCaps ? caps.includes("thinking") : detectModelThinkingSupport(m.id),
         });
       }
     }
     return models;
   }
   throw new Error("Unexpected model list format");
+}
+
+async function probeProviderChat(
+  providerId: string,
+  baseURL: string,
+  apiKey: string,
+  modelId: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch("/api/providers/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providerId, baseURL, apiKey, modelId }),
+    });
+    const body = await res.json().catch(() => null);
+    if (body?.ok) return null;
+    const err = body?.error || "Chat probe failed";
+    const hint = body?.hint ? ` ${body.hint}` : "";
+    return `${err}${hint}`;
+  } catch (e) {
+    return e instanceof Error ? e.message : "Chat probe failed";
+  }
 }
 
 export function OnboardingModal() {
@@ -329,9 +360,9 @@ export function OnboardingModal() {
     setSavingConfigure(true);
 
     try {
-      const fetchedModels = await fetchProviderModels(configBaseUrl || "", configApiKey || "");
+      const fetchedModels = await fetchProviderModels(configBaseUrl || "", configApiKey || "", configureProvider.id);
       const provId = configureProvider.id;
-      const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter"];
+      const autoDetectIcons = ["custom", "ollama", "lmstudio", "openrouter", "opencode"];
       const providerIcon = PROVIDER_ID_TO_ICON[provId] || provId.charAt(0).toUpperCase() + provId.slice(1);
 
       const qualifiedModels = fetchedModels.map((model, idx) => ({
@@ -343,6 +374,22 @@ export function OnboardingModal() {
         imageInput: model.imageInput,
         reasoning: model.reasoning,
       }));
+
+      if (fetchedModels.length > 0 && configApiKey) {
+        const probeId =
+          provId === "opencode"
+            ? fetchedModels.find((m) => /^(gpt-|deepseek|glm|kimi|minimax|big-pickle|mimo|ling|nemotron)/i.test(m.id))?.id ||
+              fetchedModels[0].id
+            : fetchedModels[0].id;
+        const probeError = await probeProviderChat(provId, configBaseUrl || "", configApiKey || "", probeId);
+        if (probeError) {
+          const temporary = /rate limit|quota exceeded|429/i.test(probeError);
+          if (!temporary) {
+            throw new Error(`Models listed OK, but a test chat with "${probeId}" failed:\n${probeError}`);
+          }
+          console.warn(`[Onboarding] Chat probe rate-limited (saving anyway): ${probeError}`);
+        }
+      }
 
       const targetProv: ProviderConfig = {
         ...configureProvider,

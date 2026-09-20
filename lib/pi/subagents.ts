@@ -14,6 +14,7 @@
 import { providerStore } from "./provider-store";
 import { createPiModelClient, createPiModelClientForRequest } from "./model-client";
 import { createPiTools } from "./tools";
+import { formatCurrentTimeInstruction } from "./prompt-context";
 
 export type SubagentType = "Explore" | "general" | "researcher" | "reviewer";
 
@@ -60,8 +61,12 @@ export function getActiveSubagentCount(): number {
   return activeSubagents.size;
 }
 
-function buildSubagentSystemPrompt(agentType: string, skillsHint?: string): string {
-  const base = `You are a Qube subagent. You run ISOLATED with a fresh context window — you do NOT see the parent conversation. Work only from the task given. Be concise, use tools when needed, verify actions, and return a compressed summary (findings/decisions, not full logs).${skillsHint ? `\n\n## Skills available\n${skillsHint}` : ""}`;
+export function buildSubagentSystemPrompt(agentType: string, skillsHint?: string): string {
+  // Isolated fresh context: no parent history, so the model would otherwise
+  // fall back to its training cutoff as "today" (e.g. refusing Sept 2026
+  // research as "the future"). Anchor it to the real current time, same as
+  // the main harness prompt.
+  const base = `You are a Qube subagent. You run ISOLATED with a fresh context window — you do NOT see the parent conversation. ${formatCurrentTimeInstruction()} Work only from the task given. Be concise, use tools when needed, verify actions, and return a compressed summary (findings/decisions, not full logs).${skillsHint ? `\n\n## Skills available\n${skillsHint}` : ""}`;
 
   switch (agentType) {
     case "Explore":

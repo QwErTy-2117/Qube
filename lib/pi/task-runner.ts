@@ -8,6 +8,7 @@
 import { providerStore } from "./provider-store";
 import { createPiModelClient } from "./model-client";
 import { createPiTools } from "./tools";
+import { formatCurrentTimeInstruction } from "./prompt-context";
 import { loadMcpTools, closeMcpClients } from "./mcp";
 import { createTaskPermissionChecker } from "@/lib/middleware/permission-middleware";
 import { getWorkspacePath, resolvePathInWorkspace, relativePathInWorkspace, resolveExternalPath } from "@/lib/middleware/workspace";
@@ -48,7 +49,7 @@ async function scanGeneratedFiles() {
   return generated;
 }
 
-function buildPiTaskSystemPrompt(task: ScheduledTask, heartbeatState?: string, skillsSection?: string, connectorHint?: string): string {
+export function buildPiTaskSystemPrompt(task: ScheduledTask, heartbeatState?: string, skillsSection?: string, connectorHint?: string): string {
   const heartbeatContext = task.type === "heartbeat" && heartbeatState ? `\n\n## Heartbeat Context\n${heartbeatState}` : "";
   const heartbeatDiscipline =
     task.type === "heartbeat"
@@ -60,7 +61,7 @@ function buildPiTaskSystemPrompt(task: ScheduledTask, heartbeatState?: string, s
       : `\n\n## Scheduled-task discipline (exact timing, isolated)
 - This is an exact-timed automation with its own run history. Execute the instructions fully and autonomously.
 - Verify every action after tool calls; report verified state (succeeded/partial/failed). Never claim work without tool results.`;
-  return `You are Qube Pi background task "${task.name}" (${task.type}). You run via Pi harness without user supervision.
+  return `You are Qube Pi background task "${task.name}" (${task.type}). You run via Pi harness without user supervision. ${formatCurrentTimeInstruction()}
 
 ## Your Task
 ${task.instructions}

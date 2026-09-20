@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAui, useAuiState } from "@assistant-ui/react";
+import { useWorkspaceStore } from "@/lib/workspace/store";
 
 type ItemState = {
   id: string;
@@ -168,6 +169,32 @@ export function ThreadUrlSync() {
     router.push(want);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainId, mainItem?.remoteId, mainItem?.status, pathname]);
+
+  return null;
+}
+
+/**
+ * Closes the live browser panel on genuine thread changes (new chat opened
+ * or switched to another chat). The browser mirrors a live session tied to
+ * the previous chat's agent activity, so it must not linger into the new
+ * chat. Document artifacts are left alone; the agent reopens the browser
+ * via BrowserAutoOpener when the new chat actually browses.
+ * First mount and re-renders never close (same prev-ref discipline as
+ * ThreadUrlSync above).
+ */
+export function WorkspaceThreadReset() {
+  const mainId = useAuiState((s) => (s.threads as any)?.mainThreadId as string | undefined);
+  const prevMainRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevMainRef.current;
+    if (mainId) prevMainRef.current = mainId;
+    if (!mainId) return;
+    if (prev === undefined || prev === mainId) return;
+    try {
+      const st = useWorkspaceStore.getState();
+      if (st.open && st.artifact?.kind === "browser") st.closeWorkspace();
+    } catch {}
+  }, [mainId]);
 
   return null;
 }

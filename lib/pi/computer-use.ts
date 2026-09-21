@@ -330,6 +330,28 @@ export async function browserAct(actions: BrowserActStep[]): Promise<{ ok: boole
 let lastFrameId: string | null = null;
 let lastFrameBytes: string | null = null;
 
+// Frame byte cache: screenshots travel to the MODEL via tool toModelOutput,
+// never inside the JSON text (which would bloat transcripts and get sliced).
+// Keyed by frameId so identical-frame dedup ("unchanged") stays byte-free.
+const frameBytes = new Map<string, string>();
+export function rememberFrame(frameId: string, b64: string): void {
+  try {
+    frameBytes.set(frameId, b64);
+    while (frameBytes.size > 5) {
+      const oldest = frameBytes.keys().next().value as string | undefined;
+      if (!oldest) break;
+      frameBytes.delete(oldest);
+    }
+  } catch {}
+}
+export function recallFrame(frameId: string): string | undefined {
+  try {
+    return frameBytes.get(frameId);
+  } catch {
+    return undefined;
+  }
+}
+
 function frameIdFor(jpgBase64: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < jpgBase64.length; i += 7) {
@@ -356,6 +378,7 @@ export async function computerObserve(note = "computer observed"): Promise<{ tex
     }
     lastFrameBytes = data;
     void lastFrameBytes;
+    rememberFrame(frameId, data);
     return { text: `${note}\n${JSON.stringify({ frameId })}`, imageBase64: data, mimeType: "image/jpeg", frameId, unchanged: false };
   } catch (e) {
     return { text: `${note} failed`, error: e instanceof Error ? e.message : String(e) };

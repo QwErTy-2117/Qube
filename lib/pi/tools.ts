@@ -254,6 +254,30 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
   // Computer-use + page-browser (Rakazo parity: computer_observe /
   // computer_act / browser_navigate / browser_snapshot / browser_act /
   // request_takeover). Backed by local managed Chrome via CDP.
+  // Vision: screenshots reach the MODEL via toModelOutput (image-data
+  // parts) backed by the frame cache in computer-use — never as base64
+  // inside the JSON text.
+  async function modelOutputWithFrame(output: unknown): Promise<any> {
+    try {
+      const { recallFrame } = await import("./computer-use");
+      const parsed = typeof output === "string" ? JSON.parse(output) : (output as any);
+      const fid = (parsed as any)?.frameId as string | undefined;
+      const bytes = fid ? recallFrame(fid) : undefined;
+      const text = typeof output === "string" ? output : JSON.stringify(output);
+      if (bytes) {
+        return {
+          type: "content",
+          value: [
+            { type: "text", text: text.slice(0, 2000) },
+            { type: "image-data", data: bytes, mediaType: "image/jpeg" },
+          ],
+        };
+      }
+      return { type: "text", value: text.slice(0, 4000) };
+    } catch {
+      return { type: "text", value: String(output).slice(0, 4000) };
+    }
+  }
   extraTools.computer_observe = tool({
     description:
       "Capture the current screen of the local computer (managed Chrome). Returns frame metadata and an image. Observe before coordinate-based actions and whenever another actor may have changed the desktop. Identical consecutive frames omit image bytes.",
@@ -269,6 +293,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
         return JSON.stringify({ error: e?.message || String(e) });
       }
     },
+    toModelOutput: async ({ output }: any) => modelOutputWithFrame(output),
   });
   extraTools.computer_act = tool({
     description:
@@ -284,12 +309,17 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           const { computerAct, screenClaim } = await import("./computer-use");
           try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
           const res = await computerAct(actions as any, { observe, settleMs: settle_ms });
-          return JSON.stringify(res).slice(0, 12000);
+          // Keep base64 out of the transcript text — the model gets the real
+          // bytes via toModelOutput. Report the byte count instead.
+          const { imageBase64, ...rest } = res as any;
+          void imageBase64;
+          return JSON.stringify({ ...rest, imageChars: (res as any)?.imageBase64?.length || 0 }).slice(0, 12000);
         } catch (e: any) {
           return JSON.stringify({ error: e?.message || String(e) });
         }
       });
     },
+    toModelOutput: async ({ output }: any) => modelOutputWithFrame(output),
   });
   // open_path (Rakazo parity): open a workspace file in its default graphical
   // application, or an http(s) URL in the managed browser, then observe.

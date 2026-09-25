@@ -34,6 +34,11 @@ import {
 import { detectModelImageSupport } from "@/lib/agent/vision-support";
 import { detectModelThinkingSupport } from "@/lib/agent/thinking-support";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
+import {
+  getCachedConnectors,
+  fetchConnectorsList,
+  setCachedConnectors,
+} from "@/lib/connectors/connectors-cache";
 import { ChatGPTOnboardingSection } from "@/components/chatgpt/chatgpt-onboarding";
 import { TermsPrivacyContent } from "./terms-content";
 
@@ -180,43 +185,41 @@ export function OnboardingModal() {
     setFinished(false);
   }, [stage]);
 
-  // Connectors state for Stage 5
-  const [connectors, setConnectors] = useState<any[]>([]);
+  // Connectors state for Stage 5 — seeded from the shared cache so the
+  // grid paints instantly; refreshes silently in the background.
+  const [connectors, setConnectors] = useState<any[]>(() => getCachedConnectors() || []);
   const [connectorsLoading, setConnectorsLoading] = useState(false);
+  const [connectorsRefreshing, setConnectorsRefreshing] = useState(false);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [connectorQuery, setConnectorQuery] = useState("");
   const [disconnectTarget, setDisconnectTarget] = useState<any | null>(null);
   const [connectorDetail, setConnectorDetail] = useState<any | null>(null);
 
-  const fetchConnectors = useCallback(async () => {
-    setConnectorsLoading(true);
+  const fetchConnectors = useCallback(async (fresh = false) => {
+    const hasData = (getCachedConnectors()?.length || 0) > 0;
+    if (!hasData) setConnectorsLoading(true);
+    else setConnectorsRefreshing(true);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setConnectors(data.connectors || []);
-    } catch (e) {
-      console.error("[onboarding] fetchConnectors failed", e);
-      setConnectors([]);
+      const list = await fetchConnectorsList({ fresh });
+      if (list.length > 0) {
+        setConnectors(list);
+        setCachedConnectors(list);
+      }
     } finally {
       setConnectorsLoading(false);
+      setConnectorsRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    if (open && stage === 4) fetchConnectors();
+    if (open && stage === 4) void fetchConnectors();
   }, [open, stage, fetchConnectors]);
 
   useEffect(() => {
     if (!connectingId) return;
     const pollInterval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`);
-        const data = await res.json();
-        const updated = (data.connectors || []) as any[];
+        const updated = (await fetchConnectorsList({ fresh: true })) as any[];
         const match = updated.find((c: any) => c.id === connectingId);
         if (match?.connected) {
           setConnectors(updated);
@@ -495,7 +498,7 @@ export function OnboardingModal() {
         }
       } else {
         setConnectingId(null);
-        fetchConnectors();
+        void fetchConnectors(true);
       }
     } catch {
       setConnectingId(null);
@@ -511,7 +514,7 @@ export function OnboardingModal() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectorId }),
       });
-      await fetchConnectors();
+      await fetchConnectors(true);
     } catch {}
     setConnectingId(null);
   };
@@ -800,7 +803,7 @@ export function OnboardingModal() {
                         </p>
                       </div>
                       <div className="flex flex-col flex-1 min-h-0 pt-8">
-                        {connectorsLoading ? (
+                        {connectorsLoading && connectors.length === 0 ? (
                           <Loader2Icon className="size-8 animate-spin text-muted-foreground mx-auto mt-8" />
                         ) : (
                           <>
@@ -813,6 +816,9 @@ export function OnboardingModal() {
                                   placeholder="Search connectors..."
                                   className="w-full h-8 rounded-lg border border-border bg-background pl-8 pr-3 text-xs outline-none focus:border-ring transition-colors placeholder:text-muted-foreground/40"
                                 />
+                                {connectorsRefreshing && (
+                                  <Loader2Icon className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 animate-spin text-muted-foreground/50 pointer-events-none" />
+                                )}
                               </div>
                             </div>
                             <div className="flex-1 min-h-0 overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

@@ -57,6 +57,7 @@ import { useLoginWithChatGPT } from "@opencoredev/loginwithchatgpt-react";
 import { TermsPrivacyContent } from "./terms-content";
 import { useUpdaterStore } from "@/lib/updater-store";
 import { checkForUpdates } from "@/lib/updater";
+import { prefetchConnectors } from "@/lib/connectors/connectors-cache";
 import packageJson from "@/package.json";
 
 const APP_VERSION: string =
@@ -938,6 +939,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [appVersion, setAppVersion] = useState(APP_VERSION);
   const [open, setOpen] = useState(false);
   const [tabValue, setTabValue] = useState("preferences");
+  const [focusedConnectorId, setFocusedConnectorId] = useState<string | null>(null);
 
   // Keep the preferences Tabs in sync with the single source of truth (`next-themes`).
   // Previously this read `localStorage` + observed the `dark` class, which desynced from
@@ -1725,13 +1727,21 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   }, []);
 
   // Programmatic open (e.g. home-page connectors tray): detail.tab selects
-  // one of the settings tabs. Matches the qube-* window-event convention.
+  // one of the settings tabs, detail.connectorId deep-links to a specific
+  // app popup inside the connectors tab. Matches the qube-* window-event convention.
   useEffect(() => {
     const handler = (e: Event) => {
       try {
-        const tab = (e as CustomEvent).detail?.tab;
+        const detail = (e as CustomEvent).detail;
+        const tab = detail?.tab;
         if (tab === "preferences" || tab === "connectors" || tab === "scheduling" || tab === "advanced") {
           setTabValue(tab);
+        }
+        const connectorId = detail?.connectorId;
+        if (typeof connectorId === "string" && connectorId.trim()) {
+          setFocusedConnectorId(connectorId.trim());
+        } else if (tab === "connectors") {
+          setFocusedConnectorId(null);
         }
       } catch {}
       setOpen(true);
@@ -1739,6 +1749,13 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     window.addEventListener("qube-open-settings", handler);
     return () => window.removeEventListener("qube-open-settings", handler);
   }, []);
+
+  // Warm the connectors cache as soon as settings opens — by the time the
+  // user switches to the Connectors tab the list is usually already cached.
+  useEffect(() => {
+    if (!open) return;
+    prefetchConnectors();
+  }, [open]);
 
   // Auto-save all settings when dialog closes
   const handleOpenChange = (next: boolean) => {
@@ -1777,6 +1794,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         body: JSON.stringify({ providers, defaultModelId: defaultModel }),
       }).catch(() => {});
       window.dispatchEvent(new Event("qube-providers-changed"));
+    }
+    if (!next) {
+      setFocusedConnectorId(null);
     }
     setOpen(next);
   };
@@ -1943,7 +1963,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
           {/* Connectors Tab */}
           <TabsContent value="connectors" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
-            <ConnectorsTab />
+            <ConnectorsTab
+              focusedConnectorId={focusedConnectorId}
+              onFocusedConsumed={() => setFocusedConnectorId(null)}
+            />
           </TabsContent>
 
           {/* Advanced Tab */}

@@ -49,7 +49,9 @@ export function validateBrowserUrl(raw: string): { ok: true; url: string } | { o
   if (!raw || typeof raw !== "string") return { ok: false, error: "URL is required" };
   let trimmed = raw.trim();
   if (!trimmed) return { ok: false, error: "URL is empty" };
-  if (trimmed.length > 2048) return { ok: false, error: "URL too long (max 2048 chars)" };
+  // Real-world widget/SSO/search URLs routinely exceed 2KB (long tokens,
+  // merged form fields). Browsers accept 8K+; length is not an SSRF vector.
+  if (trimmed.length > 8192) return { ok: false, error: "URL too long (max 8192 chars)" };
   // Allow bare domains: default to https
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
     trimmed = `https://${trimmed}`;

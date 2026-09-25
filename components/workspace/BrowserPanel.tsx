@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { XIcon, GlobeIcon, AlertTriangleIcon, RotateCwIcon, SquareArrowOutUpRightIcon, ArrowUpIcon } from "lucide-react";
+import { XIcon, GlobeIcon, AlertTriangleIcon, RotateCwIcon, ArrowUpIcon, ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import { useWorkspaceStore } from "@/lib/workspace/store";
 
 type Health = {
@@ -10,24 +10,14 @@ type Health = {
   frames?: { watchers: number; framesDelivered: number; lastFrameAt: number | null; lastError: string | null };
 } | null;
 
-const MIN_FRAME_LEN = 1000;
-
-async function openInBrowser(url: string): Promise<void> {
-  if (!url || !/^https?:\/\//i.test(url)) return;
-  try {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(url);
-  } catch {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-}
-
 /**
- * Browser side panel: mirrors the live Chromium the browser-use agent drives
- * (frames via /api/browser/frames). Fully interactive — the user can click,
- * scroll, type alongside the agent (same CDP pipe, so they compose). The
- * window is never closed automatically; only the X button (or app shutdown)
- * ends the session. A Retry control recovers a wedged browser.
+ * Browser side panel: the REAL live page in a sandboxed iframe, served
+ * through /api/browser/view (framing protections stripped server-side), so
+ * there is no screenshot-stream lag — clicks, scroll and typing are native.
+ * The screenshot stream (/api/browser/frames) still runs underneath for URL
+ * sync with the agent's shared browser. The window is never closed
+ * automatically; only the X button (or app shutdown) ends the session.
+ * A Retry control recovers a wedged browser.
  */
 export function BrowserPanel() {
   const open = useWorkspaceStore((s) => s.open);
@@ -37,7 +27,6 @@ export function BrowserPanel() {
   const setWidth = useWorkspaceStore((s) => s.setWidth);
   const reduceMotion = useReducedMotion();
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
-  const [img, setImg] = useState<string | null>(null);
   const [hasFrame, setHasFrame] = useState(false);
   const [liveUrl, setLiveUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -48,15 +37,61 @@ export function BrowserPanel() {
   const hasFrameRef = useRef(false);
   const lastActivityRef = useRef(0);
   const lastReconnectRef = useRef(0);
+  // liveUrl mirror for change-checks without re-rendering on every frame.
+  const liveUrlRef = useRef("");
+  const liveRef = useRef(true);
+  // While the user types in the URL bar, stream updates must NOT overwrite it.
+  const editingUrlRef = useRef(false);
   const show = open && artifact?.kind === "browser";
   const [navUrl, setNavUrl] = useState("");
-  const [meta, setMeta] = useState<{ deviceWidth: number; deviceHeight: number } | null>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const [navigating, setNavigating] = useState(false);
+  const [navError, setNavError] = useState<string | null>(null);
+  // The URL actually rendered in the iframe view. Follows committed
+  // navigations (user Go / agent browser) — never keystrokes.
+  const [viewUrl, setViewUrl] = useState("");
+  // URL the iframe has actually finished loading (vs its current src).
+  const [loadedSrc, setLoadedSrc] = useState("");
+  const loadedSrcRef = useRef(loadedSrc);
+  loadedSrcRef.current = loadedSrc;
+  // Opaque per-mount token so the proxy can attribute in-iframe link clicks
+  // to this panel for /api/browser/panel-url polling.
+  const panelIdRef = useRef<string>("");
+  if (!panelIdRef.current) {
+    try {
+      panelIdRef.current = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
+    } catch {
+      panelIdRef.current = `panel${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`;
+    }
+  }
+  // Last polled panel URL — tells fresh navigations apart from stale polls.
+  const lastPollRef = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const urlInputRef = useRef<HTMLInputElement>(null);
+  const viewUrlRef = useRef(viewUrl);
+  viewUrlRef.current = viewUrl;
 
   const noteActivity = () => {
     lastActivityRef.current = Date.now();
-    setLive(true);
+    if (!liveRef.current) {
+      liveRef.current = true;
+      setLive(true);
+    }
+  };
+
+  const setLiveUrlIfChanged = (url: string) => {
+    if (url && url !== liveUrlRef.current) {
+      liveUrlRef.current = url;
+      setLiveUrl(url);
+      // Keep the bar AND the fast view in sync when the user is NOT typing.
+      if (!editingUrlRef.current) {
+        setNavUrl(url);
+        if (url !== viewUrlRef.current) {
+          viewUrlRef.current = url;
+          setViewUrl(url);
+          pushTravel(url);
+        }
+      }
+    }
   };
 
   const onDrag = useCallback((e: MouseEvent) => {
@@ -90,12 +125,17 @@ export function BrowserPanel() {
   // Freshness watchdog: if nothing (frame or URL tick) arrives for a
   // while, force a stream reconnect — a wedged pipe otherwise freezes the
   // panel on a stale screenshot with no indication. At most once per 15s.
+  // State is only touched on change so the watchdog itself never re-renders.
   useEffect(() => {
     if (!show) return;
     lastActivityRef.current = Date.now();
     const timer = setInterval(() => {
       const idleMs = Date.now() - lastActivityRef.current;
-      setLive(idleMs < 10000);
+      const shouldBeLive = idleMs < 10000;
+      if (shouldBeLive !== liveRef.current) {
+        liveRef.current = shouldBeLive;
+        setLive(shouldBeLive);
+      }
       if (idleMs > 15000 && Date.now() - lastReconnectRef.current > 15000) {
         lastReconnectRef.current = Date.now();
         setEsKey((k) => k + 1);
@@ -114,25 +154,25 @@ export function BrowserPanel() {
     setHealth(null);
     try {
       es = new EventSource("/api/browser/frames");
+      const markLive = () => {
+        noteActivity();
+        if (!hasFrameRef.current) {
+          hasFrameRef.current = true;
+          setHasFrame(true);
+          setError(null);
+          setHealth(null);
+        }
+      };
       es.addEventListener("frame", (ev) => {
         try {
-          const data = JSON.parse((ev as MessageEvent).data) as { jpg?: string; url?: string; meta?: { deviceWidth: number; deviceHeight: number } };
+          // Fast-only view: frame images are ignored (the iframe IS the
+          // view). Only the URL is used, to follow the agent's browser.
+          // Frame URLs can lag behind navigation — never let them overwrite
+          // what the user is typing, and only re-render on actual change.
+          const data = JSON.parse((ev as MessageEvent).data) as { url?: string };
           if (typeof data.url === "string" && data.url) {
-            setLiveUrl(data.url);
-            setNavUrl(data.url);
-            noteActivity();
-          }
-          if (data.meta && typeof data.meta.deviceWidth === "number") setMeta(data.meta);
-          // Ignore trivial/empty captures — only real frames clear waiting UI.
-          if (typeof data.jpg === "string" && data.jpg.length >= MIN_FRAME_LEN) {
-            noteActivity();
-            setImg(`data:image/jpeg;base64,${data.jpg}`);
-            if (!hasFrameRef.current) {
-              hasFrameRef.current = true;
-              setHasFrame(true);
-              setError(null);
-              setHealth(null);
-            }
+            setLiveUrlIfChanged(data.url);
+            markLive();
           }
         } catch {}
       });
@@ -140,9 +180,8 @@ export function BrowserPanel() {
         try {
           const data = JSON.parse((ev as MessageEvent).data) as { url?: string };
           if (typeof data.url === "string" && data.url) {
-            setLiveUrl(data.url);
-            setNavUrl(data.url);
-            noteActivity();
+            setLiveUrlIfChanged(data.url);
+            markLive();
           }
         } catch {}
       });
@@ -222,8 +261,107 @@ export function BrowserPanel() {
     setEsKey((k) => k + 1);
   };
 
+  // Committed-navigation history for back/forward. Kept in a ref (not
+  // state) so the SSE handler and the panel-url poller — both long-lived
+  // closures — always see fresh values; `travelTick` re-renders for the
+  // button disabled-states.
+  const travelRef = useRef<{ entries: string[]; idx: number }>({ entries: [], idx: -1 });
+  const [travelTick, setTravelTick] = useState(0);
+  void travelTick;
+  const travel = travelRef.current;
+
+  const pushTravel = (url: string) => {
+    const t = travelRef.current;
+    if (t.entries[t.idx] === url) return;
+    const entries = [...t.entries.slice(0, t.idx + 1), url];
+    travelRef.current = { entries, idx: entries.length - 1 };
+    setTravelTick((x) => x + 1);
+  };
+
+  const commitNavigate = async (target?: string, pushHist = true) => {
+    const v = (target ?? navUrl).trim();
+    if (!v || navigating) return;
+    const url = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+    editingUrlRef.current = false;
+    setNavigating(true);
+    setNavError(null);
+    setNavUrl(url);
+    liveUrlRef.current = url;
+    setLiveUrl(url);
+    // Drive the fast view immediately — don't wait for the stream round-trip.
+    // (The loading overlay is derived from loadedSrc vs src, so no reset needed.)
+    viewUrlRef.current = url;
+    setViewUrl(url);
+    if (pushHist) pushTravel(url);
+    try {
+      const res = await fetch("/api/browser/input", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "navigate", url }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || (data && data.error)) {
+        throw new Error((data && data.error) || `Navigation failed (${res.status})`);
+      }
+      urlInputRef.current?.blur();
+    } catch (e) {
+      // Keep the typed URL so the user can retry; show why it failed.
+      editingUrlRef.current = true;
+      setNavError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setNavigating(false);
+    }
+  };
+
+  const goBack = () => {
+    const t = travelRef.current;
+    if (t.idx <= 0 || navigating) return;
+    travelRef.current = { entries: t.entries, idx: t.idx - 1 };
+    setTravelTick((x) => x + 1);
+    void commitNavigate(t.entries[t.idx - 1], false);
+  };
+
+  const goForward = () => {
+    const t = travelRef.current;
+    if (t.idx >= t.entries.length - 1 || navigating) return;
+    travelRef.current = { entries: t.entries, idx: t.idx + 1 };
+    setTravelTick((x) => x + 1);
+    void commitNavigate(t.entries[t.idx + 1], false);
+  };
+
   const dur = reduceMotion ? 0.01 : 0.22;
-  const showDiagnostics = !hasFrame && (error || health);
+  const showDiagnostics = !hasFrame && !viewUrl && (error || health);
+  const proxySrc = viewUrl
+    ? `/api/browser/view?url=${encodeURIComponent(viewUrl)}&panel=${panelIdRef.current}`
+    : "";
+
+  // Follow in-iframe link clicks: the proxy records every navigation under
+  // our panel token (links/forms are rewritten to route through it). Poll
+  // for the current page URL and adopt it into the bar + travel history.
+  // Guards: skip while typing, while the view is still settling on a
+  // committed URL, and ignore already-seen (stale) poll values.
+  useEffect(() => {
+    if (!show) return;
+    const t = setInterval(async () => {
+      try {
+        if (editingUrlRef.current) return;
+        if (loadedSrcRef.current !== viewUrlRef.current) return;
+        const res = await fetch(`/api/browser/panel-url?panel=${panelIdRef.current}`, { cache: "no-store" });
+        const data = (await res.json().catch(() => null)) as { url?: string | null } | null;
+        const url = typeof data?.url === "string" ? data.url : null;
+        if (!url || url === lastPollRef.current) return;
+        lastPollRef.current = url;
+        if (url !== viewUrlRef.current) {
+          viewUrlRef.current = url;
+          setViewUrl(url);
+          setNavUrl(url);
+          pushTravel(url);
+        }
+      } catch {}
+    }, 2000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
 
   return (
     <AnimatePresence initial={false}>
@@ -243,19 +381,11 @@ export function BrowserPanel() {
             <div className="mx-auto mt-[45%] h-10 w-1 rounded-full bg-border/70 opacity-0 transition hover:opacity-100" />
           </div>
 
-          {/* Live view — interactive: user clicks/type/scroll coexists with agent */}
+          {/* Live view — the REAL page in a sandboxed iframe (native clicks,
+              scroll, typing — zero screenshot lag). */}
           <div
             ref={containerRef}
-            className="relative min-h-0 flex-1 overflow-hidden bg-black/90"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              // Forward typing to the page when the panel has focus
-              const k = e.key;
-              if (k.length === 1 || ["Enter", "Backspace", "Tab", "Escape", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(k)) {
-                fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "key", key: k }) }).catch(() => {});
-                if (k !== "Tab") e.preventDefault();
-              }
-            }}
+            className="relative min-h-0 flex-1 overflow-hidden bg-white"
           >
             {showDiagnostics ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -288,91 +418,99 @@ export function BrowserPanel() {
                   {restarting ? "Restarting…" : "Retry"}
                 </button>
               </div>
-            ) : !hasFrame || !img ? (
+            ) : !hasFrame && !viewUrl ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
                 <GlobeIcon className="size-8 text-muted-foreground/40" />
                 <p className="text-sm font-medium text-foreground/80">Waiting for the browser…</p>
                 <p className="max-w-[260px] text-xs text-muted-foreground">Ask the agent to browse and the live window appears here — you can also type a URL above and click around.</p>
               </div>
             ) : (
-              <div className="absolute inset-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  ref={imgRef}
-                  src={img}
-                  alt={liveUrl || "Live browser"}
-                  className="absolute inset-0 h-full w-full object-contain cursor-pointer"
-                  draggable={false}
-                  onClick={(e) => {
-                    const rect = (e.currentTarget as HTMLImageElement).getBoundingClientRect();
-                    const cont = containerRef.current?.getBoundingClientRect();
-                    // object-contain letterbox compensation
-                    const imgW = rect.width, imgH = rect.height;
-                    const xInImg = e.clientX - rect.left;
-                    const yInImg = e.clientY - rect.top;
-                    const deviceWidth = meta?.deviceWidth || 1280;
-                    // Assume viewport scales to fit width (height letterboxed)
-                    const scale = deviceWidth / imgW;
-                    const x = xInImg * scale;
-                    const y = yInImg * scale;
-                    fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "click", x, y }) }).catch(() => {});
-                    containerRef.current?.focus();
-                  }}
-                  onWheel={(e) => {
-                    const rect = (e.currentTarget as HTMLImageElement).getBoundingClientRect();
-                    const xInImg = e.clientX - rect.left;
-                    const yInImg = e.clientY - rect.top;
-                    const deviceWidth = meta?.deviceWidth || 1280;
-                    const scale = deviceWidth / rect.width;
-                    fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "wheel", x: xInImg * scale, y: yInImg * scale, deltaX: e.deltaX, deltaY: e.deltaY }) }).catch(() => {});
-                  }}
+              <div className="absolute inset-0 bg-white">
+                <iframe
+                  key={proxySrc}
+                  src={proxySrc}
+                  title={liveUrl || viewUrl || "Live browser"}
+                  sandbox="allow-scripts allow-forms allow-popups allow-downloads"
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 h-full w-full border-0 bg-white"
+                  onLoad={() => setLoadedSrc(proxySrc)}
                 />
+                {loadedSrc !== proxySrc && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white">
+                    <p className="text-xs text-muted-foreground">
+                      {navigating ? "Navigating…" : "Loading page…"}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
-          {/* Bottom bar — single rounded typing container (Go centered inside, outer buttons same height, all rounded) */}
+          {/* Bottom bar — back/forward + single rounded typing container (Go centered inside, outer buttons same height, all rounded) */}
           <div className="flex items-center gap-1.5 border-t border-border/60 px-2 py-1.5">
-            <div className="flex h-8 flex-1 items-center gap-2 rounded-full bg-muted/60 pl-3 pr-1 border border-border/50 focus-within:border-border focus-within:bg-background transition-colors">
+            <button
+              onClick={goBack}
+              disabled={travel.idx <= 0 || navigating}
+              title="Go back"
+              aria-label="Go back"
+              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/50 bg-muted/60 text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40"
+            >
+              <ArrowLeftIcon className="size-4" />
+            </button>
+            <button
+              onClick={goForward}
+              disabled={travel.idx >= travel.entries.length - 1 || navigating}
+              title="Go forward"
+              aria-label="Go forward"
+              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/50 bg-muted/60 text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40"
+            >
+              <ArrowRightIcon className="size-4" />
+            </button>
+            <div className={`flex h-8 flex-1 items-center gap-2 rounded-full bg-muted/60 pl-3 pr-1 border transition-colors ${navError ? "border-red-500/60 focus-within:bg-background" : "border-border/50 focus-within:border-border focus-within:bg-background"}`}>
               <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />
               <input
+                ref={urlInputRef}
                 value={navUrl}
-                onChange={(e) => setNavUrl(e.target.value)}
+                onChange={(e) => {
+                  setNavUrl(e.target.value);
+                  if (navError) setNavError(null);
+                }}
+                onFocus={() => {
+                  editingUrlRef.current = true;
+                }}
+                onBlur={() => {
+                  // Stop shielding the bar once the user leaves it; if they
+                  // typed nothing new, fall back to the viewed page URL.
+                  editingUrlRef.current = false;
+                  if (!navUrl.trim() && viewUrlRef.current) setNavUrl(viewUrlRef.current);
+                }}
                 onKeyDown={(e) => {
+                  // Never let URL-bar keys bubble to the page handler above.
+                  e.stopPropagation();
                   if (e.key === "Enter") {
-                    const v = navUrl.trim();
-                    if (!v) return;
-                    const url = /^https?:\/\//i.test(v) ? v : `https://${v}`;
-                    setLiveUrl(url);
-                    fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "navigate", url }) }).catch(() => {});
+                    e.preventDefault();
+                    void commitNavigate();
+                  } else if (e.key === "Escape") {
+                    // Abandon the edit and restore the viewed URL.
+                    editingUrlRef.current = false;
+                    if (viewUrlRef.current) setNavUrl(viewUrlRef.current);
+                    urlInputRef.current?.blur();
                   }
                 }}
-                placeholder={liveUrl || "https://"}
+                placeholder={viewUrl || liveUrl || "https://"}
+                title={navError || viewUrl || liveUrl || undefined}
+                aria-label="Browser URL"
                 className="min-w-0 flex-1 bg-transparent text-[13px] leading-none outline-none placeholder:text-muted-foreground"
               />
               <button
-                onClick={() => {
-                  const v = navUrl.trim();
-                  if (!v) return;
-                  const url = /^https?:\/\//i.test(v) ? v : `https://${v}`;
-                  setLiveUrl(url);
-                  setNavUrl(url);
-                  fetch("/api/browser/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "navigate", url }) }).catch(() => {});
-                }}
+                onClick={() => void commitNavigate()}
+                disabled={navigating || !navUrl.trim()}
                 aria-label="Go"
-                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+                title={navError || "Go to URL"}
+                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                <ArrowUpIcon className="size-3.5" />
+                <ArrowUpIcon className={`size-3.5 ${navigating ? "animate-pulse" : ""}`} />
               </button>
             </div>
-            <button
-              onClick={() => void openInBrowser(liveUrl)}
-              disabled={!/^https?:\/\//i.test(liveUrl)}
-              title={liveUrl ? `Open ${liveUrl} in browser` : "Open in browser"}
-              aria-label="Open in browser"
-              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/50 bg-muted/60 text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-40"
-            >
-              <SquareArrowOutUpRightIcon className="size-4" />
-            </button>
             <button onClick={closeWorkspace} aria-label="Close browser panel"
               className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/60 text-muted-foreground transition hover:bg-accent hover:text-foreground">
               <XIcon className="size-4" />

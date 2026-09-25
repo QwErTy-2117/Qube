@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
+import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
 import { Loader2Icon, CheckIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -68,7 +69,14 @@ export const ConnectorToolUI: ToolCallMessagePartComponent = ({
   const needsConfirmation = status?.type === "requires-action";
   const icon = meta ? renderConnectorIcon(meta.id, 18) : null;
   const color = meta ? (COLORS[meta.id] || "#888") : "#888";
-  const label = meta?.name || toolName;
+  // Model-provided label first, then the app name, then a friendly
+  // generic — the raw tool id never shows.
+  const label =
+    (typeof args.label === "string" && args.label.trim()
+      ? args.label.trim().slice(0, 120)
+      : "") ||
+    meta?.name ||
+    friendlyToolLabel(toolName, args);
   const action = describeAction(toolName, args);
 
   const [confirming, setConfirming] = useState(false);

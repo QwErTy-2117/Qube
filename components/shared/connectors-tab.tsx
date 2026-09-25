@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "motion/react";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
+import {
+  getCachedConnectors,
+  fetchConnectorsList,
+  setCachedConnectors,
+} from "@/lib/connectors/connectors-cache";
 import { SearchIcon, Loader2Icon, XIcon, LinkIcon, UnplugIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
@@ -52,33 +57,109 @@ function getInstanceId(): string {
   return localStorage.getItem("qube-instance-id") || "qube-default-user";
 }
 
-export function ConnectorsTab() {
+export function ConnectorsTab({
+  focusedConnectorId,
+  onFocusedConsumed,
+}: {
+  focusedConnectorId?: string | null;
+  onFocusedConsumed?: () => void;
+} = {}) {
   const [query, setQuery] = useState("");
-  const [connectors, setConnectors] = useState<DisplayConnector[]>([]);
+  // Instant open: seed from the shared cache (memory → localStorage) so the
+  // tab paints immediately; the list refreshes silently in the background.
+  const [connectors, setConnectors] = useState<DisplayConnector[]>(() => getCachedConnectors() || []);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [disconnectTarget, setDisconnectTarget] = useState<DisplayConnector | null>(null);
   const [detailConnector, setDetailConnector] = useState<DisplayConnector | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => (getCachedConnectors()?.length ? false : true));
+  const [refreshing, setRefreshing] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (fresh = false) => {
+    const hasData = getCachedConnectors()?.length ? true : false;
+    if (!hasData) setLoading(true);
+    else setRefreshing(true);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const res = await fetch(`/api/connectors/list?instanceId=${getInstanceId()}`, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setConnectors(data.connectors || []);
-    } catch (e) {
-      console.error("[connectors] fetchData failed", e);
-      setConnectors([]);
+      const list = await fetchConnectorsList({ fresh });
+      // fetchConnectorsList falls back to cache (or []) on failure — only
+      // overwrite when we actually got a non-empty list back.
+      if (list.length > 0) {
+        setConnectors(list);
+        setCachedConnectors(list);
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchData().finally(() => setLoading(false));
+    void fetchData();
   }, [fetchData]);
+
+  // Keep the consume callback in a ref so the deep-link effect below doesn't
+  // re-fire when the parent re-renders with a new inline arrow function.
+  const consumeRef = useRef(onFocusedConsumed);
+  consumeRef.current = onFocusedConsumed;
+
+  // Staged-open timer, kept in a ref (not effect cleanup): consuming the
+  // trigger re-renders the parent with focusedConnectorId → null, which
+  // re-runs the effect below — if the timer lived in the effect's cleanup
+  // that re-run would cancel it before it ever fires.
+  const stagedOpenRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (stagedOpenRef.current) clearTimeout(stagedOpenRef.current);
+    };
+  }, []);
+
+  // Deep-link: when opened with a specific app id (e.g. clicking a Gmail icon
+  // on the home composer), first let the Connectors tab land, then pop the
+  // app's detail popup after a short beat so the two dialogs don't stack
+  // their open animations. Toolkit slugs (gmail → google) resolve to their
+  // parent.
+  useEffect(() => {
+    if (!focusedConnectorId) return;
+    if (loading && connectors.length === 0) return; // wait for list
+    const needle = focusedConnectorId.trim().toLowerCase();
+    if (!needle) {
+      consumeRef.current?.();
+      return;
+    }
+    let target: DisplayConnector | null = null;
+    // 1. exact connector id match
+    target = connectors.find((c) => c.id.toLowerCase() === needle) || null;
+    // 2. toolkit slug → parent connector (e.g. gmail → google)
+    if (!target) {
+      for (const c of connectors) {
+        const slugs = TOOLKIT_SLUGS[c.id];
+        if (slugs && slugs.some((s) => s.toLowerCase() === needle)) {
+          target = c;
+          break;
+        }
+      }
+    }
+    // 3. name fallback (e.g. "Gmail" → google connector)
+    if (!target) {
+      target = connectors.find((c) => c.name.toLowerCase() === needle)
+        || connectors.find((c) => c.name.toLowerCase().includes(needle))
+        || null;
+    }
+    // Consume the trigger now so background list refreshes don't restart the
+    // timer; the popup itself opens after the beat below. NOTE: no effect
+    // cleanup here on purpose — the consume above re-renders with
+    // focusedConnectorId → null and that re-run must not cancel the timer,
+    // which lives in stagedOpenRef instead.
+    consumeRef.current?.();
+    if (!target) return;
+    if (stagedOpenRef.current) clearTimeout(stagedOpenRef.current);
+    const staged = target;
+    stagedOpenRef.current = setTimeout(() => {
+      stagedOpenRef.current = null;
+      setQuery("");
+      setDetailConnector(staged);
+    }, 500);
+  }, [focusedConnectorId, connectors, loading]);
 
   useEffect(() => {
     if (!statusMsg) return;
@@ -113,7 +194,7 @@ export function ConnectorsTab() {
             const isConnected = connectorSlugs.some((slug: string) => connectedSlugs.includes(slug));
             if (isConnected) {
               clearInterval(pollInterval);
-              await fetchData();
+              await fetchData(true);
               setConnectingId(null);
             }
           } catch {}
@@ -139,7 +220,7 @@ export function ConnectorsTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectorId }),
       });
-      await fetchData();
+      await fetchData(true);
 
     } catch {}
     setConnectingId(null);
@@ -165,7 +246,12 @@ export function ConnectorsTab() {
         transition={{ duration: 0.2 }}
       >
         <div className="space-y-1 mb-4">
-          <h3 className="text-base font-semibold tracking-tight">Connectors</h3>
+          <h3 className="text-base font-semibold tracking-tight flex items-center gap-2">
+            Connectors
+            {refreshing && connectors.length > 0 && (
+              <Loader2Icon className="size-3.5 animate-spin text-muted-foreground/50" />
+            )}
+          </h3>
           <p className="text-xs text-muted-foreground">
             Connect Qube to your favorite external services and tools.
           </p>

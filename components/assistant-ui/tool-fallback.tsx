@@ -5,6 +5,7 @@ import { WrenchIcon, ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { ConnectorToolUI } from "@/components/assistant-ui/tools/connector-tool-ui";
+import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
 
 const CONNECTOR_PREFIXES = [
   "linear", "jira", "trello", "airtable", "notion", "slack",
@@ -17,12 +18,10 @@ function isConnectorTool(toolName: string): boolean {
   return CONNECTOR_PREFIXES.some(p => lower.startsWith(p));
 }
 
-function humanize(toolName: string): string {
-  return toolName
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^./, (c) => c.toUpperCase());
+// Names stay friendly and non-technical (shared labels); raw tool ids
+// like "mcp_tool_call" never reach the UI.
+function titleFor(toolName: string, args: unknown): string {
+  return friendlyToolLabel(toolName, args);
 }
 
 function summarizeArgs(args: unknown): string {
@@ -63,7 +62,7 @@ export const ToolFallback: ToolCallMessagePartComponent = (props) => {
         <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted">
           <WrenchIcon className="size-3.5 text-muted-foreground" />
         </span>
-        <span className="font-medium text-foreground/90">{humanize(props.toolName)}</span>
+        <span className="font-medium text-foreground/90">{titleFor(props.toolName, props.args)}</span>
         {detail ? (
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{detail}</span>
         ) : (

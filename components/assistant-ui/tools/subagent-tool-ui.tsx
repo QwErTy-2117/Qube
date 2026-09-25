@@ -13,6 +13,7 @@ import {
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
 import { ReadFileToolUI } from "@/components/assistant-ui/tools/read-file-tool-ui";
 import { WriteFileToolUI } from "@/components/assistant-ui/tools/write-file-tool-ui";
 import { EditFileToolUI } from "@/components/assistant-ui/tools/edit-file-tool-ui";
@@ -118,36 +119,6 @@ function StaticMarkdown({ text }: { text: unknown }) {
   );
 }
 
-const TOOL_GROUP_TITLES: Record<string, string> = {
-  read_file: "Sneaking a peek",
-  write_file: "Doodling something up",
-  edit_file: "Tweaking things",
-  delete_file: "Sending to the void",
-  list_directory: "Nosing around",
-  run_command: "Making magic happen",
-  web_search: "Going down a rabbit hole",
-  web_fetch: "Grabbing a page",
-  list_sessions: "Checking the logbook",
-  read_session_summary: "Skimming the past",
-  read_session: "Reading the tea leaves",
-  read_memory: "Scratching the brain",
-  ask_user: "Poking the human",
-  gmail: "Fiddling with your inbox",
-  slack: "Slacking off",
-  linear: "Organizing chaos",
-  github: "Poking the repo",
-  googlecalendar: "Rearranging your life",
-  googledrive: "Digging through files",
-  notion: "Notion-ing around",
-  hubspot: "CRM-ing it up",
-  asana: "Asana-ing tasks",
-  trello: "Carding things",
-  airtable: "Databasing casually",
-  dropbox: "Dropping files",
-  jira: "Ticketing around",
-  composio: "Rooting around your apps",
-};
-
 const DESTRUCTIVE_KEYWORDS = [
   "send", "create", "post", "delete", "remove",
   "update", "edit", "modify", "upload", "transfer",
@@ -160,17 +131,9 @@ const AGENT_VERB: Record<string, string> = {
   general: "Working",
 };
 
+// Step titles share the app-wide friendly tool names (never raw tool ids).
 function getToolLabel(toolName: unknown, args: any): string {
-  const name = typeof toolName === "string" ? toolName : "tool";
-  const label = (args as any)?.label;
-  if (typeof label === "string" && label) return label;
-  const title = TOOL_GROUP_TITLES[name];
-  if (title) return title;
-  const lower = name.toLowerCase();
-  for (const [prefix, t] of Object.entries(TOOL_GROUP_TITLES)) {
-    if (lower.startsWith(prefix)) return t;
-  }
-  return name;
+  return friendlyToolLabel(toolName, args);
 }
 
 const TOOL_UI_MAP: Record<string, React.ComponentType<any>> = {
@@ -223,7 +186,7 @@ function SubagentSteps({ steps, isExecuting }: { steps: any[]; isExecuting?: boo
     return (
       <div className="flex items-center gap-2 py-2 text-muted-foreground italic">
         <Loader2Icon className="size-3.5 animate-spin text-foreground" />
-        <span>Worker is analyzing context and carrying out steps...</span>
+        <span>Getting oriented…</span>
       </div>
     );
   }

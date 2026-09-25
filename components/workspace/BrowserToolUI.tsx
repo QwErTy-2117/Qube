@@ -1,6 +1,7 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
+import { openBrowserWorkspace } from "@/lib/workspace/store";
 import {
   GlobeIcon,
   SearchIcon,
@@ -55,6 +56,12 @@ const ICONS: Record<string, typeof GlobeIcon> = {
   browser_read: FileTextIcon,
   browser_snapshot: FileTextIcon,
   browser_screenshot: CameraIcon,
+  browser_pixel_act: MousePointerClickIcon,
+  browser_act: MousePointerClickIcon,
+  computer_observe: CameraIcon,
+  computer_act: MousePointerClickIcon,
+  open_path: GlobeIcon,
+  request_takeover: HourglassIcon,
   browser_console_messages: FileTextIcon,
   browser_network_requests: FileTextIcon,
   browser_evaluate: FileTextIcon,
@@ -68,60 +75,67 @@ function labelFor(toolName: string, args: Record<string, unknown>): string {
   if (toolName === "act") {
     const actions = (args as { actions?: Array<{ kind?: string }> }).actions;
     if (Array.isArray(actions) && actions.length > 0) {
-      if (actions.length > 1) return `${actions.length} actions`;
+      if (actions.length > 1) return "Browsing around";
       const kind = String(actions[0]?.kind || "");
-      if (kind === "click") return "Clicking";
-      if (kind === "fill") return "Filling";
+      if (kind === "click") return "Clicking something";
+      if (kind === "fill") return "Filling something in";
       if (kind === "type") return "Typing";
     }
-    return "Acting";
+    return "Browsing around";
   }
+  // Plain-language labels — no jargon (no snapshot/ref/pixel/takeover/...).
   const LABELS: Record<string, string> = {
-    open_tab: "Opening tab",
-    navigate: "Navigating",
-    tabs: "Listing tabs",
-    user_tabs: "Listing tabs",
-    page_info: "Reading page",
-    snapshot: "Reading page",
-    cdp: "Running script",
-    click: "Clicking",
+    open_tab: "Opening a page",
+    navigate: "Going to a page",
+    tabs: "Checking open pages",
+    user_tabs: "Checking open pages",
+    page_info: "Reading the page",
+    snapshot: "Reading the page",
+    cdp: "Working with the page",
+    click: "Clicking something",
     type: "Typing",
-    press_key: "Pressing key",
-    move_mouse: "Moving mouse",
-    run_action_plan: "Running actions",
-    wait_load: "Waiting for page",
-    claim_tab: "Claiming tab",
-    finalize_tabs: "Finalizing tabs",
-    ping: "Checking browser",
-    info: "Browser info",
-    name_session: "Naming session",
-    turn_ended: "Turn ended",
+    press_key: "Pressing a key",
+    move_mouse: "Moving the mouse",
+    run_action_plan: "Browsing around",
+    wait_load: "Waiting for the page",
+    claim_tab: "Picking up the page",
+    finalize_tabs: "Wrapping up",
+    ping: "Checking the browser",
+    info: "Checking the browser",
+    name_session: "Saving the session",
+    turn_ended: "Taking a pause",
     // Legacy browser_* names (kept for old sessions)
-    browser_navigate: "Navigating",
+    browser_navigate: "Going to a page",
     browser_navigate_back: "Going back",
     browser_navigate_forward: "Going forward",
-    browser_search: "Searching",
-    browser_click: "Clicking",
-    browser_hover: "Hovering",
-    browser_drag: "Dragging",
+    browser_search: "Searching the page",
+    browser_click: "Clicking something",
+    browser_hover: "Pointing at something",
+    browser_drag: "Dragging something",
     browser_type: "Typing",
-    browser_fill: "Filling",
-    browser_find: "Finding",
-    browser_fill_form: "Filling form",
-    browser_press_key: "Pressing key",
-    browser_select_option: "Selecting option",
-    browser_file_upload: "Uploading file",
-    browser_handle_dialog: "Handling dialog",
+    browser_fill: "Filling something in",
+    browser_find: "Searching the page",
+    browser_fill_form: "Filling something in",
+    browser_press_key: "Pressing a key",
+    browser_select_option: "Picking an option",
+    browser_file_upload: "Uploading a file",
+    browser_handle_dialog: "Answering a popup",
     browser_back: "Going back",
-    browser_read: "Reading page",
-    browser_snapshot: "Reading page",
-    browser_screenshot: "Capturing page",
-    browser_console_messages: "Reading console",
-    browser_network_requests: "Reading network",
-    browser_evaluate: "Running script",
-    browser_wait_for: "Waiting",
-    browser_tabs: "Managing tabs",
-    browser_close: "Closing browser",
+    browser_read: "Reading the page",
+    browser_snapshot: "Reading the page",
+    browser_screenshot: "Looking at the page",
+    browser_pixel_act: "Using the page",
+    browser_act: "Using the page",
+    computer_observe: "Looking at the page",
+    computer_act: "Using the page",
+    open_path: "Opening a file",
+    request_takeover: "Asking you to step in",
+    browser_console_messages: "Checking page details",
+    browser_network_requests: "Checking page details",
+    browser_evaluate: "Checking page details",
+    browser_wait_for: "Waiting for the page",
+    browser_tabs: "Checking open pages",
+    browser_close: "Closing the page",
   };
   return LABELS[toolName] || toolName;
 }
@@ -130,19 +144,13 @@ function detailFor(toolName: string, args: Record<string, unknown>): string {
   const str = (v: unknown, max = 80): string =>
     typeof v === "string" ? v.slice(0, max) : "";
   if (toolName === "act") {
-    const actions = (args as { actions?: Array<{ kind?: string; ref?: string; text?: string }> }).actions;
+    const actions = (args as { actions?: Array<{ kind?: string; text?: string }> }).actions;
     if (Array.isArray(actions) && actions.length > 0) {
-      if (actions.length > 1) {
-        return actions
-          .slice(0, 3)
-          .map((a) => `${a.kind || "act"} ${a.ref || ""}`.trim())
-          .join(", ");
-      }
+      if (actions.length > 1) return `${actions.length} steps`;
       const [first] = actions;
       if ((first.kind === "fill" || first.kind === "type") && first.text) {
         return `"${first.text.slice(0, 60)}"`;
       }
-      return str(first.ref, 24);
     }
     return "";
   }
@@ -211,8 +219,26 @@ export const BrowserToolUI: ToolCallMessagePartComponent = ({ args, result, tool
   const running = (status as { type?: string })?.type === "running";
   const detail = detailFor(toolName, a);
   const error = !running ? errorFromResult(result) : "";
+  const openPanel = () => {
+    try {
+      // Clicking any browser activity reopens the sidebar on the live page.
+      openBrowserWorkspace();
+    } catch {}
+  };
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-muted/30 px-3 py-2 text-sm">
+    <div
+      onClick={openPanel}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openPanel();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      title="Show the browser panel"
+      className="flex cursor-pointer items-center gap-2 rounded-xl bg-muted/30 px-3 py-2 text-sm transition hover:bg-muted/60"
+    >
       <span className={`flex size-6 items-center justify-center rounded-full ${running ? "bg-amber-400/15" : error ? "bg-red-500/10" : "bg-emerald-500/10"}`}>
         <Icon className={`size-3.5 ${running ? "animate-pulse text-amber-500" : error ? "text-red-500" : "text-emerald-600 dark:text-emerald-400"}`} />
       </span>

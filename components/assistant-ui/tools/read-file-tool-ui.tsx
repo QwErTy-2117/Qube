@@ -68,11 +68,14 @@ export const ReadFileToolUI: ToolCallMessagePartComponent = ({
       )}
       {displayPath && !(downloadUrl && isDownloadable) && (
         <div className="mb-2 flex items-center gap-2">
-          <span className="font-mono text-sm text-muted-foreground">
-            {displayPath}
+          <span
+            className="truncate text-sm text-muted-foreground"
+            title={displayPath}
+          >
+            {displayName}
           </span>
           {data.lineCount !== undefined && (
-            <span className="text-xs text-muted-foreground/60">
+            <span className="shrink-0 text-xs text-muted-foreground/60">
               ({data.lineCount} lines)
             </span>
           )}

@@ -11,6 +11,7 @@ import {
 import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
 import { Sources } from "@/components/assistant-ui/sources";
 import {
   ToolGroupContent,
@@ -885,51 +886,10 @@ const MessageError: FC = () => {
   );
 };
 
-const TOOL_GROUP_TITLES: Record<string, string> = {
-  read_file: "Sneaking a peek",
-  write_file: "Doodling something up",
-  edit_file: "Tweaking things",
-  delete_file: "Sending to the void",
-  list_directory: "Nosing around",
-  run_command: "Making magic happen",
-  web_search: "Going down a rabbit hole",
-  web_fetch: "Grabbing a page",
-
-  list_sessions: "Checking the logbook",
-  read_session_summary: "Skimming the past",
-  read_session: "Reading the tea leaves",
-  read_memory: "Scratching the brain",
-  ask_user: "Poking the human",
-  ask_question: "Asking you",
-
-  gmail: "Fiddling with your inbox",
-  slack: "Slacking off",
-  linear: "Organizing chaos",
-  github: "Poking the repo",
-  googlecalendar: "Rearranging your life",
-  googledrive: "Digging through files",
-  notion: "Notion-ing around",
-  hubspot: "CRM-ing it up",
-  asana: "Asana-ing tasks",
-  trello: "Carding things",
-  airtable: "Databasing casually",
-  dropbox: "Dropping files",
-  jira: "Ticketing around",
-  composio: "Rooting around your apps",
-};
-
-
-
+// Friendly group titles live in the shared module so every surface
+// (group headers, fallback cards, subagent steps) names tools the same way.
 function getToolLabel(part: ToolCallMessagePart): string {
-  const label = (part.args as any)?.label;
-  if (label) return label;
-  const title = TOOL_GROUP_TITLES[part.toolName];
-  if (title) return title;
-  const lower = part.toolName.toLowerCase();
-  for (const [prefix, title] of Object.entries(TOOL_GROUP_TITLES)) {
-    if (lower.startsWith(prefix)) return title;
-  }
-  return part.toolName;
+  return friendlyToolLabel(part.toolName, part.args);
 }
 
 function ToolGroupWithTitle({
@@ -949,7 +909,7 @@ function ToolGroupWithTitle({
     .map((i) => message.content[i])
     .filter((p): p is { type: "reasoning"; text: string } => p?.type === "reasoning");
   const labels = parts.map(getToolLabel);
-  const title = labels[labels.length - 1] || (reasoningParts.length > 0 ? "Thinking" : "Performing operations");
+  const title = labels[labels.length - 1] || (reasoningParts.length > 0 ? "Thinking" : "Working on it");
   return (
     <ToolGroupRoot variant="ghost">
       <ToolGroupTrigger

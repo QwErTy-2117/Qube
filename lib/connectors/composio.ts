@@ -127,6 +127,43 @@ const KNOWN_COLORS: Record<string, string> = {
   dropbox: "#0061FF",
 };
 
+// Static metadata for the curated connectors — lets listConnectors return
+// instantly without waiting on the slow toolkits.get({}) catalog fetch.
+// Descriptions mirror the Composio catalog; appUrl is the vendor homepage.
+const STATIC_CONNECTOR_META: Record<string, { name: string; description: string; appUrl: string }> = {
+  linear: { name: "Linear", description: "Issue tracking and project management for software teams.", appUrl: "https://linear.app" },
+  atlassian: { name: "Jira", description: "Track issues, plan sprints, and manage agile projects.", appUrl: "https://www.atlassian.com/software/jira" },
+  trello: { name: "Trello", description: "Boards, lists, and cards to organize projects visually.", appUrl: "https://trello.com" },
+  airtable: { name: "Airtable", description: "Spreadsheet-database hybrid for organizing anything.", appUrl: "https://airtable.com" },
+  notion: { name: "Notion", description: "Docs, wikis, and project tracking in one workspace.", appUrl: "https://notion.so" },
+  slack: { name: "Slack", description: "Team messaging, channels, and notifications.", appUrl: "https://slack.com" },
+  github: { name: "GitHub", description: "Code hosting, pull requests, and issues.", appUrl: "https://github.com" },
+  google: { name: "Google", description: "Gmail, Calendar, and Drive in one connection.", appUrl: "https://workspace.google.com" },
+  hubspot: { name: "HubSpot", description: "CRM, marketing, and sales pipelines.", appUrl: "https://hubspot.com" },
+  asana: { name: "Asana", description: "Task management and team project tracking.", appUrl: "https://asana.com" },
+  dropbox: { name: "Dropbox", description: "Cloud file storage and sharing.", appUrl: "https://dropbox.com" },
+  canva: { name: "Canva", description: "Design graphics, slides, and social posts.", appUrl: "https://canva.com" },
+};
+
+// --- Caches: toolkit catalog (slow, rarely changes) + per-user list (connected flags change) ---
+let toolkitMetaCache: { map: Map<string, any>; expires: number } | null = null;
+const TOOLKIT_META_TTL_MS = 10 * 60 * 1000;
+const listCache = new Map<string, { data: ConnectorDisplay[]; expires: number }>();
+const LIST_TTL_MS = 20 * 1000;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("timeout")), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
+export function invalidateConnectorListCache(userId?: string) {
+  if (userId) listCache.delete(userId);
+  else listCache.clear();
+}
+
 export const COMPOSIO_TOOLKIT_MAP: Record<string, string[]> = {
   linear: ["linear"],
   atlassian: ["jira"],
@@ -142,15 +179,85 @@ export const COMPOSIO_TOOLKIT_MAP: Record<string, string[]> = {
   canva: ["canva"],
 };
 
-export async function listConnectors(userId?: string): Promise<ConnectorDisplay[]> {
+export async function listConnectors(userId?: string, opts?: { bypassCache?: boolean }): Promise<ConnectorDisplay[]> {
+  const uid = userId || DEFAULT_USER_ID;
+  const now = Date.now();
+
+  // Serve stale-while-revalidate from server cache — settings/onboarding
+  // remount on every open, and the catalog fetch below is the slow part.
+  const cached = listCache.get(uid);
+  if (!opts?.bypassCache && cached && cached.expires > now) return cached.data;
+
+  const buildFromSlugs = (
+    slugs: Set<string>,
+    connectedSlugs: Set<string>,
+    tkMap: Map<string, any>,
+  ): ConnectorDisplay[] => {
+    const isConnected = (slug: string): boolean => {
+      const toolkits = COMPOSIO_TOOLKIT_MAP[slug] || [slug];
+      return toolkits.some((t) => connectedSlugs.has(t));
+    };
+    const result: ConnectorDisplay[] = [];
+    for (const slug of slugs) {
+      const staticMeta = STATIC_CONNECTOR_META[slug];
+      const tk = tkMap.get(slug);
+      const meta = tk?.meta ?? {};
+      const name = staticMeta?.name ?? tk?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1);
+      const desc = staticMeta?.description ?? meta?.description ?? `${name} integration`;
+      const logo = meta?.logo ?? "";
+      const appUrl = staticMeta?.appUrl ?? meta?.appUrl ?? "";
+      if (KNOWN_ICON_IDS.has(slug)) {
+        result.push({
+          id: slug,
+          name,
+          description: desc,
+          brandColor: KNOWN_COLORS[slug]!,
+          icon: slug,
+          hasIcon: true,
+          appUrl,
+          connected: isConnected(slug),
+        });
+      } else {
+        result.push({
+          id: slug,
+          name,
+          description: desc,
+          brandColor: logo ? "#888" : "#aaa",
+          icon: logo || "default",
+          hasIcon: !!logo,
+          appUrl,
+          connected: isConnected(slug),
+        });
+      }
+    }
+    result.sort((a, b) => a.name.localeCompare(b.name));
+    return result;
+  };
+
   try {
     const client = getClient();
-    const uid = userId || DEFAULT_USER_ID;
 
-    const [authConfigs, connectedAccounts] = await Promise.all([
-      client.authConfigs.list({ limit: 100 }),
-      client.connectedAccounts.list({ userIds: [uid], limit: 100 }).catch(() => ({ items: [] })),
-    ]);
+    // Parallel live calls with a hard cap — a hung Composio endpoint must
+    // never hold the settings spinner for the full 10s client timeout.
+    let authConfigs: any = { items: [] };
+    let connectedAccounts: any = { items: [] };
+    try {
+      [authConfigs, connectedAccounts] = await withTimeout(
+        Promise.all([
+          client.authConfigs.list({ limit: 100 }),
+          client.connectedAccounts.list({ userIds: [uid], limit: 100 }).catch(() => ({ items: [] })),
+        ]),
+        6000,
+      );
+    } catch (e) {
+      console.warn("[composio] list live fetch slow/failed, using fallback:", (e as Error)?.message || e);
+      // Fallback: serve cached (even stale) or the static curated list with
+      // unknown connected state instead of an empty spinner.
+      if (cached) return cached.data;
+      const fallback = buildFromSlugs(new Set(Object.keys(STATIC_CONNECTOR_META)), new Set(), new Map());
+      listCache.set(uid, { data: fallback, expires: now + 5000 });
+      return fallback;
+    }
 
     const connectedSlugs = new Set<string>();
     for (const acct of connectedAccounts.items || []) {
@@ -164,58 +271,41 @@ export async function listConnectors(userId?: string): Promise<ConnectorDisplay[
       const slug = ac.toolkit?.slug || ac.app?.toLowerCase();
       if (slug) toolkitSlugs.add(slug);
     }
-
-    if (toolkitSlugs.size === 0) return [];
-
-    const allToolkits: any[] = await client.toolkits.get({});
-    const tkMap = new Map<string, any>();
-    for (const tk of allToolkits) {
-      tkMap.set(tk.slug, tk);
+    // Nothing configured server-side yet — still show the curated list so
+    // the tab opens instantly with connectable tiles.
+    if (toolkitSlugs.size === 0) {
+      for (const k of Object.keys(STATIC_CONNECTOR_META)) toolkitSlugs.add(k);
     }
 
-    const result: ConnectorDisplay[] = [];
-
-    const isConnected = (slug: string): boolean => {
-      const toolkits = COMPOSIO_TOOLKIT_MAP[slug] || [slug];
-      return toolkits.some((t) => connectedSlugs.has(t));
-    };
-
-    for (const slug of toolkitSlugs) {
-      const tk = tkMap.get(slug);
-      const name = tk?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1);
-      const meta = tk?.meta ?? {};
-      const desc = meta?.description ?? `${name} integration`;
-      const logo = meta?.logo ?? "";
-
-      if (KNOWN_ICON_IDS.has(slug)) {
-        result.push({
-          id: slug,
-          name,
-          description: desc,
-          brandColor: KNOWN_COLORS[slug]!,
-          icon: slug,
-          hasIcon: true,
-          appUrl: meta?.appUrl ?? "",
-          connected: isConnected(slug),
-        });
-      } else {
-        result.push({
-          id: slug,
-          name,
-          description: desc,
-          brandColor: logo ? "#888" : "#aaa",
-          icon: logo || "default",
-          hasIcon: !!logo,
-          appUrl: meta?.appUrl ?? "",
-          connected: isConnected(slug),
-        });
+    // Toolkit catalog: cached aggressively; only fetched when there are
+    // slugs we don't already know statically, and never blocks longer
+    // than ~2.5s (static meta covers all curated connectors anyway).
+    let tkMap = toolkitMetaCache && toolkitMetaCache.expires > now
+      ? toolkitMetaCache.map
+      : new Map<string, any>();
+    const unknownSlugs = [...toolkitSlugs].filter((s) => !STATIC_CONNECTOR_META[s] && !tkMap.has(s));
+    if (unknownSlugs.length > 0) {
+      try {
+        const allToolkits: any[] = await withTimeout(client.toolkits.get({}), 2500);
+        const fresh = new Map<string, any>();
+        for (const tk of allToolkits || []) {
+          if (tk?.slug) fresh.set(tk.slug, tk);
+        }
+        if (fresh.size > 0) {
+          tkMap = fresh;
+          toolkitMetaCache = { map: fresh, expires: now + TOOLKIT_META_TTL_MS };
+        }
+      } catch {
+        // Non-fatal: unknown slugs fall back to capitalized names below.
       }
     }
 
-    result.sort((a, b) => a.name.localeCompare(b.name));
+    const result = buildFromSlugs(toolkitSlugs, connectedSlugs, tkMap);
+    listCache.set(uid, { data: result, expires: now + LIST_TTL_MS });
     return result;
   } catch (e) {
     console.error("[composio] failed to list toolkits:", e);
+    if (cached) return cached.data;
     return [];
   }
 }

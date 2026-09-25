@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
+import { prefetchConnectors } from "@/lib/connectors/connectors-cache";
 
 // Most-used connectors: Gmail, Slack, GitHub, Notion, Trello.
 type Featured = { id: string; label: string; tilt: number };
@@ -64,10 +65,10 @@ function FeaturedIcon({ id }: { id: string }) {
   return <>{renderConnectorIcon(id, 15)}</>;
 }
 
-function openConnectorsSettings() {
+function openConnectorsSettings(connectorId?: string) {
   try {
     window.dispatchEvent(
-      new CustomEvent("qube-open-settings", { detail: { tab: "connectors" } })
+      new CustomEvent("qube-open-settings", { detail: { tab: "connectors", connectorId } })
     );
   } catch {}
 }
@@ -79,6 +80,12 @@ function openConnectorsSettings() {
  */
 export function ConnectorsStrip() {
   const [hovered, setHovered] = useState<number | null>(null);
+
+  // Warm the connectors cache while the landing page is visible so the
+  // settings / onboarding tabs open instantly instead of spinner-first.
+  useEffect(() => {
+    prefetchConnectors();
+  }, []);
 
   return (
     <div className="relative z-0 -mt-5 w-full px-5">
@@ -101,7 +108,7 @@ export function ConnectorsStrip() {
                 key={c.id}
                 type="button"
                 title={`Connect ${c.label}`}
-                onClick={openConnectorsSettings}
+                onClick={() => openConnectorsSettings(c.id)}
                 onMouseEnter={() => setHovered(i)}
                 onMouseLeave={() => setHovered(null)}
                 onFocus={() => setHovered(i)}

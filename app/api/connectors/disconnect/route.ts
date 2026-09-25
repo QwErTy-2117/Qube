@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClient, DEFAULT_USER_ID, COMPOSIO_TOOLKIT_MAP } from "@/lib/connectors/composio";
+import { getClient, DEFAULT_USER_ID, COMPOSIO_TOOLKIT_MAP, invalidateConnectorListCache } from "@/lib/connectors/composio";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,8 @@ export async function POST(req: NextRequest) {
     await Promise.all((accounts.items || []).map((a: any) =>
       client.connectedAccounts.delete(a.id)
     ));
+
+    invalidateConnectorListCache(instanceId);
 
     return NextResponse.json({ disconnected: connectorId, count: (accounts.items || []).length });
   } catch (e) {

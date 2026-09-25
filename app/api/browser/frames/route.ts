@@ -45,8 +45,8 @@ export async function GET(req: Request) {
         } catch {}
       };
       send("ready", { ok: true });
-      const unsubscribe = subscribeFrames(({ jpg, url }) => {
-        if (jpg) send("frame", { jpg, url });
+      const unsubscribe = subscribeFrames(({ jpg, url, meta }) => {
+        if (jpg) send("frame", { jpg, url, meta });
         else if (url) send("url", { url });
       });
       const heartbeat = setInterval(() => {

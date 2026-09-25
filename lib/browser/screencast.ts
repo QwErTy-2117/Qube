@@ -34,7 +34,7 @@ let seenTargetIds = new Set<string>();
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Snapshot cadence when the screencast goes quiet (static pages). */
-const SNAPSHOT_IDLE_MS = 2500;
+const SNAPSHOT_IDLE_MS = 4000;
 /** Consecutive dead snapshots before forcing a reattach. */
 const DEAD_SNAPSHOT_LIMIT = 3;
 /** Broadcast the current URL this often even without frames. */
@@ -340,17 +340,49 @@ const SPECIAL_KEYS: Record<string, { key: string; code: string; windowsVirtualKe
   ArrowDown: { key: "ArrowDown", code: "ArrowDown", windowsVirtualKeyCode: 40 },
 };
 
-export function panelKey(key: string): void {
-  if (key.length === 1) {
+function modifiersToMask(modifiers?: string[]): number {
+  let mask = 0;
+  for (const m of modifiers || []) {
+    const s = String(m).toLowerCase();
+    if (s === "alt") mask |= 1;
+    else if (s === "ctrl" || s === "control") mask |= 2;
+    else if (s === "meta" || s === "cmd" || s === "command") mask |= 4;
+    else if (s === "shift") mask |= 8;
+  }
+  return mask;
+}
+
+export function panelKey(key: string, modifiers?: string[]): void {
+  const mask = modifiersToMask(modifiers);
+  // Ctrl/Alt/Meta combos must go as key events, never insertText.
+  if (key.length === 1 && mask === 0) {
+    // No poke(): the screencast picks up typed text within ~150ms, and a
+    // per-keystroke snapshot doubled CDP load while typing (visible lag).
     sendInput({ method: "Input.insertText", params: { text: key } });
+    return;
+  }
+  if (key.length === 1) {
+    const upper = key.toUpperCase();
+    const code = /^[A-Z]$/i.test(key) ? `Key${upper}` : /^[0-9]$/.test(key) ? `Digit${key}` : `Key${upper}`;
+    const base = { key, code, windowsVirtualKeyCode: upper.charCodeAt(0), modifiers: mask };
+    sendInput({ method: "Input.dispatchKeyEvent", params: { ...base, type: "keyDown" } });
+    sendInput({ method: "Input.dispatchKeyEvent", params: { ...base, type: "keyUp" } });
+    setTimeout(poke, 250);
     return;
   }
   const spec = SPECIAL_KEYS[key];
   if (!spec) return;
-  const base = { ...spec, text: key === "Enter" ? "\r" : undefined };
+  const base = { ...spec, modifiers: mask || undefined, text: key === "Enter" ? "\r" : undefined };
   sendInput({ method: "Input.dispatchKeyEvent", params: { ...base, type: "keyDown" } });
   sendInput({ method: "Input.dispatchKeyEvent", params: { ...base, type: "keyUp" } });
-  setTimeout(poke, 350);
+  setTimeout(poke, 250);
+}
+
+/** Paste a whole string at once (faster + less lag than per-key typing). */
+export function panelType(text: string): void {
+  if (!text) return;
+  // No poke(): the screencast covers the update without an extra snapshot.
+  sendInput({ method: "Input.insertText", params: { text: text.slice(0, 2000) } });
 }
 
 async function ensurePipe(): Promise<void> {
@@ -406,13 +438,15 @@ async function ensurePipe(): Promise<void> {
         socket.on("error", () => {
           try { socket.close(); } catch {}
         });
-        // Live video, not snapshots.
+        // Live video, not snapshots. Throttled for panel smoothness:
+        // every 6th frame + 1280px cap keeps SSE around ~10fps while typing
+        // without saturating the CDP pipe (the previous rate visibly lagged).
         try {
           socket.send(
             JSON.stringify({
               id: ++msgId,
               method: "Page.startScreencast",
-              params: { format: "jpeg", quality: 60, maxWidth: 1440, everyNthFrame: 2 },
+              params: { format: "jpeg", quality: 45, maxWidth: 1280, everyNthFrame: 6 },
             })
           );
         } catch {}

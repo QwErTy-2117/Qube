@@ -1,24 +1,31 @@
 /**
- * Computer-use + page-browser layer ported from Rakazo (elie222/rakazo).
+ * Browser-only automation layer ported from Rakazo (elie222/rakazo).
+ *
+ * IMPORTANT SCOPE: this is NOT OS desktop control. Everything here drives
+ * Qube's managed Chromium window via CDP (lib/browser/managed-chrome +
+ * lib/browser/screencast). There is no desktop screenshot, no OS window
+ * control, no Start-menu launcher, no calculator/text-editor automation.
+ * Former `computer_*` names are kept as deprecated aliases only.
  *
  * Rakazo patterns copied here (adapted to Qube's local managed-Chrome):
  * - browser_navigate / browser_snapshot / browser_act with element refs
- *   (e1, e2…) + `fallback: "computer_act"` when page tools cannot operate.
- * - computer_observe / computer_act: up to 24 ordered desktop actions,
- *   batch only predictable actions, stop before uncertain outcomes.
+ *   (e1, e2…) + `fallback: "browser_pixel_act"` when page tools cannot operate.
+ * - browser_screenshot / browser_pixel_act: up to 24 ordered browser-window
+ *   actions, batch only predictable actions, stop before uncertain outcomes.
  * - Snapshots: bounded page text + max 80 interactive elements, isolated
  *   script world, password masking, stale-ref rejection (never retarget).
  * - Failed actions report confirmed progress + uncertainty: inspect current
  *   state before continuing, never replay completed/uncertain actions.
- * - Identical consecutive desktop frames omit image bytes (metadata only).
+ * - Identical consecutive browser frames omit image bytes (metadata only).
  * - request_takeover for protected input / human judgment (waiting_takeover).
  *
  * Backing: Qube's managed Chromium via CDP (lib/browser/managed-chrome +
- * lib/browser/screencast). No E2B/Docker provider — local computer only.
+ * lib/browser/screencast). No E2B/Docker provider — managed browser only.
  */
 
 export const MAX_BROWSER_ACTIONS = 24;
 export const MAX_COMPUTER_ACTIONS = 24;
+export const MAX_PIXEL_ACTIONS = MAX_COMPUTER_ACTIONS;
 export const MAX_SNAPSHOT_ELEMENTS = 80;
 export const SNAPSHOT_TEXT_CHARS = 4000;
 
@@ -33,6 +40,9 @@ export type ComputerAction =
   | { kind: "key"; key: string; modifiers?: string[] }
   | { kind: "scroll"; direction: "up" | "down"; amount: number }
   | { kind: "wait"; ms: number };
+
+/** Canonical name for x/y actions inside the managed browser window. */
+export type BrowserPixelAction = ComputerAction;
 
 export type SnapshotElement = {
   ref: string;
@@ -66,16 +76,46 @@ export function parseBrowserActions(value: unknown): BrowserActStep[] {
   });
 }
 
-/** Parse computer_act actions (Rakazo computer-tools.ts parity). */
-export function parseComputerActions(value: unknown): ComputerAction[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error("computer_act requires at least one action");
+export const COMPUTER_ACT_KINDS = ["click", "move", "down", "up", "type", "key", "scroll", "wait"] as const;
+
+const KEY_ALIASES: Record<string, string> = {
+  press: "key",
+  hotkey: "key",
+  shortcut: "key",
+  keypress: "key",
+};
+
+const OS_LAUNCHER_KEYS = new Set(["super", "meta", "os", "windows", "win", "cmd", "command"]);
+
+function normalizeModifiers(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: string[] = [];
+  for (const m of raw) {
+    const s = String(m).toLowerCase();
+    if (s === "ctrl" || s === "control") out.push("Ctrl");
+    else if (s === "shift") out.push("Shift");
+    else if (s === "alt" || s === "option") out.push("Alt");
+    else if (s === "meta" || s === "super" || s === "cmd" || s === "command" || s === "windows" || s === "win") out.push("Meta");
+    else out.push(String(m));
   }
-  if (value.length > MAX_COMPUTER_ACTIONS) throw new Error(`computer_act accepts at most ${MAX_COMPUTER_ACTIONS} actions`);
+  return out.length ? out : undefined;
+}
+
+/** Parse browser_pixel_act actions (Rakazo computer-tools.ts parity, browser-only). */
+export function parsePixelActions(value: unknown): ComputerAction[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(
+      `browser_pixel_act requires at least one action. Valid kinds: ${COMPUTER_ACT_KINDS.join(", ")}. ` +
+        `Example: [{kind:"click",x:640,y:450},{kind:"type",text:"hello"},{kind:"key",key:"Enter"}]`
+    );
+  }
+  if (value.length > MAX_COMPUTER_ACTIONS) throw new Error(`browser_pixel_act accepts at most ${MAX_COMPUTER_ACTIONS} actions`);
   const actions = (value as unknown[]).flatMap((raw): ComputerAction[] => {
-    if (!raw || typeof raw !== "object") throw new Error("computer action must be an object");
+    if (!raw || typeof raw !== "object") throw new Error("browser pixel action must be an object");
     const a = raw as Record<string, unknown>;
-    const kind = String(a.kind ?? "");
+    let kind = String(a.kind ?? "").toLowerCase();
+    if (!kind && typeof a.action === "string") kind = String(a.action).toLowerCase();
+    if (KEY_ALIASES[kind]) kind = KEY_ALIASES[kind];
     if (kind === "click" || kind === "move" || kind === "down" || kind === "up") {
       const x = finiteCoordinate(a.x, "x");
       const y = finiteCoordinate(a.y, "y");
@@ -88,26 +128,56 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
       };
       return a.double === true && kind === "click" ? [pointer, pointer] : [pointer];
     }
-    if (kind === "type") return [{ kind: "clipboard", text: String(a.text ?? "") }];
+    if (kind === "type") {
+      const text = String(a.text ?? "");
+      if (!text) throw new Error(`browser_pixel_act type requires non-empty text`);
+      return [{ kind: "clipboard", text }];
+    }
     if (kind === "key") {
-      return [{ kind: "key", key: String(a.key ?? ""), modifiers: Array.isArray(a.modifiers) ? a.modifiers.map(String) : undefined }];
+      const key = String(a.key ?? a.keys ?? "").trim();
+      if (!key) throw new Error(`browser_pixel_act key requires key (e.g. Enter, Tab, Escape, a). Valid kinds: ${COMPUTER_ACT_KINDS.join(", ")}`);
+      // The managed browser has no OS launcher: pressing Super/Meta/Windows
+      // alone cannot open a text editor or calculator. Guide to supported paths.
+      if (OS_LAUNCHER_KEYS.has(key.toLowerCase())) {
+        throw new Error(
+          `browser_pixel_act cannot press ${key} — there is no OS desktop or Start menu, only the managed browser window. ` +
+            `To open a file/URL use open_path; for shell work use run_command. ` +
+            `Do not retry the same key press.`
+        );
+      }
+      const modifiers = normalizeModifiers(a.modifiers);
+      if (modifiers?.includes("Meta")) {
+        throw new Error(
+          `browser_pixel_act Meta/Super/Cmd modifier is not supported — the managed browser has no OS desktop. ` +
+            `Use open_path for workspace files/URLs or run_command for shell work. Do not retry with Super.`
+        );
+      }
+      return [{ kind: "key", key, modifiers }];
     }
     if (kind === "scroll") {
       return [{ kind: "scroll", direction: a.direction === "up" ? "up" : "down", amount: boundedNumber(a.amount, 1, 20, 3) }];
     }
     if (kind === "wait") return [{ kind: "wait", ms: boundedNumber(a.ms, 0, 5000, 350) }];
-    throw new Error(`unsupported computer action ${kind || "(missing)"}`);
+    throw new Error(
+      `unsupported browser action ${String((a as Record<string, unknown>).kind ?? kind) || "(missing)"}. ` +
+        `Valid kinds: ${COMPUTER_ACT_KINDS.join(", ")}. ` +
+        `For key presses use {kind:"key",key:"Enter"} with optional modifiers ["Ctrl","Shift","Alt"]. ` +
+        `There is no OS desktop — OS launcher keys (Super/Meta) are not supported, use open_path or run_command instead. Do not retry the same call.`
+    );
   });
   if (actions.length > MAX_COMPUTER_ACTIONS) {
-    throw new Error("computer_act expands to more than 24 actions; split the batch");
+    throw new Error("browser_pixel_act expands to more than 24 actions; split the batch");
   }
   return actions;
 }
 
+/** @deprecated Use parsePixelActions — old computer_act name kept for back-compat. */
+export const parseComputerActions = parsePixelActions;
+
 function finiteCoordinate(value: unknown, name: string): number {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < 0 || n > 100000) {
-    throw new Error(`computer action ${name} must be a non-negative coordinate`);
+    throw new Error(`browser action ${name} must be a non-negative coordinate`);
   }
   return n;
 }
@@ -116,6 +186,60 @@ function boundedNumber(value: unknown, min: number, max: number, fallback: numbe
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(Math.max(Math.round(n), min), max);
+}
+
+/** CDP modifiers bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8. */
+export function modifiersBitmask(modifiers?: string[]): number {
+  let mask = 0;
+  for (const m of modifiers || []) {
+    const s = String(m).toLowerCase();
+    if (s === "alt") mask |= 1;
+    else if (s === "ctrl" || s === "control") mask |= 2;
+    else if (s === "meta") mask |= 4;
+    else if (s === "shift") mask |= 8;
+  }
+  return mask;
+}
+
+const KEY_CODE_MAP: Record<string, { code: string; windowsVirtualKeyCode: number; text?: string }> = {
+  enter: { code: "Enter", windowsVirtualKeyCode: 13, text: "\r" },
+  tab: { code: "Tab", windowsVirtualKeyCode: 9 },
+  escape: { code: "Escape", windowsVirtualKeyCode: 27 },
+  esc: { code: "Escape", windowsVirtualKeyCode: 27 },
+  backspace: { code: "Backspace", windowsVirtualKeyCode: 8 },
+  delete: { code: "Delete", windowsVirtualKeyCode: 46 },
+  space: { code: "Space", windowsVirtualKeyCode: 32, text: " " },
+  arrowleft: { code: "ArrowLeft", windowsVirtualKeyCode: 37 },
+  arrowright: { code: "ArrowRight", windowsVirtualKeyCode: 39 },
+  arrowup: { code: "ArrowUp", windowsVirtualKeyCode: 38 },
+  arrowdown: { code: "ArrowDown", windowsVirtualKeyCode: 40 },
+  home: { code: "Home", windowsVirtualKeyCode: 36 },
+  end: { code: "End", windowsVirtualKeyCode: 35 },
+  pageup: { code: "PageUp", windowsVirtualKeyCode: 33 },
+  pagedown: { code: "PageDown", windowsVirtualKeyCode: 34 },
+};
+
+/** Map a logical key to CDP code + windowsVirtualKeyCode. */
+export function describeKey(key: string): { code: string; windowsVirtualKeyCode: number; text?: string } {
+  const lower = key.toLowerCase();
+  if (KEY_CODE_MAP[lower]) {
+    const e = KEY_CODE_MAP[lower];
+    // Preserve canonical key name for CDP (Enter, Tab, ...).
+    return e;
+  }
+  if (key.length === 1) {
+    const upper = key.toUpperCase();
+    if (/^[A-Z]$/.test(upper)) return { code: `Key${upper}`, windowsVirtualKeyCode: upper.charCodeAt(0), text: key };
+    if (/^[0-9]$/.test(key)) return { code: `Digit${key}`, windowsVirtualKeyCode: key.charCodeAt(0), text: key };
+    return { code: `Key${upper}`, windowsVirtualKeyCode: upper.charCodeAt(0), text: key };
+  }
+  // Function keys F1-F12.
+  const fn = /^f(\d{1,2})$/i.exec(key);
+  if (fn) {
+    const n = Number(fn[1]);
+    if (n >= 1 && n <= 12) return { code: key.toUpperCase(), windowsVirtualKeyCode: 111 + n };
+  }
+  return { code: key, windowsVirtualKeyCode: 0 };
 }
 
 /** Format snapshot tree (Rakazo computer-browser.ts parity). */
@@ -129,12 +253,14 @@ export function formatSnapshotTree(elements: SnapshotElement[]): string {
     .join("\n");
 }
 
-/** Attach fallback note (Rakazo browser-tools.ts parity). */
-export function withBrowserFallback<T extends { fallback?: "computer_act"; error?: string }>(result: T): T & { note?: string } {
-  if ((result as any).fallback === "computer_act") {
+export type PixelFallback = "browser_pixel_act" | "computer_act";
+
+/** Attach fallback note (Rakazo browser-tools.ts parity, browser-only). */
+export function withBrowserFallback<T extends { fallback?: PixelFallback; error?: string }>(result: T): T & { note?: string } {
+  if ((result as any).fallback === "browser_pixel_act" || (result as any).fallback === "computer_act") {
     return {
       ...result,
-      note: "Page browser could not complete this step. Inspect the current state before continuing with computer_act if available, otherwise request_takeover. Do not replay completed or uncertain actions.",
+      note: "Page tools could not complete this step. Inspect the current state before continuing with browser_pixel_act if available, otherwise request_takeover. Do not replay completed or uncertain actions.",
     };
   }
   return result;
@@ -239,10 +365,10 @@ async function evalIsolated(wsUrl: string, expression: string): Promise<any> {
 }
 
 /** browser_navigate via CDP Page.navigate. */
-export async function browserNavigate(url: string): Promise<{ url: string; title: string } & { fallback?: "computer_act"; error?: string }> {
+export async function browserNavigate(url: string): Promise<{ url: string; title: string } & { fallback?: PixelFallback; error?: string }> {
   const target = await getPageTarget();
   if (!target?.webSocketDebuggerUrl) {
-    return withBrowserFallback({ url, title: "", fallback: "computer_act" as const, error: "Page browser is not attached. Use computer_act on the desktop browser instead." });
+    return withBrowserFallback({ url, title: "", fallback: "browser_pixel_act" as const, error: "Page browser is not attached. Use browser_pixel_act on the managed browser window instead." });
   }
   try {
     await cdpCall(target.webSocketDebuggerUrl, "Page.navigate", { url });
@@ -250,15 +376,15 @@ export async function browserNavigate(url: string): Promise<{ url: string; title
     const v = await evalIsolated(target.webSocketDebuggerUrl, "({title: document.title, url: location.href})").catch(() => null);
     return { url: v?.url || url, title: v?.title || "" };
   } catch (e) {
-    return withBrowserFallback({ url, title: "", fallback: "computer_act" as const, error: e instanceof Error ? e.message : String(e) });
+    return withBrowserFallback({ url, title: "", fallback: "browser_pixel_act" as const, error: e instanceof Error ? e.message : String(e) });
   }
 }
 
 /** browser_snapshot via isolated world. */
-export async function browserSnapshot(): Promise<{ url: string; title: string; tree: string; elements: SnapshotElement[] } & { fallback?: "computer_act"; error?: string }> {
+export async function browserSnapshot(): Promise<{ url: string; title: string; tree: string; elements: SnapshotElement[] } & { fallback?: PixelFallback; error?: string }> {
   const target = await getPageTarget();
   if (!target?.webSocketDebuggerUrl) {
-    return withBrowserFallback({ url: "", title: "", tree: "", elements: [], fallback: "computer_act" as const, error: "Page browser is not attached. Use computer_act instead." });
+    return withBrowserFallback({ url: "", title: "", tree: "", elements: [], fallback: "browser_pixel_act" as const, error: "Page browser is not attached. Use browser_pixel_act instead." });
   }
   try {
     const v = await evalIsolated(target.webSocketDebuggerUrl, SNAPSHOT_EXPR);
@@ -270,16 +396,16 @@ export async function browserSnapshot(): Promise<{ url: string; title: string; t
       elements,
     };
   } catch (e) {
-    return withBrowserFallback({ url: "", title: "", tree: "", elements: [], fallback: "computer_act" as const, error: e instanceof Error ? e.message : String(e) });
+    return withBrowserFallback({ url: "", title: "", tree: "", elements: [], fallback: "browser_pixel_act" as const, error: e instanceof Error ? e.message : String(e) });
   }
 }
 
 /** browser_act: click/fill/type by ref. Stale refs are rejected, never retargeted. */
-export async function browserAct(actions: BrowserActStep[]): Promise<{ ok: boolean; completed: number; uncertain: boolean; url: string; title: string } & { fallback?: "computer_act"; error?: string; tree?: string }> {
+export async function browserAct(actions: BrowserActStep[]): Promise<{ ok: boolean; completed: number; uncertain: boolean; url: string; title: string } & { fallback?: PixelFallback; error?: string; tree?: string }> {
   const parsed = parseBrowserActions(actions);
   const target = await getPageTarget();
   if (!target?.webSocketDebuggerUrl) {
-    return withBrowserFallback({ ok: false, completed: 0, uncertain: true, url: "", title: "", fallback: "computer_act" as const, error: "Page browser is not attached." });
+    return withBrowserFallback({ ok: false, completed: 0, uncertain: true, url: "", title: "", fallback: "browser_pixel_act" as const, error: "Page browser is not attached." });
   }
   const wsUrl = target.webSocketDebuggerUrl;
   let completed = 0;
@@ -303,7 +429,7 @@ export async function browserAct(actions: BrowserActStep[]): Promise<{ ok: boole
         return withBrowserFallback({
           ok: false, completed, uncertain: completed > 0,
           url: target.url || "", title: "",
-          fallback: "computer_act" as const,
+          fallback: "browser_pixel_act" as const,
           error: `Stale ref ${a.ref}: element not found — the page changed since your snapshot. Take a fresh browser_snapshot and retry the intended action with the new ref in this same turn; do not stop or summarize. Only skip actions already confirmed completed.`,
         });
       }
@@ -319,13 +445,13 @@ export async function browserAct(actions: BrowserActStep[]): Promise<{ ok: boole
     return withBrowserFallback({
       ok: false, completed, uncertain: true,
       url: target.url || "", title: "",
-      fallback: "computer_act" as const,
+      fallback: "browser_pixel_act" as const,
       error: `${e instanceof Error ? e.message : String(e)} — confirmed ${completed}/${parsed.length} actions. Inspect current state before continuing; never replay completed or uncertain actions.`,
     });
   }
 }
 
-// ---------- computer_observe / computer_act ----------
+// ---------- browser_screenshot / browser_pixel_act (managed browser window only) ----------
 
 let lastFrameId: string | null = null;
 let lastFrameBytes: string | null = null;
@@ -361,8 +487,8 @@ function frameIdFor(jpgBase64: string): string {
   return (h >>> 0).toString(16).padStart(8, "0") + "-" + jpgBase64.length;
 }
 
-/** computer_observe: screenshot via CDP Page.captureScreenshot (dedup identical frames). */
-export async function computerObserve(note = "computer observed"): Promise<{ text: string; imageBase64?: string; mimeType?: string; frameId?: string; unchanged?: boolean; error?: string }> {
+/** browser_screenshot: screenshot of the managed browser window via CDP Page.captureScreenshot (dedup identical frames). */
+export async function browserScreenshot(note = "browser observed"): Promise<{ text: string; imageBase64?: string; mimeType?: string; frameId?: string; unchanged?: boolean; error?: string }> {
   const target = await getPageTarget();
   if (!target?.webSocketDebuggerUrl) return { text: `${note}: no live browser target`, error: "no live browser target" };
   try {
@@ -385,11 +511,11 @@ export async function computerObserve(note = "computer observed"): Promise<{ tex
   }
 }
 
-/** computer_act: ordered batched desktop actions via CDP Input.*. */
-export async function computerAct(actions: ComputerAction[], opts?: { observe?: boolean; settleMs?: number }): Promise<{ text: string; imageBase64?: string; completed: number; uncertain: boolean; error?: string }> {
-  const parsed = parseComputerActions(actions);
+/** browser_pixel_act: ordered batched x/y actions inside the managed browser window via CDP Input.*. */
+export async function browserPixelAct(actions: ComputerAction[], opts?: { observe?: boolean; settleMs?: number }): Promise<{ text: string; imageBase64?: string; completed: number; uncertain: boolean; error?: string }> {
+  const parsed = parsePixelActions(actions);
   const target = await getPageTarget();
-  if (!target?.webSocketDebuggerUrl) return { text: "computer_act: no live browser target", completed: 0, uncertain: true, error: "no live target" };
+  if (!target?.webSocketDebuggerUrl) return { text: "browser_pixel_act: no live browser target", completed: 0, uncertain: true, error: "no live target" };
   const wsUrl = target.webSocketDebuggerUrl;
   let completed = 0;
   try {
@@ -410,9 +536,12 @@ export async function computerAct(actions: ComputerAction[], opts?: { observe?: 
         // Rakazo parity: "type" maps to clipboard paste path.
         await cdpCall(wsUrl, "Input.insertText", { text: a.text });
       } else if (a.kind === "key") {
-        const code = a.key.length === 1 ? `Key${a.key.toUpperCase()}` : a.key;
-        await cdpCall(wsUrl, "Input.dispatchKeyEvent", { type: "keyDown", key: a.key, code, modifiers: (a.modifiers || []).includes("Shift") ? 8 : 0 });
-        await cdpCall(wsUrl, "Input.dispatchKeyEvent", { type: "keyUp", key: a.key, code });
+        const { code, windowsVirtualKeyCode, text } = describeKey(a.key);
+        const modifiers = modifiersBitmask(a.modifiers);
+        const base = { key: a.key, code, windowsVirtualKeyCode, modifiers, ...(text ? { text } : {}) };
+        await cdpCall(wsUrl, "Input.dispatchKeyEvent", { ...base, type: "keyDown" });
+        // Printable single chars also need rawKeyDown for some pages; keyDown is enough for most.
+        await cdpCall(wsUrl, "Input.dispatchKeyEvent", { ...base, type: "keyUp" });
       } else if (a.kind === "scroll") {
         await cdpCall(wsUrl, "Input.dispatchMouseEvent", { type: "mouseWheel", x: 640, y: 450, deltaX: 0, deltaY: a.direction === "down" ? 120 * a.amount : -120 * a.amount });
       } else if (a.kind === "wait") {
@@ -422,24 +551,29 @@ export async function computerAct(actions: ComputerAction[], opts?: { observe?: 
     }
     // Rakazo parity: batch predictable actions with observe:false; observe by default.
     if (opts?.observe === false) {
-      return { text: `computer_act confirmed ${completed}/${parsed.length} actions (observe:false — no screenshot).`, completed, uncertain: false };
+      return { text: `browser_pixel_act confirmed ${completed}/${parsed.length} actions (observe:false — no screenshot).`, completed, uncertain: false };
     }
-    // Rakazo parity: settle_ms lets the desktop settle before the screenshot.
+    // Rakazo parity: settle_ms lets the page settle before the screenshot.
     const settleMs = Math.min(Math.max(Math.round(Number(opts?.settleMs) || 0), 0), 5000);
     if (settleMs > 0) await new Promise((r) => setTimeout(r, settleMs));
-    const obs = await computerObserve("computer_act result");
+    const obs = await browserScreenshot("browser_pixel_act result");
     return { text: obs.text, imageBase64: obs.imageBase64, completed, uncertain: false };
   } catch (e) {
     return {
-      text: `computer_act confirmed ${completed}/${parsed.length} actions. Inspect current state before continuing; never replay completed or uncertain actions.`,
+      text: `browser_pixel_act confirmed ${completed}/${parsed.length} actions. Inspect current state before continuing; never replay completed or uncertain actions.`,
       completed, uncertain: true, error: e instanceof Error ? e.message : String(e),
     };
   }
 }
 
-// ---------- Screen lease (single-screen claim, Rakazo computer-screens parity) ----------
+/** @deprecated Use browserScreenshot — old computer_observe name kept for back-compat. */
+export const computerObserve = browserScreenshot;
+/** @deprecated Use browserPixelAct — old computer_act name kept for back-compat. */
+export const computerAct = browserPixelAct;
 
-const SCREEN_BUSY = "The computer screen is temporarily busy. Retry in a moment. File and shell tools still work.";
+// ---------- Browser lease (single-window claim, Rakazo computer-screens parity) ----------
+
+const SCREEN_BUSY = "The browser window is temporarily busy. Retry in a moment. File and shell tools still work.";
 
 /** Takeover lease TTL (Rakazo computer-control.ts parity: 15 min default). */
 export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;

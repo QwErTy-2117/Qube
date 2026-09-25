@@ -16,9 +16,18 @@ export const RunCommandToolUI: ToolCallMessagePartComponent = ({
   const exitCode = data.exitCode ?? 0;
   const succeeded = exitCode === 0;
   const files = data.generatedFiles || [];
+  const command =
+    typeof (args as any)?.command === "string"
+      ? (args as any).command.slice(0, 80)
+      : "";
 
   return (
     <div className="flex flex-col gap-1.5 px-3 py-1 text-sm">
+      {command && (
+        <div className="truncate font-mono text-xs text-muted-foreground" title={(args as any).command}>
+          {command}
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <span
           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${

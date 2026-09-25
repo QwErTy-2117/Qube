@@ -71,6 +71,16 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "turn_ended", render: BrowserToolUI });
   useAssistantToolUI({ toolName: "ping", render: BrowserToolUI });
   useAssistantToolUI({ toolName: "info", render: BrowserToolUI });
+  // Pi managed-browser tools — same clickable panel UI (click reopens sidebar)
+  useAssistantToolUI({ toolName: "browser_navigate", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_snapshot", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_act", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_screenshot", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "browser_pixel_act", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "computer_observe", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "computer_act", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "open_path", render: BrowserToolUI });
+  useAssistantToolUI({ toolName: "request_takeover", render: BrowserToolUI });
   // Legacy Codex native events kept for forward compat (if old sessions contain them)
   useAssistantToolUI({ toolName: "command_execution", render: RunCommandToolUI });
   useAssistantToolUI({ toolName: "file_change", render: WriteFileToolUI });

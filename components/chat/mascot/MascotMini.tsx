@@ -339,7 +339,11 @@ function MascotModel({
       }
     }
 
-    // ---- continuous mode (working / tool / browser) ----
+    // ---- continuous mode (working only) ----
+    // Tool calls deliberately do nothing special: while a run is active the
+    // mascot just keeps watching the response (see gaze source above) with
+    // the same gentle working bob. "tool"/"browser" modes are treated as
+    // working for backwards compat in case something still sets them.
     const mode = modeRef.current;
     let modeRx = 0;
     let modeRz = 0;
@@ -347,21 +351,9 @@ function MascotModel({
     let modeBlink = 0;
     let modeBob = 0;
     if (!reduceMotion && mode !== "idle") {
-      if (mode === "working") {
-        modeBob = Math.sin(t * 6) * 0.02;
-        modeLookX = Math.sin(t * 1.4) * 0.045;
-        modeBlink = 0.12;
-      } else if (mode === "tool") {
-        modeRz = 0.07;
-        modeRx = 0.06;
-        modeLookX = Math.sin(t * 2.2) * 0.055;
-        modeBlink = 0.3;
-        modeBob = Math.sin(t * 5) * 0.015;
-      } else if (mode === "browser") {
-        modeRx = -0.05;
-        modeLookX = 0.06 + Math.sin(t * 3.1) * 0.03;
-        modeBob = Math.abs(Math.sin(t * 3.4)) * 0.03;
-      }
+      modeBob = Math.sin(t * 6) * 0.02;
+      modeLookX = Math.sin(t * 1.4) * 0.045;
+      modeBlink = 0.12;
     }
 
     // ---- one-shot timeline (latest wins, skipped intermediates vanish) ----
@@ -578,7 +570,8 @@ function MascotListeningProbe({
 }
 // Watches thread state and drives mode + one-shots:
 // - run starts → anchor gaze to the response, mascot watches it stream in
-// - new tool-call → "tool" (or "browser" for browser_* / page tools)
+// - tool calls → deliberately nothing special (mascot keeps watching the
+//   response with the normal working bob; no side-turn, no scan)
 // - run finishes → "done" (nod, brief eye contact, then back to cursor)
 function MascotDriver({
   modeRef,
@@ -590,10 +583,7 @@ function MascotDriver({
   mascotRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const isRunning = useAuiState((s) => s.thread.isRunning);
-  const messages = useAuiState((s) => s.thread.messages);
   const prevRunning = useRef(isRunning);
-  const seenCalls = useRef<Set<string>>(new Set());
-  const lastAuto = useRef(0);
 
   useEffect(() => {
     modeRef.current = "idle";
@@ -610,51 +600,7 @@ function MascotDriver({
 
   useEffect(() => {
     try {
-      const now = Date.now();
-      // Collect tool calls from the latest assistant message only (cheap).
-      const last: any = (messages as any[])[(messages as any[]).length - 1];
-      const parts: any[] = last?.content || last?.parts || [];
-      let hasBrowser = false;
-      let hasTool = false;
-      for (const p of parts) {
-        if (p?.type === "tool-call" && typeof p?.toolName === "string") {
-          hasTool = true;
-          const n = p.toolName as string;
-          if (
-            n.startsWith("browser_") ||
-            n.startsWith("computer_") ||
-            ["open_tab", "navigate", "page_info", "open_path"].includes(n)
-          ) {
-            hasBrowser = true;
-          }
-          const id =
-            typeof p.toolCallId === "string" && p.toolCallId
-              ? p.toolCallId
-              : `${n}:${JSON.stringify(p.args ?? "").slice(0, 40)}`;
-          if (!seenCalls.current.has(id)) {
-            seenCalls.current.add(id);
-            if (seenCalls.current.size > 200) {
-              const arr = [...seenCalls.current];
-              arr.slice(0, arr.length - 200).forEach((x) => seenCalls.current.delete(x));
-            }
-            // Throttle auto one-shots so rapid tool bursts stay smooth.
-            if (now - lastAuto.current > 900) {
-              lastAuto.current = now;
-              const ev = hasBrowser ? "browser" : "tool";
-              window.dispatchEvent(
-                new CustomEvent(MASCOT_EVENT, { detail: { kind: ev } }),
-              );
-            }
-          }
-        }
-      }
-      modeRef.current = !isRunning
-        ? "idle"
-        : hasBrowser
-          ? "browser"
-          : hasTool
-            ? "tool"
-            : "working";
+      modeRef.current = !isRunning ? "idle" : "working";
 
       // Run just started → turn to the response and watch it stream in.
       if (!prevRunning.current && isRunning) {
@@ -670,7 +616,7 @@ function MascotDriver({
       }
       prevRunning.current = isRunning;
     } catch {}
-  }, [isRunning, messages, modeRef, responseRef, mascotRef]);
+  }, [isRunning, modeRef, responseRef, mascotRef]);
 
   return null;
 }
@@ -715,27 +661,48 @@ export function MascotMini({ size = 24 }: { size?: number }) {
   // x: right+, y: up+, d: closeness 1 = on top of the mascot.
   // Direction + tanh falloff means the pupils genuinely point at the
   // cursor — nearby motion reads clearly instead of saturating far away.
+  //
+  // Follows by default with no click needed: raw pointer coords are stored
+  // on every pointer/mouse event from the very first mount (even before the
+  // mascot div exists), and the pursuit vector is recomputed every frame
+  // from the live mascot rect — so the moment the mascot appears it already
+  // points at the last-known pointer, and layout shifts (sidebar
+  // expand/collapse, scroll) never leave a stale vector behind.
   useEffect(() => {
-    if (!mounted || reduceMotion) return;
+    if (reduceMotion) return;
     let raf = 0;
+    // Sensible default guess until the first real pointer event: window
+    // center-ish, where the pointer usually is on load.
+    const raw = {
+      x: typeof window !== "undefined" ? window.innerWidth * 0.5 : 0,
+      y: typeof window !== "undefined" ? window.innerHeight * 0.35 : 0,
+    };
     const target = { x: 0, y: 0, d: 0 };
-    const onMove = (e: PointerEvent) => {
+    const onPos = (clientX: number, clientY: number) => {
+      raw.x = clientX;
+      raw.y = clientY;
+    };
+    const onMove = (e: PointerEvent | MouseEvent) => {
       try {
-        const el = wrapRef.current;
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        const dx = e.clientX - (r.left + r.width / 2);
-        const dyDown = e.clientY - (r.top + r.height / 2);
-        const dist = Math.hypot(dx, dyDown);
-        const ux = dist > 0.5 ? dx / dist : 0;
-        const uy = dist > 0.5 ? -dyDown / dist : 0; // up positive
-        const mag = Math.tanh(dist / 220);
-        target.x = ux * mag;
-        target.y = uy * mag;
-        target.d = 1 - Math.tanh(dist / 160);
+        onPos(e.clientX, e.clientY);
       } catch {}
     };
     const tick = () => {
+      try {
+        const el = wrapRef.current;
+        if (el) {
+          const r = el.getBoundingClientRect();
+          const dx = raw.x - (r.left + r.width / 2);
+          const dyDown = raw.y - (r.top + r.height / 2);
+          const dist = Math.hypot(dx, dyDown);
+          const ux = dist > 0.5 ? dx / dist : 0;
+          const uy = dist > 0.5 ? -dyDown / dist : 0; // up positive
+          const mag = Math.tanh(dist / 220);
+          target.x = ux * mag;
+          target.y = uy * mag;
+          target.d = 1 - Math.tanh(dist / 160);
+        }
+      } catch {}
       const c = cursorRef.current;
       c.x += (target.x - c.x) * 0.18;
       c.y += (target.y - c.y) * 0.18;
@@ -743,12 +710,16 @@ export function MascotMini({ size = 24 }: { size?: number }) {
       raf = requestAnimationFrame(tick);
     };
     window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("mousemove", onMove, { passive: true });
+    window.addEventListener("pointerdown", onMove, { passive: true });
     raf = requestAnimationFrame(tick);
     return () => {
       window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("pointerdown", onMove);
       cancelAnimationFrame(raf);
     };
-  }, [mounted, reduceMotion]);
+  }, [reduceMotion]);
 
   // Manual replay for testing: `__qubeMascotDrop()` in the console.
   useEffect(() => {

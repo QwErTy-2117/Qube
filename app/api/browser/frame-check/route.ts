@@ -20,10 +20,22 @@ export async function GET(req: Request) {
     // Fetch a small prefix of the live page: reachable + serving real
     // content means the panel can render it (framing protections are
     // stripped by /api/browser/view, so XFO/CSP are not checked here).
+    // Browser-like headers so the probe isn't fingerprinted as a script.
+    // Note: bot-walled pages (Amazon, Reddit, NYT) fail this fetch probe but
+    // still render via the view route's headless-Chrome fallback — so a
+    // "false" here means "needs JS rendering", not "unrenderable".
     try {
       const res = await fetch(v.url, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (Qube BrowserWorkspace; frame-check)",
+          "User-Agent":
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Upgrade-Insecure-Requests": "1",
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none",
           Range: "bytes=0-32767",
         },
         signal: AbortSignal.timeout(8000),

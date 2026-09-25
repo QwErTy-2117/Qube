@@ -103,8 +103,9 @@ function ToolGroupTrigger({
   active?: boolean;
   label?: string;
 }) {
+  // Default stays non-technical: counts are shown separately via NumberRoll.
   const displayLabel =
-    customLabel || `tool ${count === 1 ? "call" : "calls"}`;
+    customLabel || (active ? "Working…" : "Activity");
 
   return (
     <CollapsibleTrigger

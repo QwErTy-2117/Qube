@@ -4,11 +4,13 @@ import { motion, AnimatePresence } from "motion/react";
 import { useUpdaterStore } from "@/lib/updater-store";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useChatCenter } from "./use-chat-center";
 
 export function UpToDateToast() {
   const { showUpToDate, setShowUpToDate } = useUpdaterStore();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const centerX = useChatCenter(mounted && showUpToDate);
 
   useEffect(() => {
     if (!showUpToDate) return;
@@ -27,7 +29,8 @@ export function UpToDateToast() {
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={{ y: -24, opacity: 0, scale: 0.98 }}
           transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[999] w-auto max-w-[92vw] pointer-events-none"
+          className="fixed top-4 -translate-x-1/2 z-[999] w-auto max-w-[92vw] pointer-events-none"
+          style={{ left: centerX ?? "50%" }}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="rounded-[26px] border border-[#e7e7e7] bg-white shadow-xl shadow-black/10 overflow-hidden w-auto">

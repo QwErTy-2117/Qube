@@ -7,6 +7,7 @@ import { downloadAndInstall, downloadProgressPercent } from "@/lib/updater";
 import { Loader2Icon } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useChatCenter } from "./use-chat-center";
 
 export function UpdateToast() {
   const { showToast, info, dismiss, downloading, setDownloading, setProgress } = useUpdaterStore();
@@ -82,6 +83,9 @@ export function UpdateToast() {
   // creates a concentric axis so the button's curve follows the popup's curve.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // Centered on the chat column, not the whole window (the browser panel
+  // would otherwise pull the popup off-center).
+  const centerX = useChatCenter(mounted && showToast);
 
   if (!mounted) return null;
 
@@ -94,8 +98,8 @@ export function UpdateToast() {
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={{ y: -24, opacity: 0, scale: 0.98 }}
           transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[999] w-[360px] max-w-[92vw] pointer-events-auto"
-          style={{ pointerEvents: "auto" }}
+          className="fixed top-4 -translate-x-1/2 z-[999] w-[360px] max-w-[92vw] pointer-events-auto"
+          style={{ pointerEvents: "auto", left: centerX ?? "50%" }}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >

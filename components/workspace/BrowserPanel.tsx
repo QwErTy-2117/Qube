@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { XIcon, GlobeIcon, AlertTriangleIcon, RotateCwIcon, ArrowUpIcon, ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import { useWorkspaceStore } from "@/lib/workspace/store";
+import { mapToPage, type PageViewport } from "@/lib/browser/view-coords";
 
 type Health = {
   browser?: { running: boolean; listening: boolean; pid: number; port: number };
@@ -11,13 +12,15 @@ type Health = {
 } | null;
 
 /**
- * Browser side panel: the REAL live page in a sandboxed iframe, served
- * through /api/browser/view (framing protections stripped server-side), so
- * there is no screenshot-stream lag — clicks, scroll and typing are native.
- * The screenshot stream (/api/browser/frames) still runs underneath for URL
- * sync with the agent's shared browser. The window is never closed
- * automatically; only the X button (or app shutdown) ends the session.
- * A Retry control recovers a wedged browser.
+ * Browser side panel: the SAME live browser the agent drives, rendered as
+ * its screencast pixels — one shared Chromium, one session, one truth.
+ * (An earlier proxy-iframe view re-fetched pages server-side with throwaway
+ * cookies, so the user saw a different cart/session than the agent. That
+ * split is gone: this panel shows the managed browser itself.)
+ * Clicks, wheel and typing are forwarded into the page through
+ * /api/browser/input (same CDP pipe the agent uses). The window is never
+ * closed automatically; only the X button (or app shutdown) ends the
+ * session. A Retry control recovers a wedged browser.
  */
 export function BrowserPanel() {
   const open = useWorkspaceStore((s) => s.open);
@@ -33,63 +36,38 @@ export function BrowserPanel() {
   const [health, setHealth] = useState<Health>(null);
   const [restarting, setRestarting] = useState(false);
   const [esKey, setEsKey] = useState(0);
-  const [live, setLive] = useState(true);
   const hasFrameRef = useRef(false);
   const lastActivityRef = useRef(0);
   const lastReconnectRef = useRef(0);
   // liveUrl mirror for change-checks without re-rendering on every frame.
   const liveUrlRef = useRef("");
-  const liveRef = useRef(true);
   // While the user types in the URL bar, stream updates must NOT overwrite it.
   const editingUrlRef = useRef(false);
   const show = open && artifact?.kind === "browser";
   const [navUrl, setNavUrl] = useState("");
   const [navigating, setNavigating] = useState(false);
   const [navError, setNavError] = useState<string | null>(null);
-  // The URL actually rendered in the iframe view. Follows committed
-  // navigations (user Go / agent browser) — never keystrokes.
-  const [viewUrl, setViewUrl] = useState("");
-  // URL the iframe has actually finished loading (vs its current src).
-  const [loadedSrc, setLoadedSrc] = useState("");
-  const loadedSrcRef = useRef(loadedSrc);
-  loadedSrcRef.current = loadedSrc;
-  // Opaque per-mount token so the proxy can attribute in-iframe link clicks
-  // to this panel for /api/browser/panel-url polling.
-  const panelIdRef = useRef<string>("");
-  if (!panelIdRef.current) {
-    try {
-      panelIdRef.current = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
-    } catch {
-      panelIdRef.current = `panel${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`;
-    }
-  }
-  // Last polled panel URL — tells fresh navigations apart from stale polls.
-  const lastPollRef = useRef<string | null>(null);
+  // Latest viewport metrics from the screencast (page CSS pixels) — clicks
+  // and wheel map through these, never through the JPEG's own pixel size.
+  const metaRef = useRef<PageViewport | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const lastMoveRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
-  const viewUrlRef = useRef(viewUrl);
-  viewUrlRef.current = viewUrl;
 
   const noteActivity = () => {
     lastActivityRef.current = Date.now();
-    if (!liveRef.current) {
-      liveRef.current = true;
-      setLive(true);
-    }
   };
 
   const setLiveUrlIfChanged = (url: string) => {
     if (url && url !== liveUrlRef.current) {
       liveUrlRef.current = url;
       setLiveUrl(url);
-      // Keep the bar AND the fast view in sync when the user is NOT typing.
+      // Keep the bar AND travel history in sync when the user is NOT typing.
+      // The live screenshot IS the view, so no separate view URL exists.
       if (!editingUrlRef.current) {
         setNavUrl(url);
-        if (url !== viewUrlRef.current) {
-          viewUrlRef.current = url;
-          setViewUrl(url);
-          pushTravel(url);
-        }
+        pushTravel(url);
       }
     }
   };
@@ -125,17 +103,11 @@ export function BrowserPanel() {
   // Freshness watchdog: if nothing (frame or URL tick) arrives for a
   // while, force a stream reconnect — a wedged pipe otherwise freezes the
   // panel on a stale screenshot with no indication. At most once per 15s.
-  // State is only touched on change so the watchdog itself never re-renders.
   useEffect(() => {
     if (!show) return;
     lastActivityRef.current = Date.now();
     const timer = setInterval(() => {
       const idleMs = Date.now() - lastActivityRef.current;
-      const shouldBeLive = idleMs < 10000;
-      if (shouldBeLive !== liveRef.current) {
-        liveRef.current = shouldBeLive;
-        setLive(shouldBeLive);
-      }
       if (idleMs > 15000 && Date.now() - lastReconnectRef.current > 15000) {
         lastReconnectRef.current = Date.now();
         setEsKey((k) => k + 1);
@@ -165,11 +137,26 @@ export function BrowserPanel() {
       };
       es.addEventListener("frame", (ev) => {
         try {
-          // Fast-only view: frame images are ignored (the iframe IS the
-          // view). Only the URL is used, to follow the agent's browser.
+          // The frame image IS the view: paint it straight onto the <img>
+          // without a state round-trip (10fps base64 through React state
+          // would churn). URL ticks keep the bar following the agent.
           // Frame URLs can lag behind navigation — never let them overwrite
           // what the user is typing, and only re-render on actual change.
-          const data = JSON.parse((ev as MessageEvent).data) as { url?: string };
+          const data = JSON.parse((ev as MessageEvent).data) as {
+            jpg?: string;
+            url?: string;
+            meta?: PageViewport | null;
+          };
+          if (data.meta && typeof data.meta.deviceWidth === "number") {
+            metaRef.current = {
+              deviceWidth: data.meta.deviceWidth,
+              deviceHeight: data.meta.deviceHeight ?? 0,
+            };
+          }
+          if (typeof data.jpg === "string" && data.jpg.length > 0 && imgRef.current) {
+            const src = `data:image/jpeg;base64,${data.jpg}`;
+            if (imgRef.current.src !== src) imgRef.current.src = src;
+          }
           if (typeof data.url === "string" && data.url) {
             setLiveUrlIfChanged(data.url);
             markLive();
@@ -262,9 +249,8 @@ export function BrowserPanel() {
   };
 
   // Committed-navigation history for back/forward. Kept in a ref (not
-  // state) so the SSE handler and the panel-url poller — both long-lived
-  // closures — always see fresh values; `travelTick` re-renders for the
-  // button disabled-states.
+  // state) so the SSE handler — a long-lived closure — always sees fresh
+  // values; `travelTick` re-renders for the button disabled-states.
   const travelRef = useRef<{ entries: string[]; idx: number }>({ entries: [], idx: -1 });
   const [travelTick, setTravelTick] = useState(0);
   void travelTick;
@@ -288,10 +274,8 @@ export function BrowserPanel() {
     setNavUrl(url);
     liveUrlRef.current = url;
     setLiveUrl(url);
-    // Drive the fast view immediately — don't wait for the stream round-trip.
-    // (The loading overlay is derived from loadedSrc vs src, so no reset needed.)
-    viewUrlRef.current = url;
-    setViewUrl(url);
+    // The screencast follows the navigation on its own; the bar updates now
+    // so the user sees where they are going without waiting for the pixels.
     if (pushHist) pushTravel(url);
     try {
       const res = await fetch("/api/browser/input", {
@@ -330,38 +314,99 @@ export function BrowserPanel() {
   };
 
   const dur = reduceMotion ? 0.01 : 0.22;
-  const showDiagnostics = !hasFrame && !viewUrl && (error || health);
-  const proxySrc = viewUrl
-    ? `/api/browser/view?url=${encodeURIComponent(viewUrl)}&panel=${panelIdRef.current}`
-    : "";
+  const showDiagnostics = !hasFrame && (error || health);
 
-  // Follow in-iframe link clicks: the proxy records every navigation under
-  // our panel token (links/forms are rewritten to route through it). Poll
-  // for the current page URL and adopt it into the bar + travel history.
-  // Guards: skip while typing, while the view is still settling on a
-  // committed URL, and ignore already-seen (stale) poll values.
+  // Forward user input into the live browser (same CDP pipe the agent
+  // uses). Fire-and-forget: the screencast shows the result.
+  const postInput = (body: Record<string, unknown>) => {
+    noteActivity();
+    try {
+      fetch("/api/browser/input", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).catch(() => {});
+    } catch {}
+  };
+
+  const pagePoint = (clientX: number, clientY: number) => {
+    const img = imgRef.current;
+    if (!img) return null;
+    const r = img.getBoundingClientRect();
+    return mapToPage(clientX, clientY, { left: r.left, top: r.top, width: r.width, height: r.height }, metaRef.current);
+  };
+
+  const onViewMouseDown = (e: React.MouseEvent) => {
+    // Focus so typing goes to the page afterwards.
+    try {
+      containerRef.current?.focus({ preventScroll: true });
+    } catch {
+      try {
+        containerRef.current?.focus();
+      } catch {}
+    }
+    const p = pagePoint(e.clientX, e.clientY);
+    if (!p) return;
+    const button = e.button === 2 ? "right" : e.button === 1 ? "middle" : "left";
+    postInput({ type: "click", x: p.x, y: p.y, button });
+  };
+
+  const onViewMouseMove = (e: React.MouseEvent) => {
+    // Hover states at most ~12/s — the page doesn't need every pixel.
+    const now = Date.now();
+    if (now - lastMoveRef.current < 80) return;
+    lastMoveRef.current = now;
+    const p = pagePoint(e.clientX, e.clientY);
+    if (!p) return;
+    postInput({ type: "move", x: p.x, y: p.y });
+  };
+
+  const onViewKeyDown = (e: React.KeyboardEvent) => {
+    // Modifier-only presses carry no input.
+    if (e.key === "Control" || e.key === "Shift" || e.key === "Alt" || e.key === "Meta") return;
+    e.preventDefault();
+    const modifiers: string[] = [];
+    if (e.ctrlKey) modifiers.push("ctrl");
+    if (e.altKey) modifiers.push("alt");
+    if (e.metaKey) modifiers.push("meta");
+    if (e.shiftKey) modifiers.push("shift");
+    postInput({ type: "key", key: e.key, modifiers });
+  };
+
+  // Wheel must be non-passive to keep the app from scrolling instead of the
+  // page (React's onWheel can't preventDefault).
   useEffect(() => {
     if (!show) return;
-    const t = setInterval(async () => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const p = (() => {
+        const img = imgRef.current;
+        if (!img) return null;
+        const r = img.getBoundingClientRect();
+        return mapToPage(e.clientX, e.clientY, { left: r.left, top: r.top, width: r.width, height: r.height }, metaRef.current);
+      })();
+      noteActivity();
       try {
-        if (editingUrlRef.current) return;
-        if (loadedSrcRef.current !== viewUrlRef.current) return;
-        const res = await fetch(`/api/browser/panel-url?panel=${panelIdRef.current}`, { cache: "no-store" });
-        const data = (await res.json().catch(() => null)) as { url?: string | null } | null;
-        const url = typeof data?.url === "string" ? data.url : null;
-        if (!url || url === lastPollRef.current) return;
-        lastPollRef.current = url;
-        if (url !== viewUrlRef.current) {
-          viewUrlRef.current = url;
-          setViewUrl(url);
-          setNavUrl(url);
-          pushTravel(url);
-        }
+        fetch("/api/browser/input", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "wheel",
+            x: p?.x ?? 0,
+            y: p?.y ?? 0,
+            deltaX: Math.round(e.deltaX),
+            deltaY: Math.round(e.deltaY),
+          }),
+        }).catch(() => {});
       } catch {}
-    }, 2000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [show]);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, [show, hasFrame]);
 
   return (
     <AnimatePresence initial={false}>
@@ -381,11 +426,18 @@ export function BrowserPanel() {
             <div className="mx-auto mt-[45%] h-10 w-1 rounded-full bg-border/70 opacity-0 transition hover:opacity-100" />
           </div>
 
-          {/* Live view — the REAL page in a sandboxed iframe (native clicks,
-              scroll, typing — zero screenshot lag). */}
+          {/* Live view — the shared browser's own pixels. What you see is
+              exactly what the agent sees (same session, same cart). Click to
+              focus, then click/scroll/type directly in the page. */}
           <div
             ref={containerRef}
-            className="relative min-h-0 flex-1 overflow-hidden bg-white"
+            tabIndex={0}
+            onMouseDown={onViewMouseDown}
+            onMouseMove={onViewMouseMove}
+            onKeyDown={onViewKeyDown}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-label="Live browser. Click to interact, type once focused."
+            className="relative min-h-0 flex-1 cursor-pointer overflow-hidden bg-white outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
           >
             {showDiagnostics ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -418,7 +470,7 @@ export function BrowserPanel() {
                   {restarting ? "Restarting…" : "Retry"}
                 </button>
               </div>
-            ) : !hasFrame && !viewUrl ? (
+            ) : !hasFrame ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
                 <GlobeIcon className="size-8 text-muted-foreground/40" />
                 <p className="text-sm font-medium text-foreground/80">Waiting for the browser…</p>
@@ -426,20 +478,17 @@ export function BrowserPanel() {
               </div>
             ) : (
               <div className="absolute inset-0 bg-white">
-                <iframe
-                  key={proxySrc}
-                  src={proxySrc}
-                  title={liveUrl || viewUrl || "Live browser"}
-                  sandbox="allow-scripts allow-forms allow-popups allow-downloads"
-                  referrerPolicy="no-referrer"
-                  className="absolute inset-0 h-full w-full border-0 bg-white"
-                  onLoad={() => setLoadedSrc(proxySrc)}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  ref={imgRef}
+                  alt={liveUrl || "Live browser"}
+                  title={liveUrl || "Live browser"}
+                  className="absolute inset-0 h-full w-full bg-white object-contain"
+                  draggable={false}
                 />
-                {loadedSrc !== proxySrc && (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white">
-                    <p className="text-xs text-muted-foreground">
-                      {navigating ? "Navigating…" : "Loading page…"}
-                    </p>
+                {navigating && (
+                  <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[11px] font-medium text-white">
+                    Navigating…
                   </div>
                 )}
               </div>
@@ -479,9 +528,9 @@ export function BrowserPanel() {
                 }}
                 onBlur={() => {
                   // Stop shielding the bar once the user leaves it; if they
-                  // typed nothing new, fall back to the viewed page URL.
+                  // typed nothing new, fall back to the live page URL.
                   editingUrlRef.current = false;
-                  if (!navUrl.trim() && viewUrlRef.current) setNavUrl(viewUrlRef.current);
+                  if (!navUrl.trim() && liveUrlRef.current) setNavUrl(liveUrlRef.current);
                 }}
                 onKeyDown={(e) => {
                   // Never let URL-bar keys bubble to the page handler above.
@@ -490,14 +539,14 @@ export function BrowserPanel() {
                     e.preventDefault();
                     void commitNavigate();
                   } else if (e.key === "Escape") {
-                    // Abandon the edit and restore the viewed URL.
+                    // Abandon the edit and restore the live URL.
                     editingUrlRef.current = false;
-                    if (viewUrlRef.current) setNavUrl(viewUrlRef.current);
+                    if (liveUrlRef.current) setNavUrl(liveUrlRef.current);
                     urlInputRef.current?.blur();
                   }
                 }}
-                placeholder={viewUrl || liveUrl || "https://"}
-                title={navError || viewUrl || liveUrl || undefined}
+                placeholder={liveUrl || "https://"}
+                title={navError || liveUrl || undefined}
                 aria-label="Browser URL"
                 className="min-w-0 flex-1 bg-transparent text-[13px] leading-none outline-none placeholder:text-muted-foreground"
               />

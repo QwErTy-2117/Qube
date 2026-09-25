@@ -12,8 +12,10 @@
  *   (e1, e2…) + `fallback: "browser_pixel_act"` when page tools cannot operate.
  * - browser_screenshot / browser_pixel_act: up to 24 ordered browser-window
  *   actions, batch only predictable actions, stop before uncertain outcomes.
- * - Snapshots: bounded page text + max 80 interactive elements, isolated
- *   script world, password masking, stale-ref rejection (never retarget).
+ * - Snapshots: bounded page text + first 80 VISIBLE interactive elements,
+ *   isolated script world, password masking, stale-ref self-healing (settle
+ *   → re-snapshot → descriptor re-match → in-page retry; pixel fallback only
+ *   when healing truly fails).
  * - Failed actions report confirmed progress + uncertainty: inspect current
  *   state before continuing, never replay completed/uncertain actions.
  * - Identical consecutive browser frames omit image bytes (metadata only).
@@ -49,6 +51,11 @@ export type SnapshotElement = {
   role: string;
   name: string;
   value?: string;
+  /** Descriptors for stale-ref self-healing (added; tree text unchanged). */
+  tag?: string;
+  type?: string;
+  href?: string;
+  idx?: number;
 };
 
 /** Parse browser_act actions (Rakazo browser-tools.ts parity, kinds: click/fill/type). */
@@ -321,28 +328,31 @@ async function cdpCall(wsUrl: string, method: string, params: Record<string, unk
   });
 }
 
-// Isolated-world snapshot script: bounded text + up to 80 interactive
-// elements, password values masked, stable refs (e1…), no retargeting.
+// Isolated-world snapshot script: bounded text + first 80 VISIBLE interactive
+// elements (dense refs e1… that reach below-fold content on ad-heavy pages),
+// password values masked, descriptors kept for stale-ref self-healing.
 const SNAPSHOT_EXPR = `(() => {
   const text = (document.body ? document.body.innerText : "").slice(0, ${SNAPSHOT_TEXT_CHARS});
   const els = [];
   const sel = 'a[href], button, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [onclick]';
-  const nodes = Array.from(document.querySelectorAll(sel)).slice(0, ${MAX_SNAPSHOT_ELEMENTS});
+  const nodes = Array.from(document.querySelectorAll(sel));
   let n = 0;
-  for (const el of nodes) {
-    n++;
+  for (let idx = 0; idx < nodes.length && els.length < ${MAX_SNAPSHOT_ELEMENTS}; idx++) {
+    const el = nodes[idx];
     const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
-    if (rect && (rect.width === 0 && rect.height === 0)) continue;
+    if (!rect || (rect.width === 0 && rect.height === 0)) continue;
+    n++;
     const tag = (el.tagName || "").toLowerCase();
     const type = (el.getAttribute && el.getAttribute("type") || "").toLowerCase();
     const role = el.getAttribute && el.getAttribute("role") || (tag === "a" ? "link" : tag === "input" && (type === "checkbox" ? "checkbox" : "textbox") || tag === "select" ? "combobox" : tag === "textarea" ? "textbox" : tag === "button" ? "button" : tag || "element");
     let name = (el.getAttribute && (el.getAttribute("aria-label") || el.innerText || el.value || el.placeholder || el.name || el.id || tag) || tag || "element").toString().replace(/\\s+/g, " ").trim().slice(0, 120);
+    const href = (tag === "a" && el.getAttribute && el.getAttribute("href") || "").toString().slice(0, 200);
     let value = "";
     try {
       if (tag === "input" && (type === "password")) value = "***";
       else if (tag === "input" || tag === "textarea" || tag === "select") value = String(el.value || "").slice(0, 200);
     } catch {}
-    els.push({ ref: "e" + n, role, name, value });
+    els.push({ ref: "e" + n, idx, role, name, tag, type, href, value });
     try { el.setAttribute("data-qube-ref", "e" + n); } catch {}
   }
   return { title: document.title, url: location.href, text, elements: els };
@@ -362,6 +372,225 @@ async function evalIsolated(wsUrl: string, expression: string): Promise<any> {
   } catch {}
   const r = await cdpCall(wsUrl, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
   return r?.result?.value;
+}
+
+// ---------- Stale-ref self-healing (auto-mcp server.mjs parity) ----------
+// Rapid re-renders (Amazon-style carousels, lazy-load, sponsored slots) wipe
+// data-qube-ref attrs between snapshot and act. Instead of punting to the
+// model on every race, browserAct heals in-page: settle → re-snapshot →
+// fuzzy re-match (href-path + /dp/ASIN aware, so session-token rotation
+// doesn't break product links) → re-tag → retry, up to 3 attempts per action.
+
+type RefDescriptor = {
+  role: string;
+  name: string;
+  tag?: string;
+  type?: string;
+  href?: string;
+};
+
+let lastBrowserSnap: { url: string; at: number; refs: Map<string, RefDescriptor> } = {
+  url: "",
+  at: 0,
+  refs: new Map(),
+};
+
+function rememberSnapshotRefs(url: string, elements: SnapshotElement[]): void {
+  lastBrowserSnap = {
+    url,
+    at: Date.now(),
+    refs: new Map(
+      elements.map((e) => [
+        e.ref,
+        { role: e.role, name: e.name, tag: e.tag, type: e.type, href: e.href },
+      ])
+    ),
+  };
+}
+
+export function normRefText(s: unknown): string {
+  return String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase().slice(0, 120);
+}
+
+export function refHrefPath(h: unknown): string {
+  try {
+    return new URL(String(h ?? ""), "http://local").pathname || "";
+  } catch {
+    return String(h ?? "").split("?")[0].split("#")[0];
+  }
+}
+
+export function refDpAsin(h: unknown): string {
+  const m = refHrefPath(h).match(/\/dp\/([A-Za-z0-9]{10})/);
+  return m ? m[1].toUpperCase() : "";
+}
+
+export function refMatchScore(want: RefDescriptor, cand: RefDescriptor): number {
+  let s = 0;
+  if (want.tag && want.tag === cand.tag) s += 2;
+  if (want.role && want.role === cand.role) s += 1;
+  if (want.type && want.type === cand.type) s += 1;
+  const wn = normRefText(want.name);
+  const cn = normRefText(cand.name);
+  if (wn && wn === cn) s += 4;
+  else if (wn && cn && wn.length > 3 && (cn.includes(wn) || wn.includes(cn))) s += 2;
+  if (want.href && want.href === cand.href) s += 4;
+  else if (want.href && cand.href) {
+    const wa = refDpAsin(want.href);
+    const ca = refDpAsin(cand.href);
+    if (wa && ca && wa === ca) s += 5;
+    else {
+      const wp = refHrefPath(want.href);
+      const cp = refHrefPath(cand.href);
+      if (wp && wp === cp && wp !== "/") s += 3;
+    }
+  }
+  return s;
+}
+
+export function sameBrowserPage(a: string, b: string): boolean {
+  try {
+    const u = (s: string) => String(s || "").split("#")[0].replace(/\/$/, "");
+    return u(a) === u(b);
+  } catch {
+    return false;
+  }
+}
+
+const REF_SEL =
+  'a[href], button, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [onclick]';
+
+async function waitBrowserQuiet(wsUrl: string, timeout = 2500, quietMs = 450): Promise<void> {
+  const expr =
+    `((timeout, quietMs) => new Promise((resolve) => {` +
+    `let done=false; const finish=(v)=>{ if(!done){ done=true; try{obs.disconnect();}catch{} resolve(v); } };` +
+    `let tm=setTimeout(()=>finish(true), quietMs);` +
+    `let obs=null;` +
+    `try { obs=new MutationObserver(()=>{ clearTimeout(tm); tm=setTimeout(()=>finish(true), quietMs); });` +
+    `obs.observe(document.documentElement,{childList:true,subtree:true,attributes:true,characterData:true}); }` +
+    `catch(e){ clearTimeout(tm); finish(false); return; }` +
+    `setTimeout(()=>finish(false), timeout);` +
+    `}))(${timeout | 0},${quietMs | 0})`;
+  try {
+    await cdpCall(wsUrl, "Runtime.evaluate", {
+      expression: expr,
+      returnByValue: true,
+      awaitPromise: true,
+    });
+  } catch {}
+}
+
+async function captureBrowserSnapshot(wsUrl: string): Promise<{
+  url: string;
+  title: string;
+  tree: string;
+  elements: SnapshotElement[];
+}> {
+  const v = await evalIsolated(wsUrl, SNAPSHOT_EXPR);
+  const elements = (
+    Array.isArray(v?.elements) ? v.elements : []
+  ).slice(0, MAX_SNAPSHOT_ELEMENTS) as SnapshotElement[];
+  const url = String(v?.url || "");
+  rememberSnapshotRefs(url, elements);
+  return {
+    url,
+    title: String(v?.title || ""),
+    tree: `${String(v?.text || "").slice(0, SNAPSHOT_TEXT_CHARS)}\n\n${formatSnapshotTree(elements)}`,
+    elements,
+  };
+}
+
+// In-page act with its own fallback resolution (parity with auto-mcp
+// RESOLVER_SRC): attr tag → exact href → /dp/ASIN → fuzzy name+path. One
+// async evaluate does resolve → scroll → settle → re-resolve → prep, so the
+// resolve→act race window collapses to a single round-trip.
+function buildActRefExpr(ref: string, want: RefDescriptor | undefined, kind: string, text: string): string {
+  return (
+    `(async (ref, want, SEL, kind, text) => {` +
+    `var norm=function(s){return String(s||"").replace(/\\s+/g," ").trim().toLowerCase().slice(0,120);};` +
+    `var pathOf=function(h){try{return new URL(String(h||""),location.href).pathname;}catch(e){return String(h||"").split("?")[0];}};` +
+    `var asinOf=function(h){var m=pathOf(h).match(/\\/dp\\/([A-Za-z0-9]{10})/);return m?m[1].toUpperCase():"";};` +
+    `var rectOf=function(el){try{var r=el.getBoundingClientRect();return (r.width>0||r.height>0)?r:null;}catch(e){return null;}};` +
+    `function resolveEl(){` +
+    `var tagged=document.querySelector('[data-qube-ref="'+ref+'"]');` +
+    `if(tagged&&rectOf(tagged)) return tagged;` +
+    `if(want){` +
+    `var nodes=Array.from(document.querySelectorAll(SEL)),i,n,h;` +
+    `if(want.href){` +
+    `for(i=0;i<nodes.length;i++){n=nodes[i];try{if(n.tagName==="A"&&n.getAttribute("href")===want.href&&rectOf(n)) return n;}catch(e){}}` +
+    `var wa=asinOf(want.href);` +
+    `if(wa){for(i=0;i<nodes.length;i++){n=nodes[i];try{h=n.getAttribute&&n.getAttribute("href");if(h&&asinOf(h)===wa&&rectOf(n)) return n;}catch(e){}}}` +
+    `}` +
+    `var wn=norm(want.name),best=null,bestScore=0;` +
+    `for(i=0;i<nodes.length;i++){n=nodes[i];if(!rectOf(n)) continue;` +
+    `var nm="";try{nm=norm(n.getAttribute&&(n.getAttribute("aria-label")||n.innerText||n.value||n.placeholder||n.name||n.id||""));}catch(e){}` +
+    `var s=0;` +
+    `if(wn&&nm===wn) s+=4;else if(wn&&nm&&wn.length>3&&(nm.indexOf(wn)>=0||wn.indexOf(nm)>=0)) s+=2;` +
+    `try{h=n.getAttribute&&n.getAttribute("href");if(want.href&&h&&pathOf(h)===pathOf(want.href)&&pathOf(h)!=="/") s+=3;}catch(e){}` +
+    `if(s>bestScore){bestScore=s;best=n;}}` +
+    `if(best&&bestScore>=5) return best;` +
+    `}` +
+    `return null;}` +
+    `var el=resolveEl(); if(!el) return {found:false};` +
+    `try{el.scrollIntoView({block:"center"});}catch(e){}` +
+    `await new Promise(function(r){setTimeout(r,300);});` +
+    `el=resolveEl(); if(!el) return {found:false};` +
+    `if(kind==="click"){var q=rectOf(el); if(!q) return {found:false}; return {found:true,x:q.left+q.width/2,y:q.top+q.height/2};}` +
+    `try{el.focus();}catch(e){}` +
+    `if(kind==="fill"&&(el.tagName==="INPUT"||el.tagName==="TEXTAREA"||el.tagName==="SELECT")){` +
+    `try{el.value=text;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));return {found:true,set:true};}catch(e){return {found:false};}}` +
+    `return {found:true,set:false};` +
+    `})(${JSON.stringify(ref)},${JSON.stringify(want ?? null)},${JSON.stringify(REF_SEL)},${JSON.stringify(kind)},${JSON.stringify(text)})`
+  );
+}
+
+async function healBrowserRef(
+  wsUrl: string,
+  ref: string
+): Promise<{ recovered: boolean; note?: string }> {
+  const existsExpr = `(()=>{const el=document.querySelector('[data-qube-ref="${ref}"]');return !!el;})()`;
+  try {
+    if (await evalIsolated(wsUrl, existsExpr).catch(() => false)) {
+      await waitBrowserQuiet(wsUrl, 700, 250);
+      if (await evalIsolated(wsUrl, existsExpr).catch(() => false)) return { recovered: false };
+    }
+  } catch {}
+  const want = lastBrowserSnap.refs.get(ref);
+  const oldUrl = lastBrowserSnap.url;
+  await waitBrowserQuiet(wsUrl);
+  const snap = await captureBrowserSnapshot(wsUrl);
+  if (!want) {
+    throw new Error(
+      `Stale ref ${ref}: unknown ref (page changed).\n\nFresh snapshot (use these new refs NOW, same turn — do not stop):\n${snap.tree}`.slice(0, 4500)
+    );
+  }
+  if (!sameBrowserPage(oldUrl, snap.url)) {
+    throw new Error(
+      `Stale ref ${ref}: page navigated (${oldUrl || "?"} → ${snap.url || "?"}).\n\nFresh snapshot (use these new refs NOW, same turn — do not stop):\n${snap.tree}`.slice(0, 4500)
+    );
+  }
+  let best: SnapshotElement | null = null;
+  let bestScore = 0;
+  for (const c of snap.elements) {
+    const s = refMatchScore(want, c);
+    if (s > bestScore) {
+      bestScore = s;
+      best = c;
+    }
+  }
+  if (!best || bestScore < 6 || best.idx === undefined) {
+    throw new Error(
+      `Stale ref ${ref} ("${String(want.name || "").slice(0, 80)}"): element is gone after re-render and no confident match was found.\n\nFresh snapshot (use these new refs NOW, same turn — do not stop):\n${snap.tree}`.slice(0, 4500)
+    );
+  }
+  const retag = `(() => { const nodes=Array.from(document.querySelectorAll(${JSON.stringify(REF_SEL)})); const el=nodes[${Math.max(0, best.idx | 0)}]; if(!el) return false; try{el.setAttribute("data-qube-ref",${JSON.stringify(ref)});}catch{} return true; })()`;
+  const ok = await evalIsolated(wsUrl, retag).catch(() => false);
+  if (!ok) {
+    throw new Error(
+      `Stale ref ${ref}: re-match found but re-tagging failed.\n\nFresh snapshot (use these new refs NOW, same turn — do not stop):\n${snap.tree}`.slice(0, 4500)
+    );
+  }
+  return { recovered: true, note: `${ref}→${best.ref} ("${String(best.name || "").slice(0, 60)}")` };
 }
 
 /** browser_navigate via CDP Page.navigate. */
@@ -387,20 +616,16 @@ export async function browserSnapshot(): Promise<{ url: string; title: string; t
     return withBrowserFallback({ url: "", title: "", tree: "", elements: [], fallback: "browser_pixel_act" as const, error: "Page browser is not attached. Use browser_pixel_act instead." });
   }
   try {
-    const v = await evalIsolated(target.webSocketDebuggerUrl, SNAPSHOT_EXPR);
-    const elements = Array.isArray(v?.elements) ? v.elements.slice(0, MAX_SNAPSHOT_ELEMENTS) : [];
-    return {
-      url: String(v?.url || target.url || ""),
-      title: String(v?.title || ""),
-      tree: `${String(v?.text || "").slice(0, SNAPSHOT_TEXT_CHARS)}\n\n${formatSnapshotTree(elements)}`,
-      elements,
-    };
+    const snap = await captureBrowserSnapshot(target.webSocketDebuggerUrl);
+    return { ...snap, url: snap.url || target.url || "" };
   } catch (e) {
     return withBrowserFallback({ url: "", title: "", tree: "", elements: [], fallback: "browser_pixel_act" as const, error: e instanceof Error ? e.message : String(e) });
   }
 }
 
-/** browser_act: click/fill/type by ref. Stale refs are rejected, never retargeted. */
+/** browser_act: click/fill/type by ref. Stale refs self-heal in-page
+ * (settle → re-snapshot → descriptor re-match → retry, up to 3 attempts per
+ * action); the pixel fallback only triggers when healing truly fails. */
 export async function browserAct(actions: BrowserActStep[]): Promise<{ ok: boolean; completed: number; uncertain: boolean; url: string; title: string } & { fallback?: PixelFallback; error?: string; tree?: string }> {
   const parsed = parseBrowserActions(actions);
   const target = await getPageTarget();
@@ -411,30 +636,52 @@ export async function browserAct(actions: BrowserActStep[]): Promise<{ ok: boole
   let completed = 0;
   try {
     for (const a of parsed) {
-      const expr = `(() => {
-        const el = document.querySelector('[data-qube-ref="' + ${JSON.stringify(a.ref)} + '"]');
-        if (!el) return { found: false };
-        el.scrollIntoView({ block: "center" });
-        const r = el.getBoundingClientRect();
-        if (${a.kind === "click" ? "true" : "false"}) { el.click(); return { found: true }; }
-        if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") {
-          el.focus();
-          ${a.kind === "fill" ? "el.value = " + JSON.stringify((a as { text: string }).text) + "; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));" : ""}
-          return { found: true };
+      const want0 = lastBrowserSnap.refs.get(a.ref);
+      let done = false;
+      let lastErr: unknown = null;
+      for (let attempt = 1; attempt <= 3 && !done; attempt++) {
+        try {
+          await healBrowserRef(wsUrl, a.ref);
+          const want = lastBrowserSnap.refs.get(a.ref) || want0;
+          const text = "text" in a ? (a as { text: string }).text : "";
+          const res = await evalIsolated(
+            wsUrl,
+            buildActRefExpr(a.ref, want, a.kind, text)
+          );
+          if (!res?.found) {
+            throw new Error(
+              `Ref ${a.ref} vanished mid-action (page re-rendered between resolve and act).`
+            );
+          }
+          if (!res?.set && "text" in a) {
+            await cdpCall(wsUrl, "Input.insertText", { text: (a as { text: string }).text });
+          }
+          if (a.kind === "click" && typeof res?.x === "number" && typeof res?.y === "number") {
+            // Trusted input events at the resolved point (page JS handlers
+            // that ignore synthetic el.click() still fire).
+            const x = Math.round(res.x);
+            const y = Math.round(res.y);
+            await cdpCall(wsUrl, "Input.dispatchMouseEvent", {
+              type: "mousePressed", x, y, button: "left", clickCount: 1,
+            });
+            await cdpCall(wsUrl, "Input.dispatchMouseEvent", {
+              type: "mouseReleased", x, y, button: "left", clickCount: 1,
+            });
+          }
+          done = true;
+        } catch (e) {
+          lastErr = e;
         }
-        return { found: true, notEditable: true };
-      })()`;
-      const res = await evalIsolated(wsUrl, expr);
-      if (!res?.found) {
+      }
+      if (!done) {
+        const fresh = await captureBrowserSnapshot(wsUrl).catch(() => null);
         return withBrowserFallback({
           ok: false, completed, uncertain: completed > 0,
-          url: target.url || "", title: "",
+          url: fresh?.url || target.url || "", title: fresh?.title || "",
           fallback: "browser_pixel_act" as const,
-          error: `Stale ref ${a.ref}: element not found — the page changed since your snapshot. Take a fresh browser_snapshot and retry the intended action with the new ref in this same turn; do not stop or summarize. Only skip actions already confirmed completed.`,
+          tree: fresh?.tree,
+          error: `${lastErr instanceof Error ? lastErr.message : String(lastErr)} — confirmed ${completed}/${parsed.length} actions. Take a fresh browser_snapshot and retry the intended action with the new ref in this same turn; do not stop or summarize. Only skip actions already confirmed completed.`,
         });
-      }
-      if ((a.kind === "type" || (res as any)?.notEditable) && "text" in a) {
-        await cdpCall(wsUrl, "Input.insertText", { text: (a as { text: string }).text });
       }
       completed++;
       await new Promise((r) => setTimeout(r, 250));

@@ -7,7 +7,129 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Automated proof that the app works on Linux/Windows/macOS without owning
+  # hardware or asking humans: GitHub runs this matrix on real ephemeral
+  # runners for each OS. No local RAM/VMs needed. If this job is green, unit
+  # logic + typecheck + Rust + Next.js sidecar boot all passed natively.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+          - os: windows-latest
+          - os: macos-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxtst-dev \
+            patchelf \
+            rpm \
+            libfuse2 \
+            zsync \
+            xdg-utils \
+            pkgconf
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Create .env with secrets
+        # NOTE: forced bash so `>` writes LF/UTF-8 identically on
+        # Linux/macOS/Windows (pwsh echo would write UTF-16 and break dotenv).
+        shell: bash
+        run: echo "COMPOSIO_API_KEY=${{ secrets.COMPOSIO_API_KEY }}" > .env
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests (Node)
+        # NOTE: package.json test uses `QUBE_DATA_DIR=$(mktemp -d)` (bash
+        # syntax). Forced bash so the same command works on windows-latest
+        # via git-bash instead of failing under pwsh.
+        shell: bash
+        run: npm test
+
+      - name: Rust tests
+        shell: bash
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Build sidecar
+        shell: bash
+        env:
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+        run: node scripts/build-sidecar.js
+
+      - name: Smoke test sidecar (bundled Node boots + responds)
+        # Proves the exact artifact Tauri ships: sidecar-dist/server.js started
+        # with the BUNDLED node-bin binary (what user machines without Node.js
+        # will use), from the same cwd layout Rust uses. Catches missing node
+        # binary, wrong arch, lost exec bit, Windows-junction, path, and
+        # PORT/HOSTNAME bugs that `npm run dev` on Linux never shows. Any HTTP
+        # status counts — even 404 proves the TCP+HTTP stack is up.
+        shell: bash
+        env:
+          PORT: 3010
+          HOSTNAME: 127.0.0.1
+          QUBE_DATA_DIR: ${{ runner.temp }}/qube-data-smoke
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+        run: |
+          mkdir -p "$QUBE_DATA_DIR"
+          test -f sidecar-dist/server.js
+          pushd sidecar-dist >/dev/null
+          if [ -f "node-bin/node.exe" ]; then BIN="node-bin/node.exe"; else BIN="node-bin/node"; fi
+          test -f "$BIN" || { echo "bundled node missing ($BIN)"; exit 1; }
+          "$BIN" --version
+          PORT=3010 HOSTNAME=127.0.0.1 QUBE_DATA_DIR="$QUBE_DATA_DIR" "$BIN" server.js & echo $! > /tmp/qube-sidecar.pid
+          for i in $(seq 1 30); do
+            if curl -s http://127.0.0.1:3010/ >/dev/null 2>&1; then
+              echo "sidecar responded on attempt $i"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "sidecar never responded within 60s"
+              kill "$(cat /tmp/qube-sidecar.pid)" || true
+              popd >/dev/null || true
+              exit 1
+            fi
+            sleep 2
+          done
+          kill "$(cat /tmp/qube-sidecar.pid)" || true
+          popd >/dev/null
+
   build:
+    needs: test
     permissions:
       contents: write
     strategy:

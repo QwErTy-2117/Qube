@@ -222,6 +222,30 @@ try {
     }
   }
 
+  // Bundle the Node.js runtime so end-user machines don't need Node.js
+  // installed. Typical Windows/macOS users have no `node` in PATH — without
+  // this the Tauri sidecar spawn fails and the window stays forever on
+  // static/index.html ("Loading Qube..."). Everything under sidecar-dist/
+  // is shipped as a Tauri resource and copied to a writable temp dir at
+  // startup; Rust prefers this binary and only falls back to PATH `node`.
+  console.log('Bundling Node.js runtime...');
+  try {
+    const nodeSrc = process.execPath;
+    const nodeDestDir = path.join(sidecarDistDir, 'node-bin');
+    const nodeDest = path.join(nodeDestDir, os.platform() === 'win32' ? 'node.exe' : 'node');
+    fs.mkdirSync(nodeDestDir, { recursive: true });
+    fs.copyFileSync(nodeSrc, nodeDest);
+    if (os.platform() !== 'win32') {
+      fs.chmodSync(nodeDest, 0o755);
+    }
+    console.log(`  Bundled ${nodeSrc} -> ${nodeDest}`);
+    console.log(`  Node.js ${process.version} (${os.platform()}-${os.arch()})`);
+  } catch (e) {
+    console.error(`  ERROR: could not bundle Node.js runtime: ${e.message}`);
+    console.error('  Without it the app cannot start on machines without Node.js. Failing build.');
+    process.exit(1);
+  }
+
   // Embed COMPOSIO_API_KEY into a runtime config file
   console.log('Embedding runtime config...');
   const envPath = path.join(rootDir, '.env');

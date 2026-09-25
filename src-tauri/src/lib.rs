@@ -7,29 +7,59 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tauri::Manager;
 
+fn dist_candidates(app: &tauri::AppHandle) -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        v.push(dir.join("_up_").join("sidecar-dist"));
+        v.push(dir.join("sidecar-dist"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            v.push(parent.join("sidecar-dist"));
+        }
+    }
+    v
+}
+
 fn find_dist_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     if cfg!(debug_assertions) {
         return None;
     }
-    let candidates: Vec<PathBuf> = {
-        let mut v = Vec::new();
-        if let Ok(dir) = app.path().resource_dir() {
-            v.push(dir.join("_up_").join("sidecar-dist"));
-            v.push(dir.join("sidecar-dist"));
-        }
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                v.push(parent.join("sidecar-dist"));
-            }
-        }
-        v
-    };
-    for p in &candidates {
+    for p in &dist_candidates(app) {
         if p.join("server.js").exists() {
             return Some(p.clone());
         }
     }
     None
+}
+
+/// Write a styled startup-error page and navigate the main window to it so a
+/// failed sidecar start is visible instead of a silent "Loading Qube..."
+/// placeholder. Uses only the system font stack (no bundled fonts needed).
+fn show_startup_error(app: &tauri::AppHandle, title: &str, details: &str, data_dir: &std::path::Path) {
+    let _ = std::fs::create_dir_all(data_dir);
+    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let html = format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Qube — {t}</title></head>\
+        <body style=\"margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#101514;color:#e8ece9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif\">\
+        <main style=\"max-width:560px;padding:32px\">\
+        <h1 style=\"font-size:20px;margin:0 0 12px\">{t}</h1>\
+        <p style=\"font-size:14px;line-height:1.6;white-space:pre-wrap;opacity:.9\">{d}</p>\
+        <p style=\"font-size:13px;opacity:.65\">Log: {l}</p>\
+        <p style=\"font-size:13px;opacity:.65\">Restart Qube after fixing the issue. If it persists, include the log when reporting.</p>\
+        </main></body></html>",
+        t = esc(title),
+        d = esc(details),
+        l = esc(&data_dir.join("sidecar.log").to_string_lossy()),
+    );
+    let path = data_dir.join("startup-error.html");
+    if std::fs::write(&path, html).is_ok() {
+        if let Ok(url) = url::Url::from_file_path(&path) {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.navigate(url);
+            }
+        }
+    }
 }
 
 fn is_server_running(port: u16) -> bool {
@@ -100,9 +130,32 @@ pub fn run() {
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to start Next.js sidecar: {}", e);
+                        eprintln!("Failed to start Next.js sidecar: {e}");
+                        show_startup_error(
+                            app.handle(),
+                            "Qube failed to start the local server",
+                            &e,
+                            &data_dir,
+                        );
                     }
                 }
+            } else {
+                let candidates = dist_candidates(app.handle());
+                let details = format!(
+                    "App resources were found but sidecar-dist/server.js was not under any of:\n{}\nThis usually means an incomplete install — reinstall Qube.",
+                    candidates
+                        .iter()
+                        .map(|p| format!("- {}", p.display()))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                );
+                eprintln!("sidecar-dist not found");
+                show_startup_error(
+                    app.handle(),
+                    "Qube installation is incomplete",
+                    &details,
+                    &data_dir,
+                );
             }
             Ok(())
         })

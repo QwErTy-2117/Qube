@@ -179,7 +179,7 @@ const AttachmentRemove: FC = () => {
     <AttachmentPrimitive.Remove asChild>
       <TooltipIconButton
         tooltip="Remove file"
-        className="aui-attachment-tile-remove text-muted-foreground absolute end-1.5 top-1.5 size-3.5 origin-center rounded-full bg-white opacity-0 shadow-sm transition-[transform,opacity,background-color] duration-150 group-hover:opacity-100 hover:scale-[1.43] hover:bg-white! hover:[&_svg]:text-destructive [&_svg]:size-3 [&_svg]:text-black"
+        className="aui-attachment-tile-remove text-muted-foreground absolute end-1.5 top-1.5 size-3.5 rounded-full bg-white opacity-0 shadow-sm transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-white! hover:[&_svg]:text-destructive [&_svg]:size-3 [&_svg]:text-black"
         side="top"
       >
         <XIcon className="aui-attachment-remove-icon dark:stroke-[2.5px]" />

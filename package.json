@@ -1,15 +1,15 @@
 {
   "name": "xulux-base-demo",
-  "version": "0.0.46",
+  "version": "0.0.47",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3010",
     "build": "next build",
     "start": "next start",
-    "test": "QUBE_DATA_DIR=$(mktemp -d) npx tsx --test tests/*.test.ts",
+    "test": "node scripts/run-tests.mjs",
     "acp": "tsx lib/acp/stdio.ts",
-    "acp:test": "QUBE_DATA_DIR=$(mktemp -d) npx tsx --test tests/acp.test.ts",
+    "acp:test": "node scripts/run-tests.mjs acp",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

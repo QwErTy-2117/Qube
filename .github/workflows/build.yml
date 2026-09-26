@@ -74,22 +74,27 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Unit tests (Node)
-        # NOTE: package.json test uses `QUBE_DATA_DIR=$(mktemp -d)` (bash
-        # syntax). Forced bash so the same command works on windows-latest
-        # via git-bash instead of failing under pwsh.
+        # NOTE: package.json test runs via node scripts/run-tests.mjs
+        # (cross-platform temp dir, no bash-isms) so npm's cmd.exe script
+        # shell on windows-latest works. Kept on bash for uniform logs.
         shell: bash
         run: npm test
+
+      - name: Build sidecar
+        # NOTE: must run BEFORE `cargo test` — tauri-build reads
+        # tauri.conf.json `resources: ["../sidecar-dist/**/*"]` and fails
+        # with `glob pattern ../sidecar-dist/**/* path not found` when the
+        # dir is missing (macOS failure on v0.0.46). Same order as Tauri's
+        # beforeBuildCommand.
+        shell: bash
+        env:
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+        run: node scripts/build-sidecar.js
 
       - name: Rust tests
         shell: bash
         working-directory: src-tauri
         run: cargo test
-
-      - name: Build sidecar
-        shell: bash
-        env:
-          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
-        run: node scripts/build-sidecar.js
 
       - name: Smoke test sidecar (bundled Node boots + responds)
         # Proves the exact artifact Tauri ships: sidecar-dist/server.js started

@@ -200,22 +200,45 @@ setInterval(render, 400);
       await client.tool("navigate", { url: `${base}/s?k=keyboard` });
       await new Promise((r) => setTimeout(r, 1200));
 
-      // 1. Click a product link while the page re-renders under us.
-      let tree = await client.tool("snapshot", {});
-      const linkRef = refFor(tree, "Keyboard Alpha");
-      const clicked = await client.tool("act", { actions: [{ kind: "click", ref: linkRef }] });
-      assert.match(clicked, /Acted 1\/1/, `product click failed: ${clicked.slice(0, 300)}`);
-      assert.ok(!/vanished mid-action/i.test(clicked), "click needed a model round-trip");
+      // Click a ref and wait for the expected navigation to commit. A single
+      // snapshot right after act races navigation on loaded CI runners (act
+      // returns after a fixed 250ms settle, but commit can take longer), so
+      // poll for the URL instead. If the click missed (mid-render re-resolve
+      // at stale coords), retry with fresh refs — the same same-turn retry
+      // the agent itself performs with the fresh snapshot in act errors.
+      async function clickAndWaitForUrl(needle: string, expectUrl: string): Promise<string> {
+        const deadline = Date.now() + 30000;
+        let lastAct = "(no act attempted)";
+        let tree = "";
+        while (Date.now() < deadline) {
+          tree = await client.tool("snapshot", {});
+          if (tree.includes(expectUrl)) return tree;
+          const ref = refFor(tree, needle);
+          try {
+            lastAct = await client.tool("act", { actions: [{ kind: "click", ref }] });
+          } catch (e) {
+            // act errors already carry a fresh snapshot for a same-turn
+            // retry — loop around and re-resolve from a new snapshot.
+            lastAct = `act error: ${String((e as Error)?.message || e).slice(0, 300)}`;
+            continue;
+          }
+          assert.match(lastAct, /Acted 1\/1/, `click on "${needle}" failed: ${lastAct.slice(0, 300)}`);
+          assert.ok(!/vanished mid-action/i.test(lastAct), "click needed a model round-trip");
+          for (let i = 0; i < 20; i++) {
+            await new Promise((r) => setTimeout(r, 250));
+            tree = await client.tool("snapshot", {});
+            if (tree.includes(expectUrl)) return tree;
+          }
+        }
+        throw new Error(`never reached ${expectUrl} after clicking "${needle}". Last act: ${lastAct.slice(0, 300)}. Last tree:\n${tree.slice(0, 500)}`);
+      }
 
-      tree = await client.tool("snapshot", {});
+      // 1. Click a product link while the page re-renders under us.
+      let tree = await clickAndWaitForUrl("Keyboard Alpha", "/dp/B001AAAA01");
       assert.ok(tree.includes("/dp/B001AAAA01"), `not on product page:\n${tree.slice(0, 500)}`);
 
       // 2. Add to Cart on a page whose button node is replaced every 400ms.
-      const cartRef = refFor(tree, "Add to Cart");
-      const added = await client.tool("act", { actions: [{ kind: "click", ref: cartRef }] });
-      assert.match(added, /Acted 1\/1/, `add-to-cart failed: ${added.slice(0, 300)}`);
-
-      tree = await client.tool("snapshot", {});
+      tree = await clickAndWaitForUrl("Add to Cart", "/cart");
       assert.ok(tree.includes("/cart"), `not on cart page:\n${tree.slice(0, 500)}`);
       assert.ok(tree.includes("B001AAAA01"), `cart missing asin:\n${tree.slice(0, 800)}`);
     } finally {

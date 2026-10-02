@@ -536,6 +536,7 @@ function TaskFormDialog({
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [formTab, setFormTab] = useState<"general" | "advanced">("general");
 
   useEffect(() => {
     if (open) {
@@ -560,6 +561,7 @@ function TaskFormDialog({
       );
       setSaving(false);
       setSaved(false);
+      setFormTab("general");
       setScheduleOpen(false);
     }
   }, [open, initial]);
@@ -607,7 +609,7 @@ function TaskFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden rounded-3xl">
+      <DialogContent className="sm:max-w-lg rounded-3xl h-[560px] max-h-[92vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{initial ? "Edit Task" : "Create Task"}</DialogTitle>
           <DialogDescription>
@@ -615,75 +617,89 @@ function TaskFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5 py-2">
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground">Task Name</label>
-            <input
-              type="text"
-              placeholder="My Scheduled Task"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
+        <Tabs value={formTab} onValueChange={(v) => setFormTab(v as "general" | "advanced")} className="flex flex-col flex-1 min-h-0">
+          <TabsList variant="pills" className="bg-muted/60 rounded-full p-0.5 w-full shrink-0">
+            <TabsTrigger value="general" className="flex-1 !h-8 !min-w-0 !p-0 rounded-full text-xs">General</TabsTrigger>
+            <TabsTrigger value="advanced" className="flex-1 !h-8 !min-w-0 !p-0 rounded-full text-xs">Advanced</TabsTrigger>
+          </TabsList>
 
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground">Instructions</label>
-            <textarea
-              placeholder="What should the agent do when this task runs?"
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              rows={4}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
-            />
-          </div>
+          {/* General: title + instructions (textarea fills all remaining height) */}
+          <TabsContent value="general" className="flex-1 min-h-0 mt-3 data-[state=inactive]:hidden">
+            <div className="flex flex-col h-full space-y-3">
+              <div className="space-y-2 shrink-0">
+                <label className="text-sm font-semibold text-foreground">Task Name</label>
+                <input
+                  type="text"
+                  placeholder="My Scheduled Task"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Clock className="size-4 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium text-foreground">Schedule</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {scheduleSummary(scheduleKind, recurSchedule, runOnceDate)}
-                </p>
+              <div className="space-y-2 flex-1 min-h-0 flex flex-col">
+                <label className="text-sm font-semibold text-foreground shrink-0">Instructions</label>
+                <textarea
+                  placeholder="What should the agent do when this task runs?"
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  className="w-full flex-1 min-h-[120px] px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
+                />
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setScheduleOpen(true)} className="h-7 text-xs rounded-full">
-              Edit
-            </Button>
-          </div>
+          </TabsContent>
 
-          <ScheduleDialog
-            open={scheduleOpen}
-            onOpenChange={setScheduleOpen}
-            scheduleKind={scheduleKind}
-            recurSchedule={recurSchedule}
-            runOnceDate={runOnceDate}
-            onSave={handleScheduleSave}
-          />
-
-          <div>
-            <p className="text-xs text-muted-foreground mb-2">What the task is allowed to do. Keep locked down unless needed.</p>
-            <div className="rounded-xl border border-border/60 divide-y divide-border/40">
-              <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-sm font-semibold text-foreground">Permissions</span>
-                <SwitchToggle checked={allPermissionsOn} onCheckedChange={toggleAllPermissions} />
-              </div>
-              {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((key) => (
-                <div
-                  key={key}
-                  className="flex items-center justify-between px-4 py-2.5"
-                >
-                  <span className="text-sm text-foreground">{PERMISSION_LABELS[key]}</span>
-                  <SwitchToggle
-                    checked={permissions[key]}
-                    onCheckedChange={(v) => setPermissions((p) => ({ ...p, [key]: v }))}
-                  />
+          {/* Advanced: scheduling + permissions (same height, no scroll) */}
+          <TabsContent value="advanced" className="flex-1 min-h-0 mt-3 data-[state=inactive]:hidden">
+            <div className="flex flex-col h-full space-y-3">
+              <div className="flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <Clock className="size-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Schedule</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {scheduleSummary(scheduleKind, recurSchedule, runOnceDate)}
+                    </p>
+                  </div>
                 </div>
-              ))}
+                <Button variant="outline" size="sm" onClick={() => setScheduleOpen(true)} className="h-7 text-xs rounded-full">
+                  Edit
+                </Button>
+              </div>
+
+              <div className="min-h-0">
+                <p className="text-xs text-muted-foreground mb-2">What the task is allowed to do. Keep locked down unless needed.</p>
+                <div className="rounded-xl border border-border/60 divide-y divide-border/40">
+                  <div className="flex items-center justify-between px-4 py-2">
+                    <span className="text-sm font-semibold text-foreground">Permissions</span>
+                    <SwitchToggle checked={allPermissionsOn} onCheckedChange={toggleAllPermissions} />
+                  </div>
+                  {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((key) => (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between px-4 py-2"
+                    >
+                      <span className="text-sm text-foreground">{PERMISSION_LABELS[key]}</span>
+                      <SwitchToggle
+                        checked={permissions[key]}
+                        onCheckedChange={(v) => setPermissions((p) => ({ ...p, [key]: v }))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
+
+        <ScheduleDialog
+          open={scheduleOpen}
+          onOpenChange={setScheduleOpen}
+          scheduleKind={scheduleKind}
+          recurSchedule={recurSchedule}
+          runOnceDate={runOnceDate}
+          onSave={handleScheduleSave}
+        />
 
         <div className="w-fit ml-auto flex items-center gap-2 rounded-full border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-1.5 py-1.5">
           {initial ? (

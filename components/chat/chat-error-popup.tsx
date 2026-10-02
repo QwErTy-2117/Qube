@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { XIcon } from "lucide-react";
 
 type ChatError = {
   title: string;
@@ -12,11 +10,52 @@ type ChatError = {
   status?: number;
 };
 
-const MAX_COMPRESSED_LENGTH = 80;
+// Matches every harness-written error hint (formatProviderError templates,
+// config/model/stream failures, cancellation notices) plus provider
+// rate-limit payloads — anything the agent would otherwise print INTO the
+// chat transcript. Normal replies never start with these or contain the
+// hint templates.
+const ERROR_PATTERNS: RegExp[] = [
+  /^error[\s\[:]/i,
+  /^(configuration error|model error|pi execution error|request timed out|cancelled:|streaming interrupted:)/i,
+  /open settings → model/i,
+  /rate-limited \/ out of chat quota|out of chat quota/i,
+  /rejected the api key/i,
+  /blocked upstream/i,
+  /was not found on this endpoint/i,
+  /only serves to its own official client|free-tier model/i,
+  /usage_limit_reached|responses_request_failed|usage_limit/i,
+];
 
-function compressText(text: string): string {
-  if (text.length <= MAX_COMPRESSED_LENGTH) return text;
-  return text.slice(0, MAX_COMPRESSED_LENGTH - 3) + "...";
+/** True when an assistant text part is an error notice, not a reply. */
+export function isAgentErrorText(text: string): boolean {
+  if (!text || typeof text !== "string") return false;
+  return ERROR_PATTERNS.some((re) => re.test(text));
+}
+
+// Dedupe: the same error text re-renders on every keystroke/stream chunk.
+const notifiedKeys = new Set<string>();
+
+/** Push an error toast for raw agent error text. Toasts at most once per text. */
+export function notifyAgentError(text: string, status?: number): boolean {
+  if (!isAgentErrorText(text)) return false;
+  const key = text.slice(0, 160);
+  if (notifiedKeys.has(key)) return true;
+  if (notifiedKeys.size > 50) {
+    const first = notifiedKeys.values().next().value;
+    if (first !== undefined) notifiedKeys.delete(first);
+  }
+  notifiedKeys.add(key);
+  const parsed = parseChatGPTError(text);
+  pushChatError(
+    parsed ?? {
+      title: "An error occurred",
+      message: text.slice(0, 600),
+      detail: text.length > 600 ? text : undefined,
+      status,
+    },
+  );
+  return true;
 }
 
 // Global error bus — any part of the app can push a chat error
@@ -38,92 +77,51 @@ export function useChatErrorListener(cb: (err: ChatError) => void) {
 
 export function ChatErrorTopPopup() {
   const [error, setError] = useState<ChatError | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [visibleDetail, setVisibleDetail] = useState<ChatError | null>(null);
 
   useChatErrorListener((err) => {
     setError(err);
-    // Auto-hide after 8s if not clicked
+    // Auto-hide after 10s
     setTimeout(() => {
       setError((prev) => (prev === err ? null : prev));
-    }, 8000);
+    }, 10000);
   });
 
-  const handleTopClick = () => {
-    if (!error) return;
-    setVisibleDetail(error);
-    setDetailOpen(true);
-  };
-
-  const handleCloseTop = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setError(null);
-  };
+  // Error toast: updater-toast geometry, but red, no buttons, no dialog —
+  // just the fixed title plus the error details.
+  const body =
+    error && error.detail && error.detail !== error.message
+      ? `${error.message}\n\n${error.detail}`
+      : error?.message ?? "";
 
   return (
-    <>
-      <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex justify-center px-4 pt-4">
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              key={error.title + error.message}
-              initial={{ y: -100, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -100, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              onClick={handleTopClick}
-              className="pointer-events-auto w-full max-w-[480px] cursor-pointer"
-            >
-              <div className="rounded-2xl border border-red-500/30 bg-red-500 text-white shadow-lg shadow-red-500/20 overflow-hidden">
-                <div className="p-4 pr-10 relative">
-                  <button
-                    onClick={handleCloseTop}
-                    className="absolute right-3 top-3 size-6 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
-                  >
-                    <XIcon className="size-3.5" />
-                  </button>
-                  <h4 className="text-sm font-semibold leading-none pr-6">{error.title}</h4>
-                  <p className="text-xs font-light opacity-90 mt-1.5 line-clamp-2 leading-relaxed">
-                    {compressText(error.message)}
-                  </p>
-                  {/* Fixed dimensions — always 72px height for compressed view */}
-                  <div className="h-[72px] flex flex-col justify-center">
-                    <p className="text-[11px] opacity-75 mt-1">Click for details</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-lg rounded-3xl bg-red-500 border-red-600 text-white p-0 overflow-hidden gap-0 [&>button]:hidden">
-          <DialogHeader className="p-6 pb-3">
-            <DialogTitle className="text-white text-base pr-8">{visibleDetail?.title}</DialogTitle>
-          </DialogHeader>
-          <div className="px-6 pb-6 max-h-[60vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            <p className="text-sm font-light leading-relaxed whitespace-pre-wrap break-words">
-              {visibleDetail?.message}
-            </p>
-            {visibleDetail?.detail && visibleDetail.detail !== visibleDetail.message && (
-              <pre className="mt-4 p-3 rounded-xl bg-white/10 text-xs font-mono whitespace-pre-wrap break-words max-h-[30vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                {visibleDetail.detail}
-              </pre>
-            )}
-            {visibleDetail?.status && (
-              <p className="text-xs opacity-75 mt-3">Status: {visibleDetail.status}</p>
-            )}
-          </div>
-          <button
-            onClick={() => setDetailOpen(false)}
-            className="absolute right-4 top-4 size-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex justify-center px-4 pt-4">
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            key={error.title + error.message}
+            initial={{ y: -24, opacity: 0, scale: 0.98 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: -24, opacity: 0, scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
+            className="pointer-events-auto w-full max-w-[480px]"
           >
-            <XIcon className="size-4" />
-          </button>
-        </DialogContent>
-      </Dialog>
-    </>
+            <div className="rounded-[26px] border border-red-800 bg-red-600 shadow-xl shadow-red-900/30 overflow-hidden">
+              <div className="px-4 pt-4 pb-3">
+                <h4 className="text-[14px] font-semibold tracking-tight text-white leading-none">
+                  An error occurred
+                </h4>
+                <p className="text-[12.5px] text-white/85 leading-relaxed mt-1.5 whitespace-pre-wrap break-words max-h-[30vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                  {body}
+                </p>
+                {error.status ? (
+                  <p className="text-[11px] text-white/60 mt-1.5">Status: {error.status}</p>
+                ) : null}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

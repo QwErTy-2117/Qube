@@ -50,7 +50,6 @@ import {
   AuiIf,
   type AssistantState,
   ComposerPrimitive,
-  ErrorPrimitive,
   groupPartByType,
   MessagePrimitive,
   ThreadListPrimitive,
@@ -100,7 +99,7 @@ import { SettingsDialog, ProviderConfig, renderLobeIcon, detectModelIcon } from 
 import { useTheme } from "next-themes";
 import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
-import { ChatErrorTopPopup, pushChatError, parseChatGPTError } from "@/components/chat/chat-error-popup";
+import { ChatErrorTopPopup, pushChatError, parseChatGPTError, isAgentErrorText, notifyAgentError } from "@/components/chat/chat-error-popup";
 import { DocumentPopup } from "@/components/workspace";
 import { BrowserPanel } from "@/components/workspace";
 import { openBrowserWorkspace, useWorkspaceStore } from "@/lib/workspace/store";
@@ -877,13 +876,26 @@ const ComposerAction: FC = () => {
 };
 
 const MessageError: FC = () => {
-  return (
-    <MessagePrimitive.Error>
-      <ErrorPrimitive.Root className="aui-message-error-root border-destructive bg-destructive/10 text-destructive dark:bg-destructive/5 mt-2 rounded-md border p-3 text-sm dark:text-red-200">
-        <ErrorPrimitive.Message className="aui-message-error-message line-clamp-2" />
-      </ErrorPrimitive.Root>
-    </MessagePrimitive.Error>
-  );
+  // Transport-level message errors render as nothing inline — the red error
+  // toast (ChatErrorWatcher) already carries them. Returning null keeps the
+  // transcript free of mid-reply error boxes.
+  return null;
+};
+
+// Assistant text part that hides agent error notices (they surface via the
+// red error toast instead of inside the reply bubble).
+const AssistantText: FC = () => {
+  const text = useAuiState((s) => {
+    try {
+      const p = (s as any)?.part;
+      if (!p || p.type !== "text") return null;
+      return typeof p.text === "string" ? (p.text as string) : null;
+    } catch {
+      return null;
+    }
+  });
+  if (typeof text === "string" && isAgentErrorText(text)) return null;
+  return <MarkdownText />;
 };
 
 // Friendly group titles live in the shared module so every surface
@@ -994,7 +1006,9 @@ const AssistantMessage: FC = () => {
               case "text": {
                 // [file: path] markers and literal present_file(path="...")
                 // render inline as cards via remarkFileRefs (exact position).
-                return <MarkdownText />;
+                // Agent error notices never render inline — they go to the
+                // red error toast instead (see ChatErrorWatcher).
+                return <AssistantText />;
               }
               case "reasoning": {
                 // Render reasoning as a tool-group-like compressed component
@@ -1222,24 +1236,33 @@ const ChatErrorWatcher: FC = () => {
     for (const msg of messages) {
       const parts: any[] = (msg as any).content || (msg as any).parts || [];
       for (const part of parts) {
-        if (part.type === "text" && typeof part.text === "string" && /usage_limit_reached|responses_request_failed/i.test(part.text)) {
+        // Any agent error notice in a text part → red toast (the inline
+        // rendering is suppressed by AssistantText, so this is the only
+        // surface). notifyAgentError dedupes per text.
+        if (part.type === "text" && typeof part.text === "string" && isAgentErrorText(part.text)) {
           const key = `${msg.id}-${part.text.slice(0, 80)}`;
           if (!lastSeenRef.has(key)) {
             lastSeenRef.add(key);
-            const parsed = parseChatGPTError(part.text);
-            if (parsed) pushChatError(parsed);
-            else pushChatError({ title: "Request failed", message: part.text.slice(0, 300), detail: part.text, status: 429 });
+            notifyAgentError(part.text);
           }
         }
-        // Also check for error parts
+        // Transport-level error parts → always toast (any shape).
         if ((part as any).status?.type === "error" || (part as any).type === "error") {
           const errText = (part as any).errorText || (part as any).text || "";
           if (errText) {
             const key = `${msg.id}-${errText.slice(0, 80)}`;
             if (!lastSeenRef.has(key)) {
               lastSeenRef.add(key);
-              const parsed = parseChatGPTError(errText);
-              if (parsed) pushChatError(parsed);
+              if (!notifyAgentError(errText)) {
+                const parsed = parseChatGPTError(errText);
+                pushChatError(
+                  parsed ?? {
+                    title: "An error occurred",
+                    message: errText.slice(0, 600),
+                    detail: errText.length > 600 ? errText : undefined,
+                  },
+                );
+              }
             }
           }
         }

@@ -145,14 +145,28 @@ impl Sidecar {
 
         let log_out = log.try_clone().map_err(|e| format!("Failed to clone log handle: {e}"))?;
         let log_err = log.try_clone().map_err(|e| format!("Failed to clone log handle: {e}"))?;
-        let mut child = Command::new(&node_bin)
-            .arg("server.js")
+        let mut cmd = Command::new(&node_bin);
+        cmd.arg("server.js")
             .env("PORT", port.to_string())
             .env("HOSTNAME", "127.0.0.1")
             .env("QUBE_DATA_DIR", data_dir.to_string_lossy().as_ref())
             .current_dir(&app_dir)
+            .stdin(Stdio::null())
             .stdout(Stdio::from(log_out))
-            .stderr(Stdio::from(log_err))
+            .stderr(Stdio::from(log_err));
+        // Windows: node.exe is a console-subsystem binary. The main app
+        // itself is windowed (windows_subsystem = "windows"), so without
+        // CREATE_NO_WINDOW the OS pops a terminal window next to Qube for
+        // the sidecar — and closing it kills the server, after which every
+        // /api/* call fails with "Failed to fetch". Hide it entirely;
+        // server output already goes to sidecar.log.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let mut child = cmd
             .spawn()
             .map_err(|e| {
                 if bundled {

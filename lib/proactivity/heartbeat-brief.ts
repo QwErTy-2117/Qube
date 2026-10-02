@@ -7,6 +7,9 @@
  *
  * Qube mirrors that by injecting a bounded recap into the chat system
  * prompt every turn:
+ * - <pending_announcements>: finished scheduled-task results the user has
+ *   NOT been told about yet — a MUST-lead directive, announced exactly
+ *   once (delivery tracked by the chat route).
  * - <heartbeat_recap>: last heartbeat state, pending checklist, failed
  *   actions needing attention (from heartbeat-state, deduped)
  * - <scheduled_recap>: recent scheduled-task runs + upcoming runs
@@ -25,6 +28,7 @@ export interface HeartbeatBrief {
   heartbeatBlock?: string;
   scheduledBlock?: string;
   suggestionsBlock?: string;
+  announcementsBlock?: string;
   empty: boolean;
 }
 
@@ -48,9 +52,29 @@ export async function buildHeartbeatBrief(opts?: {
 }): Promise<HeartbeatBrief> {
   const maxSuggestions = opts?.maxSuggestions ?? 3;
   const maxPending = opts?.maxPending ?? 5;
-  const blocks: HeartbeatBrief & { heartbeatBlock?: string; scheduledBlock?: string; suggestionsBlock?: string } = {
+  const blocks: HeartbeatBrief & { heartbeatBlock?: string; scheduledBlock?: string; suggestionsBlock?: string; announcementsBlock?: string } = {
     empty: true,
   } as any;
+
+  // --- Pending announcements: finished scheduled-task results the user
+  // has NOT been told about yet. This is a DIRECTIVE, not background
+  // context: the agent MUST open its next reply with these, then answer
+  // the user's message. Delivery is tracked — the chat route marks them
+  // delivered after the reply streams, so each result is announced once.
+  try {
+    const { getPendingAnnouncements } = await import("@/lib/scheduler/announcements");
+    const pending = await getPendingAnnouncements(3).catch(() => []);
+    if (pending.length > 0) {
+      const lines = pending.map(
+        (a: any) =>
+          `- "${escapePromptData(String(a.taskName).slice(0, 80))}" finished ${timeAgo(a.createdAt)}: ${escapePromptData(String(a.excerpt).slice(0, 400))}`,
+      );
+      blocks.announcementsBlock =
+        `PENDING ANNOUNCEMENTS — scheduled-task results completed while the user was away that you have NOT told them about yet.\n` +
+        `You MUST open your next reply by telling the user about EACH item below (one short paragraph per item: what finished + the key result or file), BEFORE answering their message. Do not greet first and wait to be asked — lead with the news. If there is nothing new beyond these, saying them IS the reply's opening.\n\n<pending_announcements>\n${lines.join("\n")}\n</pending_announcements>`;
+      blocks.empty = false;
+    }
+  } catch {}
 
   // --- Heartbeat recap ---
   try {

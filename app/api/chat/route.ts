@@ -97,6 +97,16 @@ export async function POST(req: Request) {
 
     const uiMessages = messages as any[];
 
+    // Snapshot undelivered task-result announcements BEFORE the turn: the
+    // harness injects them into this turn's prompt with a must-lead
+    // directive, so after the reply streams they count as told. A failed
+    // turn leaves them pending for the next turn.
+    let announcementIds: string[] = [];
+    try {
+      const { getPendingAnnouncements } = await import("@/lib/scheduler/announcements");
+      announcementIds = (await getPendingAnnouncements(3).catch(() => [])).map((a: any) => a.id);
+    } catch {}
+
     const rawStream = createUIMessageStream({
       originalMessages: uiMessages,
       onError: (error) => {
@@ -121,6 +131,13 @@ export async function POST(req: Request) {
             userAbout: typeof userAbout === "string" ? userAbout : undefined,
             memoryEnabled: typeof memoryEnabled === "boolean" ? memoryEnabled : undefined,
           });
+          // Turn replied with the announcements in context → told exactly once.
+          if (announcementIds.length > 0) {
+            try {
+              const { markAnnouncementsDelivered } = await import("@/lib/scheduler/announcements");
+              await markAnnouncementsDelivered(announcementIds);
+            } catch {}
+          }
         } catch (e) {
           const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
           console.error("[chat] runPiHarness failed:", msg);

@@ -1900,9 +1900,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               transition={{ duration: 0.2 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-            <div className="flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden space-y-6">
+            <div className="flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden space-y-4 pb-1">
               {/* Your Name */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-foreground">Your Name</label>
                 <p className="text-xs text-muted-foreground">What Qube should call you in session conversations.</p>
                 <input
@@ -1913,12 +1913,12 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                     setUserName(e.target.value);
                     try { localStorage.setItem("qube-user-name", e.target.value); } catch {}
                   }}
-                  className="w-full px-3.5 py-2.5 mt-1 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
 
               {/* About You */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-foreground">About You</label>
                 <p className="text-xs text-muted-foreground">Tell Qube about yourself and your preferences for personalized responses.</p>
                 <textarea
@@ -1928,24 +1928,24 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                     setUserAbout(e.target.value);
                     try { localStorage.setItem("qube-user-about", e.target.value); } catch {}
                   }}
-                  rows={4}
-                  className="w-full px-3.5 py-2.5 mt-1 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
+                  rows={3}
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-muted/10 text-sm outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
                 />
               </div>
 
               {/* Allowed directories */}
               <AllowedDirectoriesSection onDialogOpenChange={setAllowedDirsDialogOpen} />
 
-              <div className="pt-1">
+              <div>
                 <ChatGPTPreferencesCard />
               </div>
 
               {/* Theme */}
-              <div className="space-y-2">
+              <div>
                 <div className="flex items-center justify-between">
                   <div>
-                    <label className="text-base font-semibold text-foreground">Theme</label>
-                    <p className="text-sm text-muted-foreground">Choose your preferred appearance.</p>
+                    <label className="text-sm font-semibold text-foreground">Theme</label>
+                    <p className="text-xs text-muted-foreground">Choose your preferred appearance.</p>
                   </div>
                   <Tabs value={themePref} onValueChange={(v) => { setThemePref(v); setTheme(v); }}>
                     <TabsList variant="pills" className="bg-muted rounded-full p-1">

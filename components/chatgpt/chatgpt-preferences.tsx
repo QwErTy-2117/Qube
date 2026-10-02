@@ -168,7 +168,7 @@ export function ChatGPTPreferencesCard() {
   // Minimal UI: external rectangle — radius in axis with inner button (h-9 r18 + p-3 12 = 30)
   if (isLoading) {
     return (
-      <div className="rounded-[30px] border border-border bg-muted/5 min-h-[56px] p-3 w-full flex items-center justify-center">
+      <div className="rounded-[30px] border border-border bg-muted/5 p-2 w-full flex items-center justify-center">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2Icon className="size-4 animate-spin" /> Checking…
         </div>
@@ -179,7 +179,7 @@ export function ChatGPTPreferencesCard() {
   if (isAuthenticated) {
     return (
       <>
-        <div className="rounded-[30px] border border-border bg-muted/5 min-h-[56px] p-3 w-full flex items-center justify-center overflow-hidden">
+        <div className="rounded-[30px] border border-border bg-muted/5 p-2 w-full flex items-center justify-center overflow-hidden">
           <div className="flex items-center justify-between gap-4 w-full">
             <div className="flex items-center gap-3 min-w-0">
               <div className="size-9 flex items-center justify-center shrink-0">{renderLobeIcon("OpenAI", 22)}</div>

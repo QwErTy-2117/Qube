@@ -114,6 +114,7 @@ export async function buildMemoryContext(
       const { buildHeartbeatBrief } = await import("@/lib/proactivity/heartbeat-brief");
       const brief = await buildHeartbeatBrief().catch(() => null);
       if (brief && !brief.empty) {
+        if (brief.announcementsBlock) blocks.push(`## Announce first — finished work the user hasn't seen\n${brief.announcementsBlock}`);
         if (brief.heartbeatBlock) blocks.push(`## Heartbeat — what to remember\n${brief.heartbeatBlock}`);
         if (brief.scheduledBlock) blocks.push(`## Scheduled tasks — what to remember\n${brief.scheduledBlock}`);
         if (brief.suggestionsBlock) blocks.push(`## Custom suggestions for this user\n${brief.suggestionsBlock}`);

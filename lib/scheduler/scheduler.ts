@@ -12,6 +12,11 @@ export function startScheduler() {
   handleMissedExecutions().catch((e) => console.error("[scheduler] missed check failed:", e));
   tick();
   tickInterval = setInterval(tick, 60_000);
+  // Unref'd: the interval must never keep a process alive on its own
+  // (production is held up by the HTTP server; unit tests must exit).
+  try {
+    (tickInterval as any)?.unref?.();
+  } catch {}
 }
 
 export function stopScheduler() {
@@ -113,6 +118,15 @@ async function executeScheduledTask(task: any): Promise<void> {
     await updateTaskRunTime(task.id, result.status === "success");
     console.log(`[scheduler] Task ${task.id} completed: ${result.status} (${result.duration}ms)`);
     await logEvent({ threadId: `task_${task.id}`, type: "scheduled_run", taskId: task.id, status: result.status, latencyMs: result.duration } as any);
+    // Proactive announcement: a finished scheduled task must be volunteered
+    // at the start of the user's next chat, not sit silently in the log
+    // until asked about. Meaningless/empty outputs are skipped inside.
+    if (result.status === "success") {
+      try {
+        const { recordAnnouncement } = await import("./announcements");
+        await recordAnnouncement({ taskId: task.id, taskName: task.name, output: result.output });
+      } catch {}
+    }
   } catch (error: any) {
     const msg = error?.message || String(error);
     console.error(`[scheduler] Task ${task.id} failed:`, msg);

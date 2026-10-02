@@ -12,8 +12,11 @@
  * - the chat loop blocks until the user allows once / always / denies
  *
  * Used by permission-middleware (foreground chat) and the Pi harness
- * (connector tool wrapping). Background/scheduled runs never prompt —
- * they draft instead of sending (see task-runner).
+ * (connector tool wrapping). Headless runs can't prompt, so the heartbeat
+ * monitor drafts instead of sending — but a USER-CREATED scheduled task
+ * may perform the sends/creates/deletes its instructions explicitly
+ * request (creating the task WAS the approval). See
+ * shouldGateConnectorTool and task-runner.
  */
 
 import { isDestructiveCommand } from "@/lib/middleware/workspace";
@@ -135,4 +138,20 @@ export function isReadOnlyConnectorTool(toolName: string): boolean {
   if (!toolName) return true;
   if (isSensitiveConnectorTool(toolName)) return false;
   return /(list|search|get|read|fetch|find|query|describe|show|view|lookup)/i.test(toolName) || true;
+}
+
+/**
+ * Headless gating rule for background runs (which cannot show the approval
+ * widget). The autonomous heartbeat monitor is NEVER allowed external side
+ * effects — its sensitive tools become draft-only stubs. A user-created
+ * SCHEDULED task, in contrast, carries explicit approval in its own
+ * instructions ("email me the report every morning"), so its connector
+ * tools run for real. Read-only tools are never gated for either.
+ */
+export function shouldGateConnectorTool(
+  taskType: string,
+  toolName: string,
+): boolean {
+  if (taskType !== "heartbeat") return false;
+  return isSensitiveConnectorTool(toolName);
 }

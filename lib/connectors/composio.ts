@@ -65,16 +65,63 @@ export const DEFAULT_USER_ID = "qube-default-user";
  * before the UUID effect ran), so any account ever connected under that
  * namespace made EVERY fresh install show connectors as connected — and the
  * agent would even load someone else's tools. The literal default namespace
- * is now abandoned: missing/default ids map to a persistent per-device id
- * (stored in the server data dir, stable across restarts, unique per
- * machine), so different machines can never collide.
+ * is now abandoned.
+ *
+ * Second half of the story (scheduled tasks couldn't see Gmail): connections
+ * are linked under the CLIENT's per-install UUID, but background runs have
+ * no client and used to resolve to a different server device id — so the
+ * scheduler saw zero connected toolkits while chat saw them fine. Fix: the
+ * first real client UUID the server sees is remembered as the CANONICAL id
+ * (server data dir) and reused whenever the caller passes nothing (i.e.
+ * every background run). Single-user desktop assumption: if a different
+ * client UUID ever shows up, last-writer-wins. Different machines never
+ * collide (separate data dirs).
  */
+let canonicalCache: string | null | undefined;
+
+function canonicalFile(): string {
+  return join(getDataDir(), ".memory", "composio-user-id");
+}
+
+function readCanonicalId(): string | null {
+  if (canonicalCache !== undefined) return canonicalCache;
+  try {
+    if (existsSync(canonicalFile())) {
+      const saved = readFileSync(canonicalFile(), "utf-8").trim();
+      if (saved && saved !== DEFAULT_USER_ID) {
+        canonicalCache = saved;
+        return saved;
+      }
+    }
+  } catch {}
+  canonicalCache = null;
+  return null;
+}
+
+function writeCanonicalId(id: string): void {
+  canonicalCache = id;
+  try {
+    const dir = join(getDataDir(), ".memory");
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(canonicalFile(), id, "utf-8");
+  } catch {}
+}
+
 export function resolveComposioUserId(input?: string | null): string {
   const t = (input || "").trim();
-  if (t && t !== DEFAULT_USER_ID) return t;
-  // Persistent per-device id (server data dir): stable across restarts,
-  // unique per machine. Static imports — no lazy require (require is
-  // undefined in ESM test/prod contexts and must never be load-bearing).
+  // A real client UUID is authoritative: remember it as canonical so
+  // background scheduler runs (which pass nothing) use the SAME namespace
+  // the user actually connected their accounts under.
+  if (t && t !== DEFAULT_USER_ID) {
+    if (readCanonicalId() !== t) writeCanonicalId(t);
+    return t;
+  }
+  // Background / missing-id callers: canonical client id first, else a
+  // persistent per-device id (stable across restarts, unique per machine).
+  const canonical = readCanonicalId();
+  if (canonical) return canonical;
+  // Static imports — no lazy require (require is undefined in ESM
+  // test/prod contexts and must never be load-bearing).
   try {
     const file = join(getDataDir(), ".memory", "device-id");
     try {
@@ -96,6 +143,11 @@ export function resolveComposioUserId(input?: string | null): string {
   } catch {
     return `fallback_${Date.now().toString(36)}`;
   }
+}
+
+/** Test hook: reset the in-memory canonical cache (data-dir files remain). */
+export function __resetCanonicalCacheForTests(): void {
+  canonicalCache = undefined;
 }
 
 let composioClient: any = null;
@@ -492,7 +544,9 @@ export async function getConnectorTools(userId?: string) {
   // lives here. getConnectorTools returns RAW tools; the Pi harness wraps
   // sensitive ones with withPermissionCheck (unified permission store), so
   // the chat blocks on the PermissionBar widget (allow once / always / deny)
-  // with a user-visible purpose. Background runs draft instead of sending.
+  // with a user-visible purpose. Headless heartbeat runs get draft-only
+  // stubs instead (see task-runner); user-created scheduled tasks run their
+  // instructed sends for real.
   // The legacy pendingConfirmations map below is kept for back-compat with
   // /api/connectors/pending callers (now always empty for new runs).
 

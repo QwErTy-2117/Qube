@@ -62,6 +62,8 @@ export function buildPiTaskSystemPrompt(task: ScheduledTask, heartbeatState?: st
 - If nothing needs attention, return exactly HEARTBEAT_OK with no tool calls (quiet tick, idempotent). Act once, never repeat a completed action.`
       : `\n\n## Scheduled-task discipline (exact timing, isolated)
 - This is an exact-timed automation with its own run history. Execute the instructions fully and autonomously.
+- Your instructions WERE written (or approved) by the user, so they ARE your authorization: if they say to email, post, create, or delete something, DO it with the connector tools — do not draft-and-wait, do not ask (there is no user here). Draft-only applies to the heartbeat monitor, never to you.
+- If a connector tool you need is MISSING from your tool list, that service is not connected. Say so plainly in your summary ("Gmail is not connected, so I saved the report to documents/... instead") — NEVER invent session-token, handshake, re-login, or "not active in this session" stories. Report only what tools actually returned.
 - Verify every action after tool calls; report verified state (succeeded/partial/failed). Never claim work without tool results.`;
   return `You are Qube Pi background task "${task.name}" (${task.type}). You run via Pi harness without user supervision. ${formatCurrentTimeInstruction()}
 
@@ -77,7 +79,7 @@ ${task.instructions}
 - Subagents: subagent(description, prompt, agentType) — isolated child (Explore/researcher/reviewer/general). Use for recon that would flood context; validate outputs.
 - Automations: schedule_task (create/list/update/delete/trigger), update_heartbeat (get/note/update) — manage future work from background runs.
 - ask_user always returns available=false headless — never block on it; proceed with best judgment.
-- Connectors${connectorHint ? ` (connected: ${connectorHint})` : ""}: external service tools via Composio when connected (exact schemas at runtime). Destructive sends need confirmation which cannot complete headless — draft instead of sending.
+- Connectors${connectorHint ? ` (connected: ${connectorHint})` : " (none connected — save file deliverables to the workspace instead of sending)"}: external service tools via Composio when connected (exact schemas at runtime).${task.type === "heartbeat" ? " Heartbeat runs are read + draft ONLY: sends need confirmation which cannot complete headless." : " Your instructions are the user's approval, so perform the sends/creates/deletes they request."}
 - plus any custom MCP tools from Advanced → MCP Servers (if configured) — names vary, use exact declared schemas
 Background tasks run headless: prefer web_search/web_fetch over interactive browser automation.
 ${skillsSection ? `\n${skillsSection}\n` : ""}${heartbeatContext}${heartbeatDiscipline}
@@ -188,9 +190,12 @@ async function runPiTaskInternal(
     console.warn("[pi-task] Agent tools load failed:", e);
   }
 
-  // Connectors: Composio tools for background runs (default user, isolated, non-fatal)
-  // Muse Sentinel parity headless: sensitive connector actions cannot prompt,
-  // so they are replaced with a draft-only stub (read + draft, never send).
+  // Connectors: Composio tools for background runs (isolated, non-fatal).
+  // Identity: no client here, so loadConnectorTools() resolves the
+  // CANONICAL id — the same namespace the user connected accounts under
+  // from chat (see resolveComposioUserId). Gating: only the autonomous
+  // heartbeat monitor is forced draft-only; a user-created SCHEDULED task
+  // carries explicit approval in its own instructions, so its tools run.
   let connectorHint = "";
   try {
     const { loadConnectorTools } = await import("./connectors");
@@ -199,21 +204,21 @@ async function runPiTaskInternal(
       console.log(`[pi-task] Merging ${Object.keys(conn.tools).length} connector tools for task ${task.id}`);
       let gated = 0;
       try {
-        const { isSensitiveConnectorTool } = await import("@/lib/permissions/sensitive");
+        const { shouldGateConnectorTool } = await import("@/lib/permissions/sensitive");
         const { tool } = await import("ai");
         const { z } = await import("zod");
         for (const [name, t] of Object.entries(conn.tools)) {
-          if (isSensitiveConnectorTool(name)) {
+          if (shouldGateConnectorTool(task.type, name)) {
             gated++;
             (piBaseTools as any)[name] = tool({
-              description: `HEADLESS DRAFT-ONLY stub for ${name}: reads are allowed via the read-only connector tools, but sends/creates/deletes cannot run without user approval. Return a draft instead.`,
+              description: `HEADLESS DRAFT-ONLY stub for ${name}: the heartbeat monitor may only read — sends/creates/deletes cannot run without user approval. Return a draft instead.`,
               inputSchema: z.object({}).passthrough(),
               execute: async (args: any) =>
                 JSON.stringify({
                   drafted: true,
                   tool: name,
                   args,
-                  note: "Headless run cannot send/create/delete without approval (Muse Sentinel rule). Draft saved — the user approves in chat.",
+                  note: "Heartbeat monitor cannot send/create/delete without approval (Muse Sentinel rule). Draft saved — the user approves in chat.",
                 }),
             });
           } else {

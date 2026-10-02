@@ -8,9 +8,9 @@ export async function loadConnectorTools(
   instanceId?: string
 ): Promise<{ tools: Record<string, any>; connected: string[] }> {
   try {
-    const { getConnectorTools, getConnectedToolkits, DEFAULT_USER_ID } =
+    const { getConnectorTools, getConnectedToolkits, resolveComposioUserId } =
       await import("@/lib/connectors/composio");
-    const uid = instanceId || DEFAULT_USER_ID;
+    const uid = resolveComposioUserId(instanceId ?? null);
     let connected: string[] = [];
     try {
       connected = await getConnectedToolkits(uid);

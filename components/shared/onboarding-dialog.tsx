@@ -38,6 +38,7 @@ import {
   getCachedConnectors,
   fetchConnectorsList,
   setCachedConnectors,
+  getOrCreateInstanceId,
 } from "@/lib/connectors/connectors-cache";
 import { ChatGPTOnboardingSection } from "@/components/chatgpt/chatgpt-onboarding";
 import { TermsPrivacyContent } from "./terms-content";
@@ -48,8 +49,13 @@ const KNOWN_ICON_IDS = new Set([
 ]);
 
 function getInstanceId(): string {
-  if (typeof window === "undefined") return "qube-default-user";
-  return localStorage.getItem("qube-instance-id") || "qube-default-user";
+  // Shared per-install UUID (created synchronously on first use) — never the
+  // global default, which collides across machines on the built-in key.
+  try {
+    return getOrCreateInstanceId() || "qube-default-user";
+  } catch {
+    return "qube-default-user";
+  }
 }
 
 const PROVIDER_ID_TO_ICON: Record<string, string> = {

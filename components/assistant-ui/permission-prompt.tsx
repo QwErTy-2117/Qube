@@ -65,6 +65,15 @@ export function PermissionBar({
     (pending.args?.cwd as string) ||
     "";
 
+  // Muse Sentinel parity: connector / delete / destructive actions have no
+  // directory scope — "Allow always" only makes sense for file paths.
+  const isConnectorAction =
+    !rawPath && !commandArg && !/^(read_file|write_file|edit_file|delete_file|list_directory|run_command|present_file|open_path)$/.test(pending.toolName);
+  const isDeleteOrDestructive =
+    pending.toolName === "delete_file" ||
+    /delete|send|create|post|publish|purchase/i.test(pending.toolName) ||
+    /Delete file|Send email|Post a message|Make a purchase|Delete in/i.test(pending.description || "");
+
   // Mirror backend scopeDirForPath: show containing directory + /* so
   // "Allow always" scope is obvious (e.g. /home/luca/.config/opencode/*).
   const scopePattern = (() => {
@@ -82,12 +91,26 @@ export function PermissionBar({
     return `${p}/*`;
   })();
 
-  const title = "Permission required";
+  const title = isDeleteOrDestructive ? "Approval needed — sensitive action paused" : "Permission required";
   const subtitle =
     pending.description || "Access files outside the project directory";
 
+  // Short audit preview of the blocked call (Muse shows what it planned).
+  const argsPreview = (() => {
+    try {
+      const a = { ...(pending.args || {}) } as Record<string, any>;
+      if (typeof a.content === "string" && a.content.length > 400) a.content = `${a.content.slice(0, 400)}…`;
+      if (typeof a.newString === "string" && a.newString.length > 200) a.newString = `${a.newString.slice(0, 200)}…`;
+      const s = JSON.stringify(a);
+      if (s === "{}") return "";
+      return s.slice(0, 320);
+    } catch {
+      return "";
+    }
+  })();
+
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg dark:shadow-[0_8px_30px_rgba(0,0,0,0.45)]">
+    <div className="w-full overflow-hidden rounded-xl border border-amber-500/30 bg-popover text-popover-foreground shadow-lg dark:shadow-[0_8px_30px_rgba(0,0,0,0.45)]">
       <div className="px-4 pt-3.5 pb-3">
         <div className="flex items-center gap-2">
           <span className="flex size-5 items-center justify-center text-amber-500">
@@ -110,8 +133,14 @@ export function PermissionBar({
           <p className="text-[15px] font-semibold tracking-tight text-foreground">
             {title}
           </p>
+          <span className="ml-auto rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+            {pending.toolName}
+          </span>
         </div>
-        <p className="mt-2.5 text-sm leading-6 text-muted-foreground">{subtitle}</p>
+        <p className="mt-2.5 text-sm leading-6 text-foreground/90">{subtitle}</p>
+        <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+          Qube paused before doing this — nothing was sent, deleted, or changed yet. Review below, then allow once or deny.
+        </p>
         {scopePattern && (
           <p className="mt-1 truncate font-mono text-[13px] leading-6 text-muted-foreground/80">
             {scopePattern}
@@ -120,6 +149,11 @@ export function PermissionBar({
         {commandArg && (
           <p className="mt-1 truncate font-mono text-[12px] leading-5 text-muted-foreground/70">
             $ {commandArg.slice(0, 300)}
+          </p>
+        )}
+        {argsPreview && !commandArg && (
+          <p className="mt-1 truncate font-mono text-[12px] leading-5 text-muted-foreground/70">
+            {argsPreview}
           </p>
         )}
       </div>
@@ -131,14 +165,16 @@ export function PermissionBar({
         >
           Deny
         </button>
-        <button
-          type="button"
-          onClick={() => onRespond(true, true)}
-          title="Always allow this directory (saved in Preferences → Allowed directories)"
-          className="h-8 rounded-lg border border-input bg-background px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          Allow always
-        </button>
+        {!isConnectorAction && !isDeleteOrDestructive && (
+          <button
+            type="button"
+            onClick={() => onRespond(true, true)}
+            title="Always allow this directory (saved in Preferences → Allowed directories)"
+            className="h-8 rounded-lg border border-input bg-background px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            Allow always
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onRespond(true)}

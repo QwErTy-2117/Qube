@@ -1,6 +1,7 @@
 import { resolve, relative } from "node:path";
 import { getWorkspacePath, isDestructiveCommand } from "./workspace";
 import { allowedDirsStore, toAbsoluteDir, type DirAccess } from "@/lib/permissions/allowed-dirs";
+import { classifyLocalTool } from "@/lib/permissions/sensitive";
 import type { TaskPermissions } from "@/lib/scheduler/types";
 
 export type PermissionRequest = {
@@ -136,6 +137,14 @@ export function evaluateToolCall(
   args: Record<string, unknown>,
   workspacePath: string,
 ): ToolCheckResult {
+  // Sentinel discipline (Muse reference): destructive / external side
+  // effects pause FIRST — even inside the workspace. Read-only lookups
+  // (list/search/get/read, web research, in-workspace reads) auto-allow.
+  const verdict = classifyLocalTool(toolName, args);
+  if (verdict.sensitive) {
+    return { needsPermission: true, description: verdict.purpose };
+  }
+
   const pathArg = (args.path as string) || (args.filepath as string) || "";
   const commandArg = args.command as string | undefined;
 

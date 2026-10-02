@@ -74,23 +74,53 @@ function LegalMarkdown({ content }: { content: string }) {
   );
 }
 
-function useLegalDocument(url: string) {
+function useLegalDocument(url: string, staticFallbackUrl?: string) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(url, { cache: "no-store" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status}`);
-        const text = await res.text();
-        if (!cancelled) {
-          setContent(text);
-          setError(null);
+    setError(null);
+    // Primary: API (reads TERMS.md/PRIVACY.md from the bundle). Fallback:
+    // static copy baked into public/legal by scripts/sync-legal.js — covers
+    // production layouts where the API file lookup misses (seen on Windows).
+    const sources = staticFallbackUrl ? [url, staticFallbackUrl] : [url];
+    (async () => {
+      let lastErr: string | null = null;
+      for (const src of sources) {
+        try {
+          const res = await fetch(src, { cache: "no-store" });
+          if (!res.ok) throw new Error(`${src}: ${res.status}`);
+          const text = await res.text();
+          // The API returns JSON { error } on failure — that is not the
+          // document. Fall through to the static copy in that case.
+          const trimmed = text.trimStart();
+          if (trimmed.startsWith("{")) {
+            try {
+              const parsed = JSON.parse(text);
+              if (parsed && typeof parsed.error === "string") {
+                throw new Error(parsed.error);
+              }
+            } catch (e) {
+              // Valid JSON but not markdown — not the document.
+              if (e instanceof SyntaxError) throw new Error(`Unexpected content from ${src}`);
+              throw e;
+            }
+          }
+          if (!cancelled) {
+            setContent(text);
+            setError(null);
+          }
+          return;
+        } catch (e) {
+          lastErr = e instanceof Error ? e.message : String(e);
         }
-      })
+      }
+      if (!cancelled) setError(lastErr || "Failed to load document");
+    })()
       .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       })
@@ -100,13 +130,28 @@ function useLegalDocument(url: string) {
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [url, staticFallbackUrl, attempt]);
 
-  return { content, error, loading };
+  return { content, error, loading, retry: () => setAttempt((a) => a + 1) };
+}
+
+function LegalError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-destructive text-xs">Failed to load document: {message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="text-xs font-medium text-primary hover:underline"
+      >
+        Retry
+      </button>
+    </div>
+  );
 }
 
 export function TermsContent() {
-  const { content, error, loading } = useLegalDocument("/api/legal/terms");
+  const { content, error, loading, retry } = useLegalDocument("/api/legal/terms", "/legal/terms.md");
 
   if (loading) {
     return (
@@ -120,7 +165,7 @@ export function TermsContent() {
   }
 
   if (error) {
-    return <p className="text-destructive text-xs">Failed to load Terms: {error}</p>;
+    return <LegalError message={`Terms: ${error}`} onRetry={retry} />;
   }
 
   if (!content) {
@@ -135,7 +180,7 @@ export function TermsContent() {
 }
 
 export function PrivacyContent() {
-  const { content, error, loading } = useLegalDocument("/api/legal/privacy");
+  const { content, error, loading, retry } = useLegalDocument("/api/legal/privacy", "/legal/privacy.md");
 
   if (loading) {
     return (
@@ -149,7 +194,7 @@ export function PrivacyContent() {
   }
 
   if (error) {
-    return <p className="text-destructive text-xs">Failed to load Privacy Policy: {error}</p>;
+    return <LegalError message={`Privacy Policy: ${error}`} onRetry={retry} />;
   }
 
   if (!content) {
@@ -164,8 +209,8 @@ export function PrivacyContent() {
 }
 
 export function TermsPrivacyContent() {
-  const terms = useLegalDocument("/api/legal/terms");
-  const privacy = useLegalDocument("/api/legal/privacy");
+  const terms = useLegalDocument("/api/legal/terms", "/legal/terms.md");
+  const privacy = useLegalDocument("/api/legal/privacy", "/legal/privacy.md");
 
   const loading = terms.loading || privacy.loading;
 
@@ -187,10 +232,12 @@ export function TermsPrivacyContent() {
     );
   }
 
+  // Acceptance is never blocked by a load failure: the checkbox below stays
+  // usable and each document can be retried independently.
   return (
     <div className="space-y-6">
       {terms.error ? (
-        <p className="text-destructive text-xs">Failed to load Terms: {terms.error}</p>
+        <LegalError message={`Terms: ${terms.error}`} onRetry={terms.retry} />
       ) : terms.content ? (
         <div id="qube-terms" className="scroll-mt-4">
           <LegalMarkdown content={terms.content} />
@@ -198,7 +245,7 @@ export function TermsPrivacyContent() {
       ) : null}
 
       {privacy.error ? (
-        <p className="text-destructive text-xs">Failed to load Privacy Policy: {privacy.error}</p>
+        <LegalError message={`Privacy Policy: ${privacy.error}`} onRetry={privacy.retry} />
       ) : privacy.content ? (
         <div id="qube-privacy" className="scroll-mt-4">
           <LegalMarkdown content={privacy.content} />

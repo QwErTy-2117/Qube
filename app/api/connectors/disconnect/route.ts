@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClient, DEFAULT_USER_ID, COMPOSIO_TOOLKIT_MAP, invalidateConnectorListCache } from "@/lib/connectors/composio";
+import { getClient, resolveComposioUserId, COMPOSIO_TOOLKIT_MAP, invalidateConnectorListCache } from "@/lib/connectors/composio";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const instanceId = searchParams.get("instanceId") || DEFAULT_USER_ID;
+    const instanceId = resolveComposioUserId(searchParams.get("instanceId"));
     const client = getClient();
 
     const toolkits = COMPOSIO_TOOLKIT_MAP[connectorId] || [connectorId];

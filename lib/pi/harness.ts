@@ -405,8 +405,8 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
   const skills = resolveSkills(config);
   let connectorNames: string[] = [];
   try {
-    const { getConnectedToolkits, DEFAULT_USER_ID } = await import("@/lib/connectors/composio");
-    connectorNames = await getConnectedToolkits(config.instanceId || DEFAULT_USER_ID).catch(() => [] as string[]);
+    const { getConnectedToolkits, resolveComposioUserId } = await import("@/lib/connectors/composio");
+    connectorNames = await getConnectedToolkits(resolveComposioUserId(config.instanceId)).catch(() => [] as string[]);
   } catch {}
 
   // Build system prompt (preserves custom instructions)
@@ -525,11 +525,36 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
   }
 
   // Connectors: Composio external service tools — isolated, non-fatal
+  // Muse Sentinel parity: sensitive connector actions (send/create/delete)
+  // are wrapped with withPermissionCheck so the chat BLOCKS on the
+  // PermissionBar widget. Read-only lookups pass straight through.
   try {
     const { loadConnectorTools } = await import("./connectors");
     const conn = await loadConnectorTools(config.instanceId);
     if (Object.keys(conn.tools).length > 0) {
       console.log(`[pi-harness] Merging ${Object.keys(conn.tools).length} connector tools for thread ${config.threadId}`);
+      try {
+        const { withPermissionCheck } = await import("@/lib/middleware/permission-middleware");
+        const { isSensitiveConnectorTool, describeConnectorAction } = await import("@/lib/permissions/sensitive");
+        for (const [name, def] of Object.entries(conn.tools as Record<string, any>)) {
+          const origExecute = (def as any)?.execute;
+          if (typeof origExecute !== "function") continue;
+          if (!isSensitiveConnectorTool(name)) continue;
+          const bound = origExecute.bind(def);
+          (def as any).execute = async (args: any, extra?: any) => {
+            const input = typeof args === "object" && args !== null ? args : {};
+            // Pre-compute purpose so the widget shows even if evaluation shifts.
+            void describeConnectorAction;
+            try {
+              return await withPermissionCheck(name, input, config.threadId, (gated: any) => bound(gated, extra));
+            } catch (e: any) {
+              return `Operation not permitted: ${e?.message || String(e)}`.slice(0, 1000);
+            }
+          };
+        }
+      } catch (e: any) {
+        console.warn("[pi-harness] Connector Sentinel wrap failed (non-fatal):", e?.message || String(e));
+      }
       tools = { ...tools, ...conn.tools };
     }
     if (conn.connected.length > 0) connectorNames = conn.connected;

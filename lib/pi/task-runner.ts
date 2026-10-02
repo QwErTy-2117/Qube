@@ -53,11 +53,13 @@ export function buildPiTaskSystemPrompt(task: ScheduledTask, heartbeatState?: st
   const heartbeatContext = task.type === "heartbeat" && heartbeatState ? `\n\n## Heartbeat Context\n${heartbeatState}` : "";
   const heartbeatDiscipline =
     task.type === "heartbeat"
-      ? `\n\n## Heartbeat discipline (OpenClaw-style — narrow and quiet)
-- This is a flexible periodic inspection, NOT an exact-timed automation. Follow the pending checklist when provided; do the smallest useful check.
-- Recurring work belongs in scheduled tasks — do NOT create schedules from here and do NOT infer old tasks from prior chats.
-- If nothing needs attention, return exactly HEARTBEAT_OK with no tool calls (quiet tick, idempotent).
-- Check pending/failed actions first, act once, never repeat a completed action. Never send destructive messages without an explicit user-approved schedule.`
+      ? `\n\n## Heartbeat discipline (Muse-style monitor — narrow, quiet, never repeats)
+- This is a flexible periodic inspection, NOT an exact-timed automation. You monitor WORKSPACE FILES + CONNECTORS (Gmail, GitHub, Calendar, Slack, Drive when connected) for things the user should know next time they talk.
+- Steps every tick: (1) check pending/failed checklist first; (2) list_directory workspace root for new/changed files; (3) if connectors are connected, do READ-ONLY lookups (list/search/get — never send/post/delete) for fresh items (e.g. unread Gmail threads, new GitHub PR comments, today's calendar clashes).
+- When you find something actionable, SAVE it for the next chat via update_heartbeat note (one note per finding, with evidence + a draft reply/action). Example: "Gmail: 3 threads about Saturday's party (from Ana, Ben) — draft: 'Thanks all! I'll bring dessert — does 7pm still work?'". The next chat will surface it ONCE with your draft.
+- NEVER repeat a suggestion twice: before noting, check the pending checklist / heartbeat state — if the same topic is already pending or was recently notified, skip it. No duplicate notes for the same emails/files.
+- NEVER send, post, delete, purchase, or share externally headless (no user to approve) — READ + DRAFT ONLY. Recurring work belongs in scheduled tasks — do NOT create schedules from here and do NOT infer old tasks from prior chats.
+- If nothing needs attention, return exactly HEARTBEAT_OK with no tool calls (quiet tick, idempotent). Act once, never repeat a completed action.`
       : `\n\n## Scheduled-task discipline (exact timing, isolated)
 - This is an exact-timed automation with its own run history. Execute the instructions fully and autonomously.
 - Verify every action after tool calls; report verified state (succeeded/partial/failed). Never claim work without tool results.`;
@@ -187,14 +189,42 @@ async function runPiTaskInternal(
   }
 
   // Connectors: Composio tools for background runs (default user, isolated, non-fatal)
+  // Muse Sentinel parity headless: sensitive connector actions cannot prompt,
+  // so they are replaced with a draft-only stub (read + draft, never send).
   let connectorHint = "";
   try {
     const { loadConnectorTools } = await import("./connectors");
     const conn = await loadConnectorTools();
     if (Object.keys(conn.tools).length > 0) {
       console.log(`[pi-task] Merging ${Object.keys(conn.tools).length} connector tools for task ${task.id}`);
-      for (const [name, t] of Object.entries(conn.tools)) {
-        (piBaseTools as any)[name] = t;
+      let gated = 0;
+      try {
+        const { isSensitiveConnectorTool } = await import("@/lib/permissions/sensitive");
+        const { tool } = await import("ai");
+        const { z } = await import("zod");
+        for (const [name, t] of Object.entries(conn.tools)) {
+          if (isSensitiveConnectorTool(name)) {
+            gated++;
+            (piBaseTools as any)[name] = tool({
+              description: `HEADLESS DRAFT-ONLY stub for ${name}: reads are allowed via the read-only connector tools, but sends/creates/deletes cannot run without user approval. Return a draft instead.`,
+              inputSchema: z.object({}).passthrough(),
+              execute: async (args: any) =>
+                JSON.stringify({
+                  drafted: true,
+                  tool: name,
+                  args,
+                  note: "Headless run cannot send/create/delete without approval (Muse Sentinel rule). Draft saved — the user approves in chat.",
+                }),
+            });
+          } else {
+            (piBaseTools as any)[name] = t;
+          }
+        }
+        if (gated > 0) console.log(`[pi-task] Gated ${gated} sensitive connector tools to draft-only for task ${task.id}`);
+      } catch {
+        for (const [name, t] of Object.entries(conn.tools)) {
+          (piBaseTools as any)[name] = t;
+        }
       }
     }
     if (conn.connected.length > 0) connectorHint = conn.connected.join(", ");

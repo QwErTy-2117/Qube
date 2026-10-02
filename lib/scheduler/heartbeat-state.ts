@@ -140,11 +140,41 @@ export function classifyHeartbeatNeed(state: HeartbeatState): "nothing" | "later
   return "nothing";
 }
 
-export async function addPendingAction(description: string, deferredUntil?: number): Promise<void> {
+export async function addPendingAction(description: string, deferredUntil?: number): Promise<{ added: boolean; duplicate: boolean }> {
   const state = await loadHeartbeatState();
+  const norm = description.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 200);
+  // Muse rule: never repeat the same suggestion twice — dedup against
+  // pending + recently notified (7d window) by normalized prefix match.
+  const isDupe = (d: string) => {
+    const n = d.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 200);
+    return n === norm || (norm.length > 24 && n.startsWith(norm.slice(0, 48))) || (n.length > 24 && norm.startsWith(n.slice(0, 48)));
+  };
+  if (state.pendingActions.some((a) => isDupe(a.description))) return { added: false, duplicate: true };
+  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+  for (const [key, entry] of Object.entries(state.notificationStatus)) {
+    if (entry.lastNotifiedAt > weekAgo && isDupe(key)) return { added: false, duplicate: true };
+  }
   const id = `hbact_${Date.now()}_${Math.random().toString(36).slice(2, 4)}`;
   state.pendingActions.push({ id, description, createdAt: Date.now(), deferredUntil });
   await saveHeartbeatState(state);
+  return { added: true, duplicate: false };
+}
+
+/** Mark a checklist topic as surfaced to the user (so it never repeats). */
+export async function markNotified(topic: string): Promise<void> {
+  const state = await loadHeartbeatState();
+  const key = topic.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 200);
+  const prev = state.notificationStatus[key];
+  state.notificationStatus[key] = { lastNotifiedAt: Date.now(), count: (prev?.count ?? 0) + 1 };
+  await saveHeartbeatState(state);
+}
+
+export async function hasBeenNotified(topic: string, windowMs = 7 * 24 * 3600 * 1000): Promise<boolean> {
+  const state = await loadHeartbeatState();
+  const key = topic.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 200);
+  const entry = state.notificationStatus[key];
+  if (!entry) return false;
+  return Date.now() - entry.lastNotifiedAt < windowMs;
 }
 
 export async function consumeDueActions(): Promise<Array<{ id: string; description: string }>> {

@@ -1,8 +1,9 @@
 import { Composio } from "@composio/core";
 import { VercelProvider } from "@composio/vercel";
 import { z } from "zod";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { getDataDir } from "@/lib/data-dir";
 import { composioKeyStore } from "./composio-key-store";
 
 const DESTRUCTIVE_KEYWORDS = [
@@ -54,10 +55,59 @@ export function resolveConfirmation(confirmationId: string, action: "confirm" | 
 
 export const DEFAULT_USER_ID = "qube-default-user";
 
+/**
+ * Resolve the Composio user id for a caller, NEVER falling back to the
+ * shared global default.
+ *
+ * Why: production builds embed ONE built-in COMPOSIO_API_KEY for every user
+ * worldwide, so per-user isolation depends entirely on distinct userIds.
+ * Fresh installs used to query as "qube-default-user" (empty localStorage
+ * before the UUID effect ran), so any account ever connected under that
+ * namespace made EVERY fresh install show connectors as connected — and the
+ * agent would even load someone else's tools. The literal default namespace
+ * is now abandoned: missing/default ids map to a persistent per-device id
+ * (stored in the server data dir, stable across restarts, unique per
+ * machine), so different machines can never collide.
+ */
+export function resolveComposioUserId(input?: string | null): string {
+  const t = (input || "").trim();
+  if (t && t !== DEFAULT_USER_ID) return t;
+  // Persistent per-device id (server data dir): stable across restarts,
+  // unique per machine. Static imports — no lazy require (require is
+  // undefined in ESM test/prod contexts and must never be load-bearing).
+  try {
+    const file = join(getDataDir(), ".memory", "device-id");
+    try {
+      if (existsSync(file)) {
+        const saved = readFileSync(file, "utf-8").trim();
+        if (saved && saved !== DEFAULT_USER_ID) return saved;
+      }
+    } catch {}
+    const fresh =
+      typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function"
+        ? (crypto as any).randomUUID()
+        : `dev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    try {
+      const dir = join(getDataDir(), ".memory");
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(file, fresh, "utf-8");
+    } catch {}
+    return fresh;
+  } catch {
+    return `fallback_${Date.now().toString(36)}`;
+  }
+}
+
 let composioClient: any = null;
 
 export function resetComposioClient() {
   composioClient = null;
+  // The list cache is keyed per user id, but entries were fetched with a
+  // specific API key — switching builtin<->custom must not serve the other
+  // key's connected flags as truth.
+  try {
+    listCache.clear();
+  } catch {}
 }
 
 /** True when a built-in key exists (release builds embed one via env.json). Never returns the key itself. */
@@ -180,7 +230,7 @@ export const COMPOSIO_TOOLKIT_MAP: Record<string, string[]> = {
 };
 
 export async function listConnectors(userId?: string, opts?: { bypassCache?: boolean }): Promise<ConnectorDisplay[]> {
-  const uid = userId || DEFAULT_USER_ID;
+  const uid = resolveComposioUserId(userId);
   const now = Date.now();
 
   // Serve stale-while-revalidate from server cache — settings/onboarding
@@ -239,21 +289,28 @@ export async function listConnectors(userId?: string, opts?: { bypassCache?: boo
 
     // Parallel live calls with a hard cap — a hung Composio endpoint must
     // never hold the settings spinner for the full 10s client timeout.
+    // NOTE: connectedAccounts success is tracked separately. When the live
+    // connected check fails (offline/slow/proxy), we must show DISCONNECTED
+    // rather than serving a stale cached connected:true — a false green
+    // badge is worse than a spinner (it was reported on Windows prod).
     let authConfigs: any = { items: [] };
     let connectedAccounts: any = { items: [] };
+    let liveConnectedOk = false;
     try {
-      [authConfigs, connectedAccounts] = await withTimeout(
+      const live = await withTimeout(
         Promise.all([
           client.authConfigs.list({ limit: 100 }),
-          client.connectedAccounts.list({ userIds: [uid], limit: 100 }).catch(() => ({ items: [] })),
+          client.connectedAccounts.list({ userIds: [uid], limit: 100 }).catch(() => ({ items: [], __failed: true })),
         ]),
         6000,
       );
+      authConfigs = live[0] || { items: [] };
+      connectedAccounts = live[1] || { items: [] };
+      liveConnectedOk = !(connectedAccounts as any).__failed;
     } catch (e) {
       console.warn("[composio] list live fetch slow/failed, using fallback:", (e as Error)?.message || e);
-      // Fallback: serve cached (even stale) or the static curated list with
-      // unknown connected state instead of an empty spinner.
-      if (cached) return cached.data;
+      // Fallback: never claim connected without a live check. Serve the
+      // curated list as all-disconnected (short TTL) instead of stale cache.
       const fallback = buildFromSlugs(new Set(Object.keys(STATIC_CONNECTOR_META)), new Set(), new Map());
       listCache.set(uid, { data: fallback, expires: now + 5000 });
       return fallback;
@@ -301,17 +358,24 @@ export async function listConnectors(userId?: string, opts?: { bypassCache?: boo
     }
 
     const result = buildFromSlugs(toolkitSlugs, connectedSlugs, tkMap);
-    listCache.set(uid, { data: result, expires: now + LIST_TTL_MS });
-    return result;
+    // If the live connected check failed but authConfigs succeeded, the
+    // connected flags are unverified — force disconnected (safe default).
+    const safe = liveConnectedOk
+      ? result
+      : result.map((c) => ({ ...c, connected: false }));
+    listCache.set(uid, { data: safe, expires: now + (liveConnectedOk ? LIST_TTL_MS : 5000) });
+    return safe;
   } catch (e) {
     console.error("[composio] failed to list toolkits:", e);
-    if (cached) return cached.data;
+    // Never serve a stale connected:true as truth after a hard failure.
+    if (cached) return cached.data.map((c) => ({ ...c, connected: false }));
     return [];
   }
 }
 
 export async function initiateConnection(connectorId: string, userId: string, callbackUrl?: string): Promise<string | null> {
   try {
+    const uid = resolveComposioUserId(userId);
     const client = getClient();
     const options = callbackUrl ? { callbackUrl } : undefined;
 
@@ -320,7 +384,7 @@ export async function initiateConnection(connectorId: string, userId: string, ca
     for (const toolkit of toolkits) {
       const authConfigs = await client.authConfigs.list({ toolkit });
       if (authConfigs.items?.length) {
-        const req = await client.connectedAccounts.link(userId, authConfigs.items[0].id, options);
+        const req = await client.connectedAccounts.link(uid, authConfigs.items[0].id, options);
         return req.redirectUrl ?? null;
       }
     }
@@ -331,7 +395,7 @@ export async function initiateConnection(connectorId: string, userId: string, ca
       toolkitsSet.has(a.toolkit?.slug) || toolkitsSet.has(a.app?.toLowerCase())
     );
     if (!match) return null;
-    const req = await client.connectedAccounts.link(userId, match.id, options);
+    const req = await client.connectedAccounts.link(uid, match.id, options);
     return req.redirectUrl ?? null;
   } catch (e) {
     console.error(`[composio] initiateConnection failed for ${connectorId}:`, e);
@@ -341,8 +405,9 @@ export async function initiateConnection(connectorId: string, userId: string, ca
 
 export async function getConnectedToolkits(userId: string, connectorId?: string): Promise<string[]> {
   try {
+    const uid = resolveComposioUserId(userId);
     const client = getClient();
-    const accounts = await client.connectedAccounts.list({ userIds: [userId], limit: 100 }).catch(() => ({ items: [] }));
+    const accounts = await client.connectedAccounts.list({ userIds: [uid], limit: 100 }).catch(() => ({ items: [] }));
     const slugs = new Set<string>();
     for (const acct of accounts.items || []) {
       const slug = acct.toolkit?.slug || acct.app?.toLowerCase();
@@ -376,7 +441,7 @@ export async function getSessionForUser(userId: string) {
 
 export async function getConnectorTools(userId?: string) {
   const client = getClient();
-  const uid = userId || DEFAULT_USER_ID;
+  const uid = resolveComposioUserId(userId ?? null);
   const allTools: Record<string, any> = {};
 
   const connectedSlugs = await getConnectedToolkits(uid);
@@ -423,31 +488,13 @@ export async function getConnectorTools(userId?: string) {
     }
   }
 
-  for (const [name, tool] of Object.entries(tools)) {
-    if (isDestructiveTool(name) && tool.execute) {
-      const originalExecute = tool.execute.bind(tool);
-      tool.execute = async (args: any, extra?: any) => {
-        const threadId = extra?.threadId || args?.threadId || "default";
-        return new Promise<string>((resolve, reject) => {
-          const confirmationId = `composio_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          pendingConfirmations.set(confirmationId, {
-            resolve: () => {
-              originalExecute(args, extra).then(resolve).catch(reject);
-            },
-            reject,
-            toolName: name,
-            args,
-          });
-          setTimeout(() => {
-            if (pendingConfirmations.has(confirmationId)) {
-              pendingConfirmations.delete(confirmationId);
-              reject("Confirmation timed out");
-            }
-          }, 300_000);
-        });
-      };
-    }
-  }
+  // NOTE (Muse Sentinel parity): destructive connector gating no longer
+  // lives here. getConnectorTools returns RAW tools; the Pi harness wraps
+  // sensitive ones with withPermissionCheck (unified permission store), so
+  // the chat blocks on the PermissionBar widget (allow once / always / deny)
+  // with a user-visible purpose. Background runs draft instead of sending.
+  // The legacy pendingConfirmations map below is kept for back-compat with
+  // /api/connectors/pending callers (now always empty for new runs).
 
   return tools;
 }

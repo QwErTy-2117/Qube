@@ -11,8 +11,12 @@ export interface CachedConnector {
   connected: boolean;
 }
 
-const STORAGE_KEY = "qube-connectors-cache";
-const STORAGE_TS_KEY = "qube-connectors-cache-ts";
+const INSTANCE_KEY = "qube-instance-id";
+// v2 cache: keyed per instance id. v1 used one global key, so a list fetched
+// as the shared "qube-default-user" (before the UUID existed) poisoned every
+// later view with someone else's connected flags.
+const STORAGE_KEY_PREFIX = "qube-connectors-cache:v2:";
+const STORAGE_TS_PREFIX = "qube-connectors-cache-ts:v2:";
 // localStorage placeholder is usable for up to 10 min (instant open across
 // restarts); in-memory is the hot path within a session.
 const STORAGE_MAX_AGE_MS = 10 * 60 * 1000;
@@ -21,22 +25,73 @@ let memory: CachedConnector[] | null = null;
 let memoryTs = 0;
 let inflight: Promise<CachedConnector[]> | null = null;
 
-function getInstanceId(): string {
-  if (typeof window === "undefined") return "qube-default-user";
+function newInstanceId(): string {
   try {
-    return localStorage.getItem("qube-instance-id") || "qube-default-user";
+    if (typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function") {
+      return (crypto as any).randomUUID();
+    }
+  } catch {}
+  return `iid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Single shared client identity. Synchronous + self-creating, so the very
+ * first connector fetch already uses the real per-install UUID — never the
+ * global default that collides across machines sharing the built-in key.
+ */
+export function getOrCreateInstanceId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const existing = localStorage.getItem(INSTANCE_KEY);
+    // Treat the legacy shared default (and empties) as missing.
+    if (existing && existing.trim() && existing !== "qube-default-user") return existing;
+    const fresh = newInstanceId();
+    localStorage.setItem(INSTANCE_KEY, fresh);
+    return fresh;
   } catch {
-    return "qube-default-user";
+    return "";
   }
+}
+
+function getInstanceId(): string {
+  return getOrCreateInstanceId();
+}
+
+function storageKey(): string {
+  try {
+    const iid = getOrCreateInstanceId();
+    if (iid) return `${STORAGE_KEY_PREFIX}${iid}`;
+  } catch {}
+  return `${STORAGE_KEY_PREFIX}default`;
+}
+
+function storageTsKey(): string {
+  try {
+    const iid = getOrCreateInstanceId();
+    if (iid) return `${STORAGE_TS_PREFIX}${iid}`;
+  } catch {}
+  return `${STORAGE_TS_PREFIX}default`;
+}
+
+let legacyPurged = false;
+/** One-time: delete the v1 global cache (may hold another install's flags). */
+function purgeLegacyCache() {
+  if (legacyPurged) return;
+  legacyPurged = true;
+  try {
+    localStorage.removeItem("qube-connectors-cache");
+    localStorage.removeItem("qube-connectors-cache-ts");
+  } catch {}
 }
 
 /** Synchronous instant placeholder: memory first, then localStorage. */
 export function getCachedConnectors(): CachedConnector[] | null {
   if (memory && memory.length > 0) return memory;
   try {
-    const ts = Number(localStorage.getItem(STORAGE_TS_KEY) || 0);
+    purgeLegacyCache();
+    const ts = Number(localStorage.getItem(storageTsKey()) || 0);
     if (ts && Date.now() - ts > STORAGE_MAX_AGE_MS) return null;
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey());
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) return null;
@@ -52,8 +107,8 @@ export function setCachedConnectors(list: CachedConnector[]) {
   memory = list;
   memoryTs = Date.now();
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-    localStorage.setItem(STORAGE_TS_KEY, String(memoryTs));
+    localStorage.setItem(storageKey(), JSON.stringify(list));
+    localStorage.setItem(storageTsKey(), String(memoryTs));
   } catch {}
 }
 

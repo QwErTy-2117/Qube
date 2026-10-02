@@ -43,6 +43,17 @@ if (os.platform() === 'win32') {
 }
 
 console.log('=== Starting Next.js Build ===');
+// Legal docs must exist in public/ BEFORE `next build` so they are baked
+// into the bundle as static files (/legal/terms.md) — the onboarding Terms
+// screen falls back to them when /api/legal/* cannot resolve on a platform
+// (reported on Windows production).
+try {
+  execSync('node scripts/sync-legal.js', { stdio: 'inherit' });
+} catch (error) {
+  console.error('\n=== SYNC-LEGAL FAILED ===');
+  console.error(error.message);
+  process.exit(1);
+}
 try {
   execSync('npm run build', {
     stdio: 'inherit',

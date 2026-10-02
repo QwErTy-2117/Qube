@@ -106,6 +106,19 @@ export async function buildMemoryContext(
         );
       }
     }
+    // Muse recap parity: heartbeat + scheduled tasks + pending proactive
+    // suggestions are injected every turn so the agent "remembers" what the
+    // background checks found. Bounded, deduped, never repeats twice —
+    // see lib/proactivity/heartbeat-brief.ts. Non-fatal by design.
+    try {
+      const { buildHeartbeatBrief } = await import("@/lib/proactivity/heartbeat-brief");
+      const brief = await buildHeartbeatBrief().catch(() => null);
+      if (brief && !brief.empty) {
+        if (brief.heartbeatBlock) blocks.push(`## Heartbeat — what to remember\n${brief.heartbeatBlock}`);
+        if (brief.scheduledBlock) blocks.push(`## Scheduled tasks — what to remember\n${brief.scheduledBlock}`);
+        if (brief.suggestionsBlock) blocks.push(`## Custom suggestions for this user\n${brief.suggestionsBlock}`);
+      }
+    } catch {}
     return blocks.join("\n\n");
   } catch {
     return "";

@@ -7,6 +7,7 @@ import {
   getCachedConnectors,
   fetchConnectorsList,
   setCachedConnectors,
+  getOrCreateInstanceId,
 } from "@/lib/connectors/connectors-cache";
 import { SearchIcon, Loader2Icon, XIcon, LinkIcon, UnplugIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -53,8 +54,13 @@ interface DisplayConnector {
 }
 
 function getInstanceId(): string {
-  if (typeof window === "undefined") return "qube-default-user";
-  return localStorage.getItem("qube-instance-id") || "qube-default-user";
+  // Shared per-install UUID (created synchronously on first use) — never the
+  // global default, which collides across machines on the built-in key.
+  try {
+    return getOrCreateInstanceId() || "qube-default-user";
+  } catch {
+    return "qube-default-user";
+  }
 }
 
 export function ConnectorsTab({

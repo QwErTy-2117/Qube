@@ -1,13 +1,23 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
 export const dynamic = "force-dynamic";
 
 function readLegalFile(filename: string): string {
   const tried: string[] = [];
   const cwd = process.cwd();
+  // In Tauri production the server runs from a user-writable temp copy
+  // (e.g. %TEMP%\qube-sidecar on Windows) launched via the bundled
+  // node-bin binary — cwd is usually right, but dirname(execPath) covers
+  // layouts where it isn't.
+  let execDir = "";
+  try {
+    execDir = dirname(process.execPath);
+  } catch {}
   const candidates = [
     join(/* turbopackIgnore: true */ cwd, filename),
+    ...(execDir ? [join(execDir, filename)] : []),
+    join(/* turbopackIgnore: true */ cwd, "public", "legal", filename.toLowerCase()),
     join(/* turbopackIgnore: true */ cwd, ".next", "standalone", filename),
     join(/* turbopackIgnore: true */ cwd, "..", filename),
     join(/* turbopackIgnore: true */ cwd, "..", ".next", "standalone", filename),

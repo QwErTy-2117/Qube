@@ -121,15 +121,15 @@ export function createPiAgentTools(ctx: AgentToolsContext): Record<string, any> 
 
   const update_heartbeat = tool({
     description:
-      "Inspect or update the heartbeat monitor (OpenClaw-style flexible checks). Heartbeat = lightweight periodic inspection, quiet when nothing to do. " +
-      "Actions: get (state + config), update (instructions, intervalMinutes, enabled), note (add a pending checklist item for the next tick). " +
+      "Inspect or update the heartbeat monitor (Muse-style: workspace + connector watch, quiet when nothing new). Heartbeat = lightweight periodic inspection that saves findings for the NEXT chat. " +
+      "Actions: get (state + config), update (instructions, intervalMinutes, enabled), note (save ONE finding for the next chat with evidence + draft reply/action — deduped, never repeats twice). " +
       "Do NOT put recurring schedules in heartbeat scratch — use schedule_task instead. If nothing needs attention, heartbeat replies HEARTBEAT_OK.",
     inputSchema: z.object({
-      action: z.enum(["get", "update", "note"]).describe("get=inspect, update=config, note=add pending checklist item"),
+      action: z.enum(["get", "update", "note"]).describe("get=inspect, update=config, note=save a finding for next chat"),
       instructions: z.string().optional().describe("New heartbeat instructions (update only)"),
       intervalMinutes: z.number().optional().describe("New heartbeat interval in minutes (update only)"),
       enabled: z.boolean().optional().describe("Enable/disable heartbeat (update only)"),
-      note: z.string().optional().describe("Pending checklist note for next tick (note only)"),
+      note: z.string().optional().describe("Finding for next chat: 'Topic — evidence + draft' (note only, e.g. 'Party emails — 3 Gmail threads from Ana/Ben about Saturday + draft reply')"),
     }),
     execute: async (args: any) => {
       try {
@@ -154,8 +154,18 @@ export function createPiAgentTools(ctx: AgentToolsContext): Record<string, any> 
         }
         if (args.action === "note") {
           if (!args.note) return JSON.stringify({ error: "note text is required" });
-          await hb.addPendingAction(args.note);
-          return JSON.stringify({ message: "Heartbeat note added for next tick." });
+          const res = await hb.addPendingAction(args.note);
+          if ((res as any)?.duplicate) {
+            return JSON.stringify({ message: "Duplicate — already pending or recently notified. Skipped (never repeats twice).", duplicate: true });
+          }
+          // Mirror into proactive suggestions so the next chat surfaces it
+          // once with evidence, then suppresses repeats.
+          try {
+            const { recordHeartbeatFinding } = await import("@/lib/proactivity/heartbeat-brief");
+            const topic = String(args.note).split("—")[0].split("-")[0].trim().slice(0, 120) || "Heartbeat finding";
+            await recordHeartbeatFinding({ topic, detail: String(args.note).slice(0, 500), evidence: ["heartbeat monitor"] });
+          } catch {}
+          return JSON.stringify({ message: "Heartbeat finding saved for next chat (will surface once)." });
         }
         // update
         const patch: any = {};

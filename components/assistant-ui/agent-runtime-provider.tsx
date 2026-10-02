@@ -6,6 +6,7 @@ import {
   useChatRuntime,
 } from "@assistant-ui/react-ai-sdk";
 import { useQubeThreadListAdapter } from "@/lib/chat/thread-list-adapter";
+import { getOrCreateInstanceId } from "@/lib/connectors/connectors-cache";
 import { useAssistantToolUI } from "@assistant-ui/react";
 import {
   WebSearchToolUI,
@@ -170,10 +171,18 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {});
     if (typeof window !== "undefined") {
-      let instanceId = localStorage.getItem("qube-instance-id");
-      if (!instanceId) {
-        instanceId = crypto.randomUUID();
-        localStorage.setItem("qube-instance-id", instanceId);
+      // Single shared per-install identity (synchronous, self-creating).
+      // Never the global default — it collides across machines sharing the
+      // built-in Composio key and shows other installs' connections.
+      try {
+        getOrCreateInstanceId();
+      } catch {
+        try {
+          const existing = localStorage.getItem("qube-instance-id");
+          if (!existing || existing === "qube-default-user") {
+            localStorage.setItem("qube-instance-id", crypto.randomUUID());
+          }
+        } catch {}
       }
 
       const stored = localStorage.getItem("qube-providers");
@@ -268,7 +277,13 @@ function useQubeChatThread() {
         const userName = localStorage.getItem("qube-user-name") || undefined;
         const userAbout = localStorage.getItem("qube-user-about") || undefined;
 
-        const instanceId = localStorage.getItem("qube-instance-id") || undefined;
+        const instanceId = (() => {
+          try {
+            return getOrCreateInstanceId() || undefined;
+          } catch {
+            return localStorage.getItem("qube-instance-id") || undefined;
+          }
+        })();
         let mcpServers: any[] | undefined;
         try {
           const raw = localStorage.getItem("qube-custom-mcp-servers");

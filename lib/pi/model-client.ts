@@ -1,6 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createMistral } from "@ai-sdk/mistral";
 import { providerStore } from "./provider-store";
+import { chatGptAuth } from "@/lib/chatgpt/handler";
 
 type ChatModel = ReturnType<ReturnType<typeof createOpenAI>["chat"]> | ReturnType<ReturnType<typeof createOpenAI>["responses"]>;
 
@@ -131,11 +132,18 @@ export function createPiModelClientForRequest(
   const { provider, modelId } = result;
 
   if (provider.id === "chatgpt") {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { chatGptAuth } = require("@/lib/chatgpt/handler") as typeof import("@/lib/chatgpt/handler");
     const baseFetch = chatGptAuth.proxyFetch(request) as typeof fetch;
+    // Use an absolute base URL derived from the incoming request origin.
+    // A relative "/api/chatgpt" works in the browser but Node's fetch (and
+    // some AI SDK URL joins) require absolute URLs server-side — a relative
+    // base was surfacing as failed ChatGPT calls that looked like quota errors.
+    let origin = "";
+    try {
+      origin = new URL(request.url).origin;
+    } catch {}
+    const baseURL = origin ? `${origin}/api/chatgpt` : "/api/chatgpt";
     const client = createOpenAI({
-      baseURL: "/api/chatgpt",
+      baseURL,
       apiKey: "login-with-chatgpt-proxy",
       fetch: baseFetch as any,
     });

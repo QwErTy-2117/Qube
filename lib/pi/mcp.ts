@@ -7,6 +7,82 @@
 
 import { mcpStore, type McpServerConfig } from "./mcp-store";
 import { getBuiltInMcpServers, BROWSER_MCP_SERVER_ID } from "./browser-mcp";
+import { existsSync } from "node:fs";
+import { isAbsolute } from "node:path";
+
+/**
+ * Windows spawn fix for MCP stdio servers.
+ *
+ * Root cause: @ai-sdk/mcp's StdioMCPTransport spawns with `shell: false`.
+ * On Windows that means:
+ *  - `node` fails with ENOENT when the sidecar/Next server runs with a
+ *    minimal PATH (Tauri sidecar, services).
+ *  - npm shims (`npx`, `obu`, `uvx`, `bunx`, …) are `.CMD`/`.BAT` files
+ *    which require a shell — spawn without shell always gives ENOENT.
+ *
+ * Fix: resolve `node` to the absolute running binary and wrap bare/shim
+ * commands in `cmd.exe /d /s /c` so they resolve like they do in a terminal.
+ */
+function quoteForCmd(s: string): string {
+  if (s.length === 0) return '""';
+  if (!/[\s"]/.test(s)) return s;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+function normalizeMcpServerForPlatform(srv: McpServerConfig): McpServerConfig {
+  const cmd = (srv.command || "").trim().replace(/^["'](.+)["']$/, "$1");
+  const args = Array.isArray(srv.args) ? srv.args : [];
+  // Bare `node` (including user-configured servers) → absolute binary.
+  if (cmd === "node" || cmd === "node.exe") {
+    try {
+      if (typeof process.execPath === "string" && existsSync(process.execPath)) {
+        return { ...srv, command: process.execPath, args };
+      }
+    } catch {}
+    if (process.platform === "win32") {
+      return { ...srv, command: process.execPath || "node.exe", args };
+    }
+    return { ...srv, command: cmd, args };
+  }
+  if (process.platform !== "win32") return { ...srv, command: cmd, args };
+
+  // Windows from here on.
+  const lower = cmd.toLowerCase();
+  const hasSep = cmd.includes("/") || cmd.includes("\\");
+  const isAbs = isAbsolute(cmd);
+  const isExe = lower.endsWith(".exe");
+  const isScriptWrapper = lower.endsWith(".cmd") || lower.endsWith(".bat") || lower.endsWith(".ps1");
+
+  // Absolute .exe (e.g. bundled node.exe, chrome.exe) spawns fine directly.
+  if (isAbs && isExe && existsSync(cmd)) return { ...srv, command: cmd, args };
+  // Absolute JS/script with node already resolved — fine.
+  if (isAbs && existsSync(cmd)) return { ...srv, command: cmd, args };
+
+  // Known npm-shim / bare commands need cmd.exe. Also any explicit .cmd/.bat.
+  const KNOWN_SHIMS = new Set(["npx", "npx.cmd", "obu", "obu.cmd", "uvx", "uvx.cmd", "bunx", "pnpm", "yarn", "npm", "node"]);
+  const base = cmd.split(/[\\/]/).pop() || cmd;
+  const needsWrap =
+    isScriptWrapper ||
+    KNOWN_SHIMS.has(lower) ||
+    KNOWN_SHIMS.has(base.toLowerCase()) ||
+    (!hasSep && !isExe);
+
+  if (!needsWrap) return { ...srv, command: cmd, args };
+
+  const comspec = process.env.ComSpec || "cmd.exe";
+  // cmd.exe /d /s /c "<cmd> <args...>" — single trailing string so quoting is exact.
+  const line = [cmd, ...args].map(quoteForCmd).join(" ");
+  return { ...srv, command: comspec, args: ["/d", "/s", "/c", line] };
+}
+
+function windowsEnoentHint(srv: McpServerConfig, raw: string): string {
+  if (process.platform !== "win32") return raw;
+  if (!/enoent|spawn.*not found|not recognized/i.test(raw)) return raw;
+  return (
+    `${raw} — on Windows the MCP command "${srv.command}" could not be started. ` +
+    `If it is an npm shim (npx/obu/uvx) install it globally and restart Qube, or set an absolute command path in Advanced → MCP Servers.`
+  );
+}
 
 type MCPClient = Awaited<ReturnType<typeof import("@ai-sdk/mcp").createMCPClient>>;
 
@@ -344,8 +420,9 @@ export async function getMcpToolsForServers(
   // Load each server in parallel, each with its own startup timeout.
   // Fresh client per invocation for determinism (no cross-request reuse:
   // reused stdio clients go stale and leak child processes).
+  const normalized = servers.map(normalizeMcpServerForPlatform);
   const results = await Promise.allSettled(
-    servers.map(async (srv) => {
+    normalized.map(async (srv) => {
       const transport = new Experimental_StdioMCPTransport({
         command: srv.command,
         args: srv.args,
@@ -369,6 +446,7 @@ export async function getMcpToolsForServers(
 
   for (let i = 0; i < results.length; i++) {
     const srv = servers[i];
+    const norm = normalized[i];
     const r = results[i];
     if (r.status === "fulfilled") {
       const { client, tools } = r.value;
@@ -381,9 +459,10 @@ export async function getMcpToolsForServers(
         }
         allTools[name] = withMcpErrorDetail(name, srv.name, tool as Record<string, any>);
       }
-      console.log(`[pi-mcp] Loaded ${Object.keys(tools).length} tools from ${srv.name} (${srv.command} ${srv.args.join(" ")})`);
+      console.log(`[pi-mcp] Loaded ${Object.keys(tools).length} tools from ${srv.name} (${norm.command} ${norm.args.join(" ")})`);
     } else {
-      const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      const rawMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      const errMsg = windowsEnoentHint(srv, rawMsg);
       console.error(`[pi-mcp] Failed to load server ${srv.name} (${srv.id}):`, errMsg.slice(0, 500));
       errors.push({ id: srv.id, name: srv.name, error: errMsg.slice(0, 500) });
     }

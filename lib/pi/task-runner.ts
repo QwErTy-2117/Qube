@@ -6,7 +6,34 @@
  */
 
 import { providerStore } from "./provider-store";
-import { createPiModelClient } from "./model-client";
+import { createPiModelClient, isChatGPTModel } from "./model-client";
+
+/**
+ * Background tasks (heartbeat + scheduled) run headless with no HTTP request,
+ * so ChatGPT subscription models cannot run here — they need the user's
+ * session cookie via createPiModelClientForRequest(). Resolve a usable model:
+ * prefer the default unless it is ChatGPT, then fall back to the first
+ * enabled non-ChatGPT model. Returns { modelId, fallback } so callers can log.
+ */
+function resolveBackgroundModelId(): { modelId: string | null; fallback: boolean; requested: string | null } {
+  const requested = providerStore.getDefaultModelId();
+  if (!requested) return { modelId: null, fallback: false, requested };
+  if (!isChatGPTModel(requested)) return { modelId: requested, fallback: false, requested };
+  try {
+    for (const p of providerStore.getAllProviders()) {
+      if (p.id === "chatgpt") continue;
+      if ((p as any).enabled === false) continue;
+      const models = (p as any).models as Array<{ id: string; enabled?: boolean }> | undefined;
+      if (Array.isArray(models)) {
+        const enabled = models.find((m) => m.enabled !== false);
+        if (enabled?.id && !isChatGPTModel(enabled.id)) {
+          return { modelId: enabled.id, fallback: true, requested };
+        }
+      }
+    }
+  } catch {}
+  return { modelId: requested, fallback: false, requested };
+}
 import { createPiTools } from "./tools";
 import { formatCurrentTimeInstruction } from "./prompt-context";
 import { loadMcpTools, closeMcpClients } from "./mcp";
@@ -320,9 +347,34 @@ async function runPiTaskInternal(
   }
 
   try {
-    const defaultModelId = providerStore.getDefaultModelId();
-    if (!defaultModelId) {
+    const bg = resolveBackgroundModelId();
+    if (!bg.modelId) {
       return { status: "error", output: "No AI provider configured. Add one in Settings -> Advanced.", duration: 0 };
+    }
+    if (bg.fallback) {
+      console.warn(
+        `[pi-task] Default model "${bg.requested}" needs a user session (ChatGPT subscription) which background tasks don't have — ` +
+          `using "${bg.modelId}" for ${task.type} "${task.id}" instead. Set a non-ChatGPT default in Settings → Model for headless runs.`
+      );
+    } else if (isChatGPTModel(bg.modelId)) {
+      // No non-ChatGPT alternative configured — fail with an actionable message
+      // instead of the raw "requires request context" throw.
+      const msg =
+        `Background ${task.type} "${task.name}" is set to ChatGPT model "${bg.modelId}" which needs your signed-in session and cannot run headless. ` +
+        `In Settings → Model pick a non-ChatGPT default (e.g. Ollama local or another provider) for heartbeat/scheduled tasks, ` +
+        `or keep ChatGPT for chat only.`;
+      console.warn(`[pi-task] ${msg}`);
+      const { appendLog } = await import("@/lib/scheduler/task-log");
+      const duration = Date.now() - startTime;
+      await appendLog({
+        timestamp: startTime,
+        taskId: task.id,
+        name: task.name,
+        status: "error",
+        output: msg.slice(0, 500),
+        duration,
+      });
+      return { status: "error" as const, output: msg, duration };
     }
     if (signal.aborted) throw new Error("Pi task aborted before model call");
 
@@ -330,7 +382,7 @@ async function runPiTaskInternal(
     const maxSteps = task.type === "heartbeat" ? 8 : 12;
 
     const result = streamText({
-      model: createPiModelClient(defaultModelId),
+      model: createPiModelClient(bg.modelId),
       system: buildPiTaskSystemPrompt(task, heartbeatStateText, skillsSection || undefined, connectorHint || undefined),
       prompt: `Execute task: ${task.name}\nInstructions: ${task.instructions}`,
       maxRetries: 0,

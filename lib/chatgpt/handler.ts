@@ -139,30 +139,35 @@ function sanitizeOrigin(req: Request): Request {
   headers.delete("origin");
   // Clone request with cleaned headers; preserve method/body/signal
   try {
-    return new Request(req, { headers } as any);
+    return new Request(req, { headers, signal: (req as any).signal } as any);
   } catch {
-    // Fallback: reconstruct manually
+    // Fallback: reconstruct manually — must preserve body + signal or
+    // POST /responses arrives empty (invalid_responses_request).
     return new Request(req.url, {
       method: req.method,
       headers,
+      body: (req as any).body,
+      signal: (req as any).signal,
       // @ts-ignore duplex
       duplex: "half",
     } as any);
   }
 }
 
-// Codex /responses requires stream:true — force it for every request so both
-// streamText and generateText work. The AI SDK's generateText sends stream:false.
+// Fill a missing `stream` flag for /responses (AI SDK omits it in some
+// versions). Do NOT override an explicit `stream:false` from generateText —
+// forcing stream:true there returns SSE which generateText cannot parse as
+// JSON ("Invalid JSON response") and made ChatGPT models look broken.
 const _origHandler = chatGptAuth.handler.bind(chatGptAuth);
 const _origProxyFetch = chatGptAuth.proxyFetch.bind(chatGptAuth);
 
-async function forceStreamTrue(req: Request): Promise<Request> {
+async function ensureStreamFlag(req: Request): Promise<Request> {
   if (req.method !== "POST" || !req.url.includes("/responses")) return req;
   try {
     const text = await req.clone().text();
     if (!text) return req;
     const json = JSON.parse(text);
-    if (json && typeof json === "object" && (json as any).stream !== true) {
+    if (json && typeof json === "object" && (json as any).stream == null) {
       (json as any).stream = true;
       const headers = new Headers(req.headers);
       headers.delete("content-length");
@@ -171,6 +176,7 @@ async function forceStreamTrue(req: Request): Promise<Request> {
         method: req.method,
         headers,
         body: JSON.stringify(json),
+        signal: (req as any).signal,
         // @ts-ignore - duplex required for Node fetch with body
         duplex: "half",
       } as any);
@@ -181,7 +187,7 @@ async function forceStreamTrue(req: Request): Promise<Request> {
 
 (chatGptAuth as any).handler = async (req: Request) => {
   const sanitized = sanitizeOrigin(req);
-  const fixed = await forceStreamTrue(sanitized);
+  const fixed = await ensureStreamFlag(sanitized);
   return _origHandler(fixed);
 };
 (chatGptAuth as any).fetch = (chatGptAuth as any).handler;
@@ -192,7 +198,9 @@ async function forceStreamTrue(req: Request): Promise<Request> {
     try {
       if (init?.body && typeof init.body === "string") {
         const parsed = JSON.parse(init.body);
-        if (parsed && typeof parsed === "object" && parsed.stream !== true) {
+        // Only fill when missing — never flip an explicit stream:false
+        // (generateText) to true, which breaks its JSON parsing.
+        if (parsed && typeof parsed === "object" && parsed.stream == null) {
           parsed.stream = true;
           init = { ...init, body: JSON.stringify(parsed) };
           const h = new Headers(init.headers);
@@ -200,7 +208,7 @@ async function forceStreamTrue(req: Request): Promise<Request> {
           init.headers = h;
         }
       } else if (input instanceof Request) {
-        const fixed = await forceStreamTrue(input);
+        const fixed = await ensureStreamFlag(input);
         if (fixed !== input) input = fixed;
       }
     } catch {}

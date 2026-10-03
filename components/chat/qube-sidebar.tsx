@@ -1,12 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FC, type MouseEvent } from "react";
+import dynamic from "next/dynamic";
 import { useAui, useAuiState } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
-import { MascotMini } from "@/components/chat/mascot/MascotMini";
 import { emitMascot } from "@/components/chat/mascot/mascot-bus";
-import { SettingsDialog } from "@/components/shared/settings-dialog";
-import { OnboardingModal } from "@/components/shared/onboarding-dialog";
+// Heavy UI is lazy so the sidebar paints instantly on Windows cold start:
+// - MascotMini pulls three.js + @react-three/fiber (MBs) for a 24px logo
+// - SettingsDialog pulls 40+ lobehub icons, only needed when opened
+// - OnboardingModal only renders on first run
+const MascotMini = dynamic(() => import("@/components/chat/mascot/MascotMini").then((m) => m.MascotMini), {
+  ssr: false,
+  loading: () => <span className="block size-6 rounded-md bg-muted/60" aria-hidden />,
+}) as any;
+const SettingsDialog = dynamic(
+  () => import("@/components/shared/settings-dialog").then((m) => m.SettingsDialog),
+  { ssr: false },
+) as any;
+const OnboardingModal = dynamic(
+  () => import("@/components/shared/onboarding-dialog").then((m) => m.OnboardingModal),
+  { ssr: false },
+) as any;
 import { useThreadStore, loadExpanded } from "@/lib/chat/thread-store";
 import {
   PanelLeftIcon,

@@ -376,16 +376,38 @@ async function generateSummaryText(opts: {
     } catch {}
   }, 180_000);
   try {
-    const { text } = await generateText({
-      model,
-      prompt,
-      temperature: 0.2,
-      maxOutputTokens: cfg.summaryMaxOutputTokens,
-      abortSignal: ctrl.signal,
-    } as any);
-    const summary = (text || "").trim();
-    if (!summary) throw new Error("Summarizer returned empty text");
-    return summary;
+    try {
+      const { text } = await generateText({
+        model,
+        prompt,
+        temperature: 0.2,
+        maxOutputTokens: cfg.summaryMaxOutputTokens,
+        abortSignal: ctrl.signal,
+      } as any);
+      const summary = (text || "").trim();
+      if (!summary) throw new Error("Summarizer returned empty text");
+      return summary;
+    } catch (e: any) {
+      // ChatGPT proxy historically forced stream:true which broke generateText's
+      // JSON parsing ("Invalid JSON response"). Retry via streamText which
+      // always uses SSE and works for both ChatGPT and other providers.
+      const msg = e?.message || String(e);
+      if (!/invalid json|AI_APICallError|stream/i.test(msg)) throw e;
+      const { streamText } = await import("ai");
+      const res: any = await (streamText as any)({
+        model,
+        prompt,
+        temperature: 0.2,
+        maxRetries: 0,
+        abortSignal: ctrl.signal,
+      });
+      try {
+        await res.consumeStream();
+      } catch {}
+      const summary = String((await res.text) ?? "").trim();
+      if (!summary) throw new Error("Summarizer returned empty text");
+      return summary;
+    }
   } finally {
     clearTimeout(timer);
   }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { XIcon } from "lucide-react";
 
 type ChatError = {
   title: string;
@@ -77,21 +78,47 @@ export function useChatErrorListener(cb: (err: ChatError) => void) {
 
 export function ChatErrorTopPopup() {
   const [error, setError] = useState<ChatError | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useChatErrorListener((err) => {
-    setError(err);
-    // Auto-hide after 10s
-    setTimeout(() => {
-      setError((prev) => (prev === err ? null : prev));
-    }, 10000);
-  });
+  useEffect(() => {
+    const listener = (err: ChatError) => {
+      setError(err);
+      // Auto-hide a bit faster than before (10s → 7.5s)
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        setError((prev) => (prev === err ? null : prev));
+      }, 7500);
+    };
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
-  // Error toast: updater-toast geometry, but red, no buttons, no dialog —
-  // just the fixed title plus the error details.
-  const body =
-    error && error.detail && error.detail !== error.message
-      ? `${error.message}\n\n${error.detail}`
-      : error?.message ?? "";
+  const dismiss = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setError(null);
+  };
+
+  // Never repeat the title inside the body: strip a leading title prefix and
+  // drop detail when it merely duplicates the message.
+  const dedupedBody = (() => {
+    if (!error) return "";
+    const title = (error.title || "").trim();
+    let msg = (error.message || "").trim();
+    let det = (error.detail || "").trim();
+    if (title && msg.toLowerCase().startsWith(title.toLowerCase())) {
+      msg = msg.slice(title.length).replace(/^[\s:–—-]+/, "").trim() || msg;
+    }
+    if (det && (det === msg || det.toLowerCase().startsWith(msg.toLowerCase().slice(0, 80)))) {
+      det = "";
+    }
+    if (det && title && det.toLowerCase().startsWith(title.toLowerCase())) {
+      det = det.slice(title.length).replace(/^[\s:–—-]+/, "").trim();
+    }
+    return det && det !== msg ? `${msg}\n\n${det}`.trim() : msg;
+  })();
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex justify-center px-4 pt-4">
@@ -105,13 +132,21 @@ export function ChatErrorTopPopup() {
             transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
             className="pointer-events-auto w-full max-w-[480px]"
           >
-            <div className="rounded-[26px] border border-red-800 bg-red-600 shadow-xl shadow-red-900/30 overflow-hidden">
-              <div className="px-4 pt-4 pb-3">
+            <div className="relative rounded-[26px] border border-red-800 bg-red-600 shadow-xl shadow-red-900/30 overflow-hidden">
+              <button
+                type="button"
+                onClick={dismiss}
+                aria-label="Dismiss error"
+                className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full bg-white/10 text-white/80 transition-opacity hover:bg-white/20 hover:text-white hover:opacity-100"
+              >
+                <XIcon className="size-4" />
+              </button>
+              <div className="px-4 pt-4 pb-3 pr-12">
                 <h4 className="text-[14px] font-semibold tracking-tight text-white leading-none">
-                  An error occurred
+                  {error.title || "An error occurred"}
                 </h4>
                 <p className="text-[12.5px] text-white/85 leading-relaxed mt-1.5 whitespace-pre-wrap break-words max-h-[30vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                  {body}
+                  {dedupedBody}
                 </p>
                 {error.status ? (
                   <p className="text-[11px] text-white/60 mt-1.5">Status: {error.status}</p>
@@ -129,26 +164,42 @@ export function ChatErrorTopPopup() {
 export function parseChatGPTError(errorText: string): ChatError | null {
   try {
     const data = JSON.parse(errorText);
-    const body = data.responseBody ? JSON.parse(data.responseBody) : data;
-    const detail = body.detail ? JSON.parse(body.detail) : null;
-    const err = detail?.error || body.error || data;
-    if (err?.type === "usage_limit_reached" || /usage_limit/i.test(err?.message || "")) {
-      const plan = err.plan_type || "free";
-      const resetsIn = err.resets_in_seconds ? `${Math.ceil(err.resets_in_seconds / 3600)}h` : "later";
+    // AI SDK APICallError shape ({statusCode, responseBody}) or our handler's
+    // {error:"responses_request_failed", status, detail} shape.
+    let body: any = data.responseBody ? JSON.parse(data.responseBody) : data;
+    // Handler wraps upstream: {error, status, detail: "<upstream json>"}
+    let detail: any = null;
+    try {
+      detail = body?.detail ? JSON.parse(body.detail) : null;
+    } catch {
+      detail = null;
+    }
+    const err = detail?.error || body?.error || data;
+    const errObj = typeof err === "string" ? { message: err } : err || {};
+    if (errObj?.type === "usage_limit_reached" || /usage_limit/i.test(errObj?.message || "")) {
+      const plan = errObj.plan_type;
+      const resetsIn = errObj.resets_in_seconds ? `${Math.ceil(errObj.resets_in_seconds / 3600)}h` : "later";
+      const message = errObj.message || "The usage limit has been reached";
+      // Don't repeat the message inside detail — title shows once on top,
+      // message once below, detail only carries plan/reset extras.
+      const extras = [plan ? `Plan: ${plan}` : null, `Resets in: ${resetsIn}`].filter(Boolean).join(" • ");
       return {
         title: "ChatGPT usage limit reached",
-        message: err.message || "The usage limit has been reached",
-        detail: `Plan: ${plan} • Resets in: ${resetsIn} • ${err.message || ""}\n\nFull detail: ${JSON.stringify(err, null, 2)}`,
-        status: data.statusCode || 429,
+        message,
+        detail: extras || undefined,
+        status: data.statusCode || data.status || 429,
       };
     }
-    // Generic 429
-    if (data.statusCode === 429 || data.status === 429) {
+    // Generic 429 — keep detail short and never echo the full raw payload
+    // when it duplicates the message.
+    const status = data.statusCode || data.status || body?.status;
+    if (status === 429) {
+      const message = (typeof body?.message === "string" && body.message) || errObj?.message || "Rate limited — please try again in a moment";
       return {
-        title: `Request failed (${data.statusCode || 429})`,
-        message: data.message || err?.message || "Rate limited — please try again in a moment",
-        detail: errorText,
-        status: data.statusCode || 429,
+        title: `Request failed (${status})`,
+        message,
+        detail: undefined,
+        status,
       };
     }
   } catch {}

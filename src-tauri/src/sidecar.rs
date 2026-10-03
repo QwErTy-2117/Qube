@@ -26,6 +26,49 @@ fn copy_dir_recursively(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Delta copy: skip files that already exist with the same size and a
+/// dst mtime >= src mtime. On Windows a full copy every launch means
+/// thousands of files + ~80MB node.exe through Defender on every start.
+/// Reusing the temp dir cuts cold start by seconds on second+ launches.
+fn copy_dir_delta(src: &Path, dst: &Path, log: &mut fs::File) -> std::io::Result<(usize, usize)> {
+    fs::create_dir_all(dst)?;
+    let mut copied = 0usize;
+    let mut skipped = 0usize;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ft = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if ft.is_dir() {
+            let (c, s) = copy_dir_delta(&src_path, &dst_path, log)?;
+            copied += c;
+            skipped += s;
+        } else if ft.is_symlink() {
+            // Resource dirs shouldn't contain symlinks, but never break startup on one.
+            skipped += 1;
+        } else {
+            let skip = (|| -> bool {
+                let src_md = fs::metadata(&src_path).ok()?;
+                let dst_md = fs::metadata(&dst_path).ok()?;
+                if src_md.len() != dst_md.len() {
+                    return false;
+                }
+                let src_mtime = src_md.modified().ok()?;
+                let dst_mtime = dst_md.modified().ok()?;
+                Some(dst_mtime >= src_mtime).unwrap_or(false)
+            })();
+            if skip {
+                skipped += 1;
+            } else {
+                fs::copy(&src_path, &dst_path)?;
+                copied += 1;
+            }
+        }
+    }
+    let _ = log;
+    Ok((copied, skipped))
+}
+
 /// Prefer the Node.js runtime bundled next to server.js (shipped as a Tauri
 /// resource so user machines don't need Node.js installed — typically absent
 /// on Windows/macOS). Fall back to PATH `node` for dev / missing bundle.
@@ -74,42 +117,57 @@ impl Sidecar {
             .append(true)
             .open(&log_path)
             .map_err(|e| format!("Failed to open {}: {}", log_path.display(), e))?;
-        log_line(&mut log, &format!("Starting sidecar from {}", dist_dir.display()));
+        log_line(
+            &mut log,
+            &format!("Starting sidecar from {}", dist_dir.display()),
+        );
 
         // Use a user-writable temp directory so Next.js can write caches.
-        // On Windows a previous instance may still hold the dir (cwd/file
-        // locks) making cleanup fail — fall back to a pid-suffixed dir
-        // instead of failing startup.
+        // Windows fast path: reuse the previous temp dir with a delta copy
+        // (skip unchanged files) instead of delete + full copy every launch.
+        // A full copy forces Defender to rescan thousands of files + node.exe
+        // on every start. Only fall back to a pid-suffixed dir when the base
+        // dir is locked by a still-running instance.
         let app_dir = {
             let base = std::env::temp_dir().join("qube-sidecar");
+            // Probe writability: try creating the dir; if it exists and is
+            // locked (Windows file locks), canonicalize will still succeed —
+            // the delta copy below will surface a real IO error, at which
+            // point we fall back to a pid-suffixed dir.
             let mut dir = base.clone();
-            if base.exists() {
-                if let Err(e) = fs::remove_dir_all(&base) {
+            let delta_result = copy_dir_delta(dist_dir, &dir, &mut log);
+            match delta_result {
+                Ok((copied, skipped)) => {
+                    log_line(
+                        &mut log,
+                        &format!("Sidecar delta copy: {copied} copied, {skipped} reused"),
+                    );
+                }
+                Err(e) => {
                     log_line(
                         &mut log,
                         &format!(
-                            "Could not clean {} ({}); using pid-suffixed dir",
+                            "Delta copy to {} failed ({}); trying pid-suffixed dir",
                             base.display(),
                             e
                         ),
                     );
-                    dir = std::env::temp_dir()
-                        .join(format!("qube-sidecar-{}", std::process::id()));
+                    dir = std::env::temp_dir().join(format!("qube-sidecar-{}", std::process::id()));
                     if dir.exists() {
                         fs::remove_dir_all(&dir).map_err(|e| {
                             format!("Failed to clean sidecar temp dir {}: {}", dir.display(), e)
                         })?;
                     }
+                    copy_dir_recursively(dist_dir, &dir).map_err(|e| {
+                        format!(
+                            "Failed to copy sidecar {} to temp dir {}: {}",
+                            dist_dir.display(),
+                            dir.display(),
+                            e
+                        )
+                    })?;
                 }
             }
-            copy_dir_recursively(dist_dir, &dir).map_err(|e| {
-                format!(
-                    "Failed to copy sidecar {} to temp dir {}: {}",
-                    dist_dir.display(),
-                    dir.display(),
-                    e
-                )
-            })?;
             dir
         };
         log_line(&mut log, &format!("Sidecar files at {}", app_dir.display()));
@@ -143,8 +201,12 @@ impl Sidecar {
             }
         };
 
-        let log_out = log.try_clone().map_err(|e| format!("Failed to clone log handle: {e}"))?;
-        let log_err = log.try_clone().map_err(|e| format!("Failed to clone log handle: {e}"))?;
+        let log_out = log
+            .try_clone()
+            .map_err(|e| format!("Failed to clone log handle: {e}"))?;
+        let log_err = log
+            .try_clone()
+            .map_err(|e| format!("Failed to clone log handle: {e}"))?;
         let mut cmd = Command::new(&node_bin);
         cmd.arg("server.js")
             .env("PORT", port.to_string())
@@ -186,20 +248,21 @@ impl Sidecar {
                 }
             })?;
 
-        // Poll TCP until server accepts connections
-        let max_retries = 40;
+        // Poll TCP until server accepts connections. Poll fast (100ms) so we
+        // navigate the moment Next.js is up instead of up to 500ms later.
+        let max_retries = 200;
         for i in 0..max_retries {
             if TcpStream::connect(format!("127.0.0.1:{port}")).is_ok() {
                 // Extra small delay to let Next.js finish its first render
-                thread::sleep(Duration::from_millis(300));
+                thread::sleep(Duration::from_millis(200));
                 log_line(&mut log, &format!("Server up on port {port}"));
                 return Ok(Sidecar {
                     child: Some(child),
                     port,
                 });
             }
-            thread::sleep(Duration::from_millis(500));
-            if i % 5 == 4 {
+            thread::sleep(Duration::from_millis(100));
+            if i % 25 == 24 {
                 log_line(
                     &mut log,
                     &format!(
@@ -214,7 +277,7 @@ impl Sidecar {
         let _ = child.wait();
         Err(format!(
             "Next.js server on port {port} did not start within {}s. Server output was captured in {}",
-            max_retries / 2,
+            max_retries / 10,
             log_path.display()
         ))
     }

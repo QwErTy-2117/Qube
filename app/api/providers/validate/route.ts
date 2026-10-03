@@ -27,6 +27,56 @@ export async function POST(req: Request) {
     }
 
     const base = (baseURL || "").replace(/\/+$/, "");
+    // ChatGPT subscription models authenticate via session cookie, not an API
+    // key. Probing them with createOpenAI(chat) + relative baseURL always
+    // failed server-side. Use the session-aware proxy + responses endpoint.
+    if (providerId === "chatgpt") {
+      try {
+        const { chatGptAuth } = await import("@/lib/chatgpt/handler");
+        const session = await chatGptAuth.getSession(req as any).catch(() => null);
+        if (!session || (session as any).status !== "authenticated") {
+          return Response.json({
+            ok: false,
+            code: "NOT_AUTHENTICATED",
+            error: "ChatGPT is not signed in.",
+            hint: "In Settings → ChatGPT use “Connect OpenAI subscription” to sign in, then try again.",
+          });
+        }
+        const cleanId = (modelId || "").includes(":") ? (modelId || "").split(":").slice(1).join(":") : modelId;
+        const baseFetch = chatGptAuth.proxyFetch(req as any) as typeof fetch;
+        let origin = "";
+        try {
+          origin = new URL(req.url).origin;
+        } catch {}
+        const proxyBase = origin ? `${origin}/api/chatgpt` : "/api/chatgpt";
+        const client = createOpenAI({ baseURL: proxyBase, apiKey: "login-with-chatgpt-proxy", fetch: baseFetch as any });
+        const probeModel = (client as any).responses(cleanId || "gpt-5.5");
+        const { streamText } = await import("ai");
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 30_000);
+        try {
+          const res: any = await (streamText as any)({
+            model: probeModel,
+            prompt: "Reply with exactly: ok",
+            maxRetries: 0,
+            temperature: 0,
+            abortSignal: controller.signal,
+          });
+          try {
+            await res.consumeStream();
+          } catch {}
+          await res.text;
+          return Response.json({ ok: true });
+        } catch (e: any) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return Response.json({ ok: false, code: "CHATGPT_PROBE_FAILED", error: msg.slice(0, 500), hint: "The ChatGPT session is signed in but a test chat failed — check plan limits or try another ChatGPT model." });
+        } finally {
+          clearTimeout(timer);
+        }
+      } catch (e: any) {
+        return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
     let model: any;
     try {
       if (providerId === "mistral") {

@@ -68,6 +68,26 @@ export function resolveMemoryEnabled(explicit?: boolean): boolean {
 export function formatProviderError(raw: string, modelName?: string, prefixError = false): string {
   const model = modelName ? `"${modelName}"` : "The model";
   const base = prefixError && !/^error/i.test(raw.trim()) ? `Error: ${raw.slice(0, 2000)}` : raw.slice(0, 2000);
+  const isChatGPT = modelName ? /^chatgpt:/i.test(modelName) : /chatgpt|login-with-chatgpt|responses_request_failed|usage_limit/i.test(raw);
+
+  if (isChatGPT && /not_authenticated|refresh_token_invalid|token_refresh_failed|expired|signed out|no session/i.test(raw)) {
+    return (
+      `${base}\n\n${model} needs your ChatGPT sign-in, which is missing or expired.\n` +
+      `Fix: in Settings → ChatGPT use “Connect OpenAI subscription” to reconnect, then pick a ChatGPT model again.`
+    );
+  }
+  if (isChatGPT && /model_not_allowed/i.test(raw)) {
+    return (
+      `${base}\n\n${model} is not available on your ChatGPT plan.\n` +
+      `Fix: in chat pick a model from Settings → ChatGPT → models (that list is your plan's actual access), or check your subscription.`
+    );
+  }
+  if (isChatGPT && /usage_limit_reached|usage_limit|rate_limited/i.test(raw)) {
+    return (
+      `${base}\n\n${model} hit your ChatGPT plan's usage limit (not Qube's free tier).\n` +
+      `Fix: wait for the reset window, try a smaller ChatGPT model, or switch to another provider (Ollama works locally).`
+    );
+  }
 
   if (/only be used from within OpenCode|FreeTier/i.test(raw)) {
     return (

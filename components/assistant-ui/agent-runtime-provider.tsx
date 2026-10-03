@@ -146,30 +146,46 @@ function PrefetchManager() {
 
 export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
-    // Pi harness setup (MCP enabled)
-    fetch("/api/setup", { method: "POST" }).catch(() => {});
-    // Hydrate skills cache so the first chat already carries system skills
-    fetch("/api/skills/sync")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data && Array.isArray(data.skills) && data.skills.length > 0) {
-          try {
-            localStorage.setItem("qube-skills", JSON.stringify(data.skills));
-          } catch {}
+    // Startup waterfall fix (Windows): don't fire 5 fetches during first
+    // paint. Providers sync stays immediate (needed for the model picker);
+    // everything else is deferred until the browser is idle so WebView2 can
+    // paint the chat first.
+    const idle = (fn: () => void, ms = 1200) => {
+      try {
+        const ric = (window as any).requestIdleCallback;
+        if (typeof ric === "function") {
+          ric(fn, { timeout: ms + 800 });
+          return;
         }
-      })
-      .catch(() => {});
-    // Hydrate allowed-directories cache for the chat pipeline
-    fetch("/api/permissions/dirs")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data && Array.isArray(data.dirs)) {
-          try {
-            localStorage.setItem("qube-allowed-directories", JSON.stringify(data.dirs));
-          } catch {}
-        }
-      })
-      .catch(() => {});
+      } catch {}
+      setTimeout(fn, ms);
+    };
+    idle(() => {
+      // Pi harness setup (MCP enabled)
+      fetch("/api/setup", { method: "POST" }).catch(() => {});
+      // Hydrate skills cache so the first chat already carries system skills
+      fetch("/api/skills/sync")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.skills) && data.skills.length > 0) {
+            try {
+              localStorage.setItem("qube-skills", JSON.stringify(data.skills));
+            } catch {}
+          }
+        })
+        .catch(() => {});
+      // Hydrate allowed-directories cache for the chat pipeline
+      fetch("/api/permissions/dirs")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.dirs)) {
+            try {
+              localStorage.setItem("qube-allowed-directories", JSON.stringify(data.dirs));
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }, 1200);
     if (typeof window !== "undefined") {
       // Single shared per-install identity (synchronous, self-creating).
       // Never the global default — it collides across machines sharing the
@@ -200,34 +216,37 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Hydrate localStorage from server-side settings on cold start
-      const needsHydrate = !localStorage.getItem("qube-custom-system-prompt") &&
-        !localStorage.getItem("qube-user-name");
-      if (needsHydrate) {
-        fetch("/api/settings")
-          .then((r) => r.json())
-          .then((data) => {
-            const s = data.settings;
-            if (!s) return;
-            if (s.customSystemPrompt) localStorage.setItem("qube-custom-system-prompt", s.customSystemPrompt);
-            if (s.temperature !== undefined) localStorage.setItem("qube-temperature", String(s.temperature));
-            if (s.userName) localStorage.setItem("qube-user-name", s.userName);
-            if (s.userAbout) localStorage.setItem("qube-user-about", s.userAbout);
-            if (s.defaultModel) localStorage.setItem("qube-default-model", s.defaultModel);
-            if (s.runOnStart !== undefined) localStorage.setItem("qube-run-on-start", String(s.runOnStart));
-            if (s.keepAlive !== undefined) localStorage.setItem("qube-keep-alive", String(s.keepAlive));
-            if (s.memoryEnabled !== undefined) localStorage.setItem("qube-memory-enabled", String(s.memoryEnabled !== false));
-            if (s.runOnStart) {
-              fetch("/api/scheduler/tasks").catch(() => {});
-            }
-          })
-          .catch(() => {});
-      } else {
-        const runOnStart = localStorage.getItem("qube-run-on-start");
-        if (runOnStart === "true") {
-          fetch("/api/scheduler/tasks").catch(() => {});
+      // Hydrate localStorage from server-side settings on cold start — also
+      // deferred so it never competes with first paint on Windows.
+      idle(() => {
+        const needsHydrate = !localStorage.getItem("qube-custom-system-prompt") &&
+          !localStorage.getItem("qube-user-name");
+        if (needsHydrate) {
+          fetch("/api/settings")
+            .then((r) => r.json())
+            .then((data) => {
+              const s = data.settings;
+              if (!s) return;
+              if (s.customSystemPrompt) localStorage.setItem("qube-custom-system-prompt", s.customSystemPrompt);
+              if (s.temperature !== undefined) localStorage.setItem("qube-temperature", String(s.temperature));
+              if (s.userName) localStorage.setItem("qube-user-name", s.userName);
+              if (s.userAbout) localStorage.setItem("qube-user-about", s.userAbout);
+              if (s.defaultModel) localStorage.setItem("qube-default-model", s.defaultModel);
+              if (s.runOnStart !== undefined) localStorage.setItem("qube-run-on-start", String(s.runOnStart));
+              if (s.keepAlive !== undefined) localStorage.setItem("qube-keep-alive", String(s.keepAlive));
+              if (s.memoryEnabled !== undefined) localStorage.setItem("qube-memory-enabled", String(s.memoryEnabled !== false));
+              if (s.runOnStart) {
+                fetch("/api/scheduler/tasks").catch(() => {});
+              }
+            })
+            .catch(() => {});
+        } else {
+          const runOnStart = localStorage.getItem("qube-run-on-start");
+          if (runOnStart === "true") {
+            fetch("/api/scheduler/tasks").catch(() => {});
+          }
         }
-      }
+      }, 1800);
     }
   }, []);
 

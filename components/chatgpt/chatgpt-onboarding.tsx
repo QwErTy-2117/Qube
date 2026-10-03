@@ -82,9 +82,14 @@ export function ChatGPTOnboardingSection({
 
         localStorage.setItem("qube-providers", JSON.stringify(providers));
         const currentDefault = localStorage.getItem("qube-default-model");
+        const liveModels = providers.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models || [];
         if (!currentDefault) {
-          const first = providers.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models.find((m) => m.enabled);
+          const first = liveModels.find((m) => m.enabled) || liveModels[0];
           if (first) localStorage.setItem("qube-default-model", first.id);
+        } else if (currentDefault.startsWith(`${CHATGPT_PROVIDER_ID}:`) && !liveModels.some((m) => m.id === currentDefault)) {
+          const first = liveModels.find((m) => m.enabled) || liveModels[0];
+          if (first) localStorage.setItem("qube-default-model", first.id);
+          else localStorage.removeItem("qube-default-model");
         }
         const defaultModelId = localStorage.getItem("qube-default-model") || null;
         fetch("/api/providers/sync", {

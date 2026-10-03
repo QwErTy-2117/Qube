@@ -82,6 +82,13 @@ export function formatProviderError(raw: string, modelName?: string, prefixError
       `Fix: in chat pick a model from Settings → ChatGPT → models (that list is your plan's actual access), or check your subscription.`
     );
   }
+  if (isChatGPT && /model_not_found|does not exist or you do not have access/i.test(raw)) {
+    return (
+      `${base}\n\n${model} does not exist on your ChatGPT plan (renamed or plan-gated by OpenAI).\n` +
+      `Fix: in chat pick a model from Settings → ChatGPT → models — that list is your plan's live access. ` +
+      `Qube also auto-remaps stale defaults on the next message; resend to retry.`
+    );
+  }
   if (isChatGPT && /usage_limit_reached|usage_limit|rate_limited/i.test(raw)) {
     return (
       `${base}\n\n${model} hit your ChatGPT plan's usage limit (not Qube's free tier).\n` +

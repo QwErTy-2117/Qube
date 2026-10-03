@@ -26,6 +26,7 @@ const ERROR_PATTERNS: RegExp[] = [
   /was not found on this endpoint/i,
   /only serves to its own official client|free-tier model/i,
   /usage_limit_reached|responses_request_failed|usage_limit/i,
+  /does not exist or you do not have access|model_not_found/i,
 ];
 
 /** True when an assistant text part is an error notice, not a reply. */
@@ -190,9 +191,25 @@ export function parseChatGPTError(errorText: string): ChatError | null {
         status: data.statusCode || data.status || 429,
       };
     }
+    const status = data.statusCode || data.status || body?.status;
+    // ChatGPT model gone/plan-gated — clean title, no JSON dump.
+    const notFound =
+      /model_not_found/i.test(errorText) ||
+      /does not exist or you do not have access/i.test(errorText);
+    if (notFound) {
+      const m =
+        errObj?.message ||
+        (typeof body?.message === "string" && body.message) ||
+        "This model does not exist on your ChatGPT plan";
+      return {
+        title: "ChatGPT model unavailable",
+        message: m,
+        detail: "Pick a model from Settings → ChatGPT → models (your plan's live list), then resend.",
+        status: status || 404,
+      };
+    }
     // Generic 429 — keep detail short and never echo the full raw payload
     // when it duplicates the message.
-    const status = data.statusCode || data.status || body?.status;
     if (status === 429) {
       const message = (typeof body?.message === "string" && body.message) || errObj?.message || "Rate limited — please try again in a moment";
       return {

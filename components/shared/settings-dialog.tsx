@@ -914,9 +914,19 @@ function syncChatGPTProvider(user?: { email?: string; plan?: string }) {
 
       localStorage.setItem("qube-providers", JSON.stringify(updated));
       const currentDefault = localStorage.getItem("qube-default-model");
+      const liveIds = new Set(
+        (updated.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models || []).map((m) => m.id),
+      );
       if (!currentDefault) {
         const first = updated.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models.find((m) => m.enabled);
         if (first) localStorage.setItem("qube-default-model", first.id);
+      } else if (currentDefault.startsWith(`${CHATGPT_PROVIDER_ID}:`) && !liveIds.has(currentDefault)) {
+        // Stale ChatGPT default (renamed/plan-gated upstream) — evict so the
+        // next chat uses a model the account actually has.
+        const first = updated.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models.find((m) => m.enabled)
+          || updated.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models[0];
+        if (first) localStorage.setItem("qube-default-model", first.id);
+        else localStorage.removeItem("qube-default-model");
       }
       const defaultModelId = localStorage.getItem("qube-default-model") || null;
       fetch("/api/providers/sync", {

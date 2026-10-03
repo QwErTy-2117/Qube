@@ -96,17 +96,17 @@ export function useChatGPTProviderSync() {
 
       localStorage.setItem("qube-providers", JSON.stringify(providers));
 
-      // If no default model set, set to first enabled chatgpt model
+      // Keep the default valid against the live plan list: set it when empty,
+      // and evict it when it points at a ChatGPT model the plan no longer has.
       const currentDefault = localStorage.getItem("qube-default-model");
-      if (!currentDefault || currentDefault.startsWith("chatgpt:") || providers.find(p => p.id===CHATGPT_PROVIDER_ID)?.models.some(m=>m.id===currentDefault)) {
-        // if no default or default is chatgpt but we have new list, ensure it's valid
-        const firstEnabled = providers.find(p=>p.id===CHATGPT_PROVIDER_ID)?.models.find(m=>m.enabled);
-        if (firstEnabled && !currentDefault) {
-          localStorage.setItem("qube-default-model", firstEnabled.id);
-        }
-      } else if (!currentDefault) {
-        const firstEnabled = providers.find(p=>p.id===CHATGPT_PROVIDER_ID)?.models.find(m=>m.enabled);
+      const chatgptModels = providers.find(p => p.id===CHATGPT_PROVIDER_ID)?.models || [];
+      if (!currentDefault) {
+        const firstEnabled = chatgptModels.find(m=>m.enabled) || chatgptModels[0];
         if (firstEnabled) localStorage.setItem("qube-default-model", firstEnabled.id);
+      } else if (currentDefault.startsWith("chatgpt:") && !chatgptModels.some(m=>m.id===currentDefault)) {
+        const firstEnabled = chatgptModels.find(m=>m.enabled) || chatgptModels[0];
+        if (firstEnabled) localStorage.setItem("qube-default-model", firstEnabled.id);
+        else localStorage.removeItem("qube-default-model");
       }
 
       const defaultModelId = localStorage.getItem("qube-default-model") || null;

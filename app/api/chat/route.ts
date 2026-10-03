@@ -36,8 +36,26 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { messages, id, threadId, qubeThreadId, memoryEnabled, config, customSystemPrompt, temperature, instanceId, mcpServers, skills, allowedDirs, userName, userAbout } = body;
-    const modelName = config?.modelName;
+    let modelName = config?.modelName;
     const reasoningEffort = config?.reasoningEffort;
+    // Self-heal stale ChatGPT defaults: the stored default (e.g. chatgpt:gpt-5.5)
+    // may no longer exist on the user's plan — upstream then 404s with
+    // "does not exist or you do not have access". Remap to the account's
+    // first live model so subscription chats keep working after renames.
+    if (typeof modelName === "string" && modelName.startsWith("chatgpt:")) {
+      try {
+        const { chatGptAuth } = await import("@/lib/chatgpt/handler");
+        const live = await chatGptAuth.getModels(req as any).catch(() => undefined);
+        if (Array.isArray(live) && live.length > 0) {
+          const slug = modelName.split(":").slice(1).join(":");
+          if (!live.includes(slug)) {
+            const replacement = `chatgpt:${live[0]}`;
+            console.warn(`[chat] ChatGPT model "${modelName}" not on this plan — remapping to "${replacement}" (plan models: ${live.slice(0, 8).join(", ")})`);
+            modelName = replacement;
+          }
+        }
+      } catch {}
+    }
     // Prefer the transport thread id (the remote thread id in the
     // adapter model) so sessions accumulate per chat; fall back to the
     // legacy app-level id, then to a fresh id.

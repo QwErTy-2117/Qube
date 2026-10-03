@@ -47,16 +47,17 @@ fn copy_dir_delta(src: &Path, dst: &Path, log: &mut fs::File) -> std::io::Result
             // Resource dirs shouldn't contain symlinks, but never break startup on one.
             skipped += 1;
         } else {
-            let skip = (|| -> bool {
+            let skip = (|| -> Option<bool> {
                 let src_md = fs::metadata(&src_path).ok()?;
                 let dst_md = fs::metadata(&dst_path).ok()?;
                 if src_md.len() != dst_md.len() {
-                    return false;
+                    return Some(false);
                 }
                 let src_mtime = src_md.modified().ok()?;
                 let dst_mtime = dst_md.modified().ok()?;
-                Some(dst_mtime >= src_mtime).unwrap_or(false)
-            })();
+                Some(dst_mtime >= src_mtime)
+            })()
+            .unwrap_or(false);
             if skip {
                 skipped += 1;
             } else {

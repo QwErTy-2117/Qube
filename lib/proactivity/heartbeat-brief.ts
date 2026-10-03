@@ -58,9 +58,9 @@ export async function buildHeartbeatBrief(opts?: {
 
   // --- Pending announcements: finished scheduled-task results the user
   // has NOT been told about yet. This is a DIRECTIVE, not background
-  // context: the agent MUST open its next reply with these, then answer
-  // the user's message. Delivery is tracked — the chat route marks them
-  // delivered after the reply streams, so each result is announced once.
+  // context: the agent weaves them into its single reply. Delivery is
+  // tracked — the chat route marks them delivered after the reply streams,
+  // so each result is announced once.
   try {
     const { getPendingAnnouncements } = await import("@/lib/scheduler/announcements");
     const pending = await getPendingAnnouncements(3).catch(() => []);
@@ -71,7 +71,7 @@ export async function buildHeartbeatBrief(opts?: {
       );
       blocks.announcementsBlock =
         `PENDING ANNOUNCEMENTS — scheduled-task results completed while the user was away that you have NOT told them about yet.\n` +
-        `You MUST open your next reply by telling the user about EACH item below (one short paragraph per item: what finished + the key result or file), BEFORE answering their message. Do not greet first and wait to be asked — lead with the news. If there is nothing new beyond these, saying them IS the reply's opening.\n\n<pending_announcements>\n${lines.join("\n")}\n</pending_announcements>`;
+        `Weave EACH item into your ONE reply in your own words: answer what the user just said first, then fold the news in where it fits naturally. Never paste them as a detached block at the top, never greet twice, never send a preamble followed by a second greeting — one reply, one voice. If there is nothing else to answer, the news IS the reply, still in your own words.\n\n<pending_announcements>\n${lines.join("\n")}\n</pending_announcements>`;
       blocks.empty = false;
     }
   } catch {}

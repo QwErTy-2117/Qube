@@ -116,7 +116,7 @@ export async function POST(req: Request) {
     const uiMessages = messages as any[];
 
     // Snapshot undelivered task-result announcements BEFORE the turn: the
-    // harness injects them into this turn's prompt with a must-lead
+    // harness injects them into this turn's prompt with a weave-in
     // directive, so after the reply streams they count as told. A failed
     // turn leaves them pending for the next turn.
     let announcementIds: string[] = [];

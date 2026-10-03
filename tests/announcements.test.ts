@@ -85,7 +85,7 @@ describe("announcement lifecycle (announce exactly once)", () => {
   });
 });
 
-describe("brief injection (must-lead directive)", () => {
+describe("brief injection (weave-in directive)", () => {
   it("buildHeartbeatBrief includes pending announcements with the directive", async () => {
     const taskId = `t-brief-${Date.now()}`;
     const rec = await recordAnnouncement({ taskId, taskName: "Daily AI News Report", output: REPORT });
@@ -94,7 +94,10 @@ describe("brief injection (must-lead directive)", () => {
     const brief = await buildHeartbeatBrief();
     assert.ok(brief.announcementsBlock, "expected an announcements block");
     assert.match(brief.announcementsBlock!, /pending_announcements/);
-    assert.match(brief.announcementsBlock!, /MUST open your next reply/);
+    assert.match(brief.announcementsBlock!, /Weave EACH item into your ONE reply/);
+    assert.doesNotMatch(brief.announcementsBlock!, /MUST open your next reply/);
+    assert.doesNotMatch(brief.announcementsBlock!, /BEFORE answering/);
+    assert.doesNotMatch(brief.announcementsBlock!, /lead with the news/);
     assert.ok(brief.announcementsBlock!.includes("Daily AI News Report"));
     await markAnnouncementsDelivered([rec!.id]);
     const after = await buildHeartbeatBrief();

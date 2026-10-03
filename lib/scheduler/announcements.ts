@@ -12,8 +12,8 @@
  * 1. scheduler.executeScheduledTask records an announcement on success
  *    (meaningful output only; heartbeat ticks never create these).
  * 2. Every chat turn injects undelivered announcements as
- *    <pending_announcements> with a MUST-lead directive (see
- *    buildHeartbeatBrief) — the agent opens its reply with them.
+ *    <pending_announcements> with a weave-in directive (see
+ *    buildHeartbeatBrief) — the agent folds them into its single reply.
  * 3. The chat route marks the injected ids delivered after the turn's
  *    reply streams successfully, so each result is announced exactly once.
  *    A failed turn leaves them pending for the next turn.

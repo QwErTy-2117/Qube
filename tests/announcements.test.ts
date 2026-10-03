@@ -94,7 +94,8 @@ describe("brief injection (weave-in directive)", () => {
     const brief = await buildHeartbeatBrief();
     assert.ok(brief.announcementsBlock, "expected an announcements block");
     assert.match(brief.announcementsBlock!, /pending_announcements/);
-    assert.match(brief.announcementsBlock!, /Weave EACH item into your ONE reply/);
+    assert.match(brief.announcementsBlock!, /MUST mention EACH item in this same reply/);
+    assert.match(brief.announcementsBlock!, /one reply, one voice/);
     assert.doesNotMatch(brief.announcementsBlock!, /MUST open your next reply/);
     assert.doesNotMatch(brief.announcementsBlock!, /BEFORE answering/);
     assert.doesNotMatch(brief.announcementsBlock!, /lead with the news/);

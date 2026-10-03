@@ -71,7 +71,7 @@ export async function buildHeartbeatBrief(opts?: {
       );
       blocks.announcementsBlock =
         `PENDING ANNOUNCEMENTS — scheduled-task results completed while the user was away that you have NOT told them about yet.\n` +
-        `Weave EACH item into your ONE reply in your own words: answer what the user just said first, then fold the news in where it fits naturally. Never paste them as a detached block at the top, never greet twice, never send a preamble followed by a second greeting — one reply, one voice. If there is nothing else to answer, the news IS the reply, still in your own words.\n\n<pending_announcements>\n${lines.join("\n")}\n</pending_announcements>`;
+        `You MUST mention EACH item in this same reply — no exceptions, even if the user just said hi. Fold them into your single reply in your own words: greet briefly only if they greeted, answer what they asked, and deliver the news in the same flow. Never paste them as a detached block at the top, never greet twice — one reply, one voice, silence is failure. If there is nothing else to answer, the news IS the reply, still in your own words.\n\n<pending_announcements>\n${lines.join("\n")}\n</pending_announcements>`;
       blocks.empty = false;
     }
   } catch {}

@@ -55,7 +55,8 @@ describe("system prompt: follow-through", () => {
 
   it("weaves background news into one reply instead of a lead block", () => {
     assert.match(prompt, /One reply, one greeting/);
-    assert.match(prompt, /Weave EACH one into your single reply/);
+    assert.match(prompt, /MUST mention EACH one in your next reply/);
+    assert.match(prompt, /never silence until asked/);
     assert.doesNotMatch(prompt, /MUST open your next reply/);
     assert.doesNotMatch(prompt, /at the top of your next reply/);
   });

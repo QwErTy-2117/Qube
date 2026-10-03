@@ -55,6 +55,10 @@ export function isSensitiveConnectorTool(toolName: string): boolean {
   const lower = toolName.toLowerCase();
   // Never gate the connection helper itself.
   if (lower === "connect_service" || lower === "composio_search_tools") return false;
+  // Email drafts are reversible and never leave the user's account, so
+  // creating/editing one needs no approval card. Sending or deleting a
+  // draft (…_SEND_DRAFT, …_DELETE_DRAFT) is still gated below.
+  if (EMAIL_TOOLS_RE.test(lower) && /draft/i.test(lower) && !/(send|delete|remove|trash|destroy)/i.test(lower)) return false;
   return CONNECTOR_WRITE_RE.test(toolName);
 }
 

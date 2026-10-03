@@ -155,7 +155,7 @@ export async function buildHeartbeatBrief(opts?: {
           return `- ${escapePromptData(String(s.topic).slice(0, 140))}${ev ? ` (why: ${escapePromptData(ev)})` : ""} [id:${s.id}]`;
         });
         blocks.suggestionsBlock =
-          `Proactive suggestions pending (auto — from connectors/memories/past chats; surface each ONCE with a concrete draft, then record outcome so it never repeats).\n\n<proactive_suggestions>\n${lines.join("\n")}\nRules: mention each suggestion at most once per conversation; if the user ignores or rejects it, call it done and never re-suggest (record outcome); always include a one-click yes/no follow-up, never a menu.\n</proactive_suggestions>`;
+          `Proactive suggestions pending (auto — from connectors/memories/past chats; surface each ONCE with a concrete draft, then record outcome so it never repeats).\n\n<proactive_suggestions>\n${lines.join("\n")}\nRules: before mentioning a suggestion, do any read-only prep it needs (look things up, write the draft) so you present finished work, not an idea; mention each suggestion at most once per conversation; if the user ignores or rejects it, call it done and never re-suggest (record outcome); end with at most one yes/no, and only when the next step needs the user's approval — never a menu.\n</proactive_suggestions>`;
         blocks.empty = false;
       }
     }

@@ -84,7 +84,7 @@ import {
   LexicalComposerInput,
   type DirectiveChipProps,
 } from "@assistant-ui/react-lexical";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import TextRotate from "@/components/fancy/text/text-rotate";
 import Image from "next/image";
 import { useState, useEffect, useCallback, useRef, type FC, type ReactNode } from "react";
@@ -147,6 +147,12 @@ const ModelPicker: FC = () => {
   const [models, setModels] = useState<ModelOption[]>([]);
 
   useEffect(() => {
+    const markModelsReady = () => {
+      try {
+        (window as any).__qubeModelsReady = true;
+        window.dispatchEvent(new Event("qube-models-ready"));
+      } catch {}
+    };
     const syncModels = () => {
       const stored = localStorage.getItem("qube-providers");
       if (stored) {
@@ -171,6 +177,7 @@ const ModelPicker: FC = () => {
           });
           if (toggledModels.length > 0) {
             setModels(toggledModels);
+            markModelsReady();
             return;
           }
         } catch (e) {
@@ -178,6 +185,7 @@ const ModelPicker: FC = () => {
         }
       }
       setModels([]);
+      markModelsReady();
     };
 
     const syncModelsOrFetch = () => {
@@ -192,9 +200,13 @@ const ModelPicker: FC = () => {
               localStorage.setItem("qube-providers", JSON.stringify(data.providers));
               if (data.defaultModelId) localStorage.setItem("qube-default-model", data.defaultModelId);
               syncModels();
+            } else {
+              markModelsReady();
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            markModelsReady();
+          });
       }
     };
 
@@ -236,19 +248,15 @@ const ModelPicker: FC = () => {
       onValueChange={handleValueChange}
     >
       <ModelSelectorModelContext />
-      <motion.div
-        layout
-        transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        className="flex items-center"
-      >
+      <div className="flex items-center">
         <ModelSelector.Trigger
           variant="ghost"
-          className="h-7 rounded-full text-sm shrink-0 justify-between px-2.5 py-1 w-auto min-w-0"
+          className="h-7 rounded-full text-sm text-foreground shrink-0 justify-between px-2.5 py-1 w-auto min-w-0"
           arrowInverted={hasMessages}
         >
           <SingleModelText />
         </ModelSelector.Trigger>
-      </motion.div>
+      </div>
       <ModelSelector.Content className="w-auto min-w-[220px] max-w-[320px] overflow-hidden rounded-xl p-0 shadow-lg">
         <ModelSelector.List />
         <ModelSelector.Effort />
@@ -278,16 +286,9 @@ const ThinkingLevelInline: FC = () => {
   const activeName = efforts?.find((e) => e.id === effort)?.name;
   const isActive = !!effort && effort !== "off" && !!activeName;
   return (
-    <motion.span
-      layout
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ type: "spring", stiffness: 500, damping: 30 }}
-      className="text-sm font-light text-muted-foreground ml-1 shrink-0"
-    >
+    <span className="text-sm font-light text-muted-foreground ml-1 shrink-0">
       {activeName}
-    </motion.span>
+    </span>
   );
 };
 
@@ -300,32 +301,49 @@ const isNewChatView = (s: AssistantState) =>
 const Thread: FC = () => {
   const isNew = useAuiState(isNewChatView);
   const mainId = useAuiState((s) => (s.threads as any)?.mainThreadId as string | undefined);
-  // The handoff choreography (composer gliding center → bottom, welcome
-  // fading, apps strip sliding under the bar) plays ONLY when the user sends
-  // the first message from the landing composer: same thread, landing →
-  // chat. Navigating to another chat (new or existing) switches instantly.
+  // Send-only choreography WITHOUT timers or overlay states (a previous
+  // timer-based handoff could stick and hide the chat forever): landing ↔
+  // chat swaps instantly via distinct keys, and the send moment is detected
+  // with a passive ref used ONLY for mount-only `initial` animations (a
+  // misfire replays an animation once — it can never trap the UI).
+  // Navigation (chat ↔ chat, chat ↔ new, reload) always mounts with
+  // `initial={false}`: simply changes screen, zero flicker.
   const prevRef = useRef<{ isNew: boolean; id: string | undefined } | undefined>(undefined);
   const prev = prevRef.current;
-  const sendHandoff = !!prev && prev.isNew && !isNew && prev.id === mainId;
+  const justSent = !!prev && prev.isNew && !isNew && prev.id === mainId;
   useEffect(() => {
     prevRef.current = { isNew, id: mainId };
   });
-  const glideId = sendHandoff ? "qube-composer" : undefined;
-  // Animated handoff exits (send only); navigation switches cut instantly.
-  // Sequence: apps strip slides under the bar and vanishes first, the bar
-  // glides down only once the strip is gone, messages fade in on landing.
-  const welcomeExit = sendHandoff
-    ? { opacity: 0, y: -20, transition: { duration: 0.25, ease: "easeIn" as const } }
-    : { opacity: 0, transition: { duration: 0 } };
-  const stripExit = sendHandoff
-    ? { opacity: 0, y: 72, transition: { duration: 0.3, ease: "easeIn" as const } }
-    : { opacity: 0, transition: { duration: 0 } };
-  const glideTransition = sendHandoff
-    ? { type: "spring" as const, stiffness: 260, damping: 30, delay: 0.26 }
-    : { type: "spring" as const, stiffness: 260, damping: 30 };
+  // Connect-strip readiness: the strip stays tucked under the typing bar
+  // until BOTH the sidebar mascot and the model list have loaded (each emits
+  // a window event + sets a flag for late listeners). 4s timeout fallback so
+  // a missing signal can never leave the strip hidden forever.
+  const [mascotReady, setMascotReady] = useState(
+    () => typeof window !== "undefined" && !!((window as any).__qubeMascotReady),
+  );
+  const [modelsReady, setModelsReady] = useState(
+    () => typeof window !== "undefined" && !!((window as any).__qubeModelsReady),
+  );
+  useEffect(() => {
+    if (mascotReady && modelsReady) return;
+    const onMascot = () => setMascotReady(true);
+    const onModels = () => setModelsReady(true);
+    window.addEventListener("qube-mascot-ready", onMascot);
+    window.addEventListener("qube-models-ready", onModels);
+    const t = setTimeout(() => {
+      setMascotReady(true);
+      setModelsReady(true);
+    }, 4000);
+    return () => {
+      window.removeEventListener("qube-mascot-ready", onMascot);
+      window.removeEventListener("qube-models-ready", onModels);
+      clearTimeout(t);
+    };
+  }, [mascotReady, modelsReady]);
+  const stripReady = mascotReady && modelsReady;
   return (
     <ThreadPrimitive.Root
-      className="aui-root aui-thread-root bg-background @container flex h-full flex-col"
+      className="aui-root aui-thread-root bg-background text-foreground @container flex h-full flex-col"
       style={{
         ["--thread-max-width" as string]: "44rem",
         ["--composer-bg" as string]:
@@ -339,73 +357,73 @@ const Thread: FC = () => {
         data-slot="aui_thread-viewport"
         className="relative flex flex-1 flex-col overflow-x-auto overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden scroll-smooth px-4 pt-4"
       >
-        {/* Landing ↔ chat handoff: popLayout pulls the exiting branch out of
-            layout so the incoming layout is final instantly. On send (same
-            thread gaining its first message) the composer glides center →
-            bottom via the shared layoutId while the welcome fades up, the
-            apps strip slides down under the bar, and the messages fade in.
-            Navigation switches render statically (no layoutId, instant). */}
-        <AnimatePresence initial={false} mode="popLayout">
-          {isNew ? (
-            <motion.div
-              key="landing"
-              className="flex flex-1 flex-col items-center justify-center gap-6 px-4"
-            >
-              <motion.div exit={welcomeExit}>
-                <ThreadWelcome />
-              </motion.div>
-              <div className="flex w-full max-w-(--thread-max-width) flex-col">
-                <motion.div
-                  layoutId={glideId}
-                  transition={glideTransition}
-                  className="relative z-10 w-full"
-                >
-                  <Composer />
-                </motion.div>
-                <motion.div exit={stripExit}>
-                  <ConnectorsStrip />
-                </motion.div>
+        {isNew ? (
+          <div
+            key="landing"
+            className="flex flex-1 flex-col items-center justify-center gap-6 px-4"
+          >
+            <div>
+              <ThreadWelcome />
+            </div>
+            <div className="flex w-full max-w-(--thread-max-width) flex-col">
+              <div className="relative z-10 w-full">
+                <Composer />
               </div>
-            </motion.div>
-          ) : (
-            // NOTE: no opacity animation on this wrapper — the shared-element
-            // composer glide must stay visible while it travels. Only the
-            // messages fade in (after the bar lands).
-            <motion.div
-              key="chat"
-              className="flex flex-1 flex-col"
-            >
+              {/* Tucked under the bar until mascot + models are ready, then
+                  springs out. Stays mounted while hidden so the layout never
+                  jumps. Unmounts instantly with the landing on send. */}
               <motion.div
-                data-slot="aui_message-group"
-                initial={sendHandoff ? { opacity: 0, y: 8 } : false}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: sendHandoff ? 0.32 : 0 }}
-                className="mb-14 flex flex-col gap-y-6 empty:hidden"
+                initial={{ opacity: 0, y: -40, scale: 0.96 }}
+                animate={
+                  stripReady
+                    ? { opacity: 1, y: 0, scale: 1 }
+                    : { opacity: 0, y: -40, scale: 0.96 }
+                }
+                transition={{ type: "spring", stiffness: 320, damping: 14, mass: 0.85 }}
+                style={{ transformOrigin: "top center" }}
               >
-                <ThreadPrimitive.Messages>
-                  {({ message }) => {
-                    if (message.composer.isEditing) return <EditComposer />;
-                    if (message.role === "user") return <UserMessage />;
-                    return <AssistantMessage />;
-                  }}
-                </ThreadPrimitive.Messages>
+                <ConnectorsStrip />
               </motion.div>
-              <ThreadPrimitive.ViewportFooter
-                className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-2 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
-              >
-                <ThreadScrollToBottom />
-                <GoalsPanel />
-                <QuestionPanel />
-                <motion.div
-                  layoutId={glideId}
-                  transition={glideTransition}
-                >
-                  <Composer />
-                </motion.div>
-              </ThreadPrimitive.ViewportFooter>
+            </div>
+          </div>
+        ) : (
+          <div
+            key="chat"
+            className="flex flex-1 flex-col"
+          >
+            <motion.div
+              data-slot="aui_message-group"
+              initial={justSent ? { opacity: 0, y: 12 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: justSent ? 0.18 : 0 }}
+              className="mb-14 flex flex-col gap-y-6 empty:hidden"
+            >
+              <ThreadPrimitive.Messages>
+                {({ message }) => {
+                  if (message.composer.isEditing) return <EditComposer />;
+                  if (message.role === "user") return <UserMessage />;
+                  return <AssistantMessage />;
+                }}
+              </ThreadPrimitive.Messages>
             </motion.div>
-          )}
-        </AnimatePresence>
+            <ThreadPrimitive.ViewportFooter
+              className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-2 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
+            >
+              <ThreadScrollToBottom />
+              <GoalsPanel />
+              <QuestionPanel />
+              {/* On send the bar glides center → bottom; on navigation it is
+                  simply there (mount-only initial, never traps the UI). */}
+              <motion.div
+                initial={justSent ? { y: -140, opacity: 0.7 } : false}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 260, damping: 30 }}
+              >
+                <Composer />
+              </motion.div>
+            </ThreadPrimitive.ViewportFooter>
+          </div>
+        )}
       </ThreadPrimitive.Viewport>
 
       <SelectionToolbar />
@@ -470,7 +488,7 @@ const ThreadWelcome: FC = () => {
     <div className="aui-thread-welcome-root mx-auto mb-6 flex w-full max-w-(--thread-max-width) flex-col items-center px-4 text-center">
       <h1
         suppressHydrationWarning
-        className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200"
+        className="aui-thread-welcome-message-inner text-foreground text-2xl font-semibold"
       >
         {welcome}
       </h1>
@@ -727,12 +745,12 @@ const Composer: FC = () => {
             data-slot="aui_composer-shell"
             className={cn(
               "flex w-full flex-col gap-2 rounded-(--composer-radius) p-(--composer-padding) transition-[border-color,box-shadow] data-[dragging=true]:border-dashed",
-              "rainbow-border bg-(--composer-bg) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] dark:shadow-none",
+              "rainbow-border bg-(--composer-bg) text-foreground shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] dark:shadow-none",
               isRunning && "rainbow-border-active",
               "data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))]",
             )}
           >
-            <motion.div layout transition={{ duration: 0.15 }}>
+            <div>
               <ComposerQuotePreview />
               <ComposerAttachments />
               <div className="relative">
@@ -764,10 +782,10 @@ const Composer: FC = () => {
                   </div>
                 )}
               </div>
-            </motion.div>
-            <motion.div layout transition={{ duration: 0.15 }}>
+            </div>
+            <div>
               <ComposerAction />
-            </motion.div>
+            </div>
           </div>
         </ComposerPrimitive.AttachmentDropzone>
 
@@ -969,7 +987,7 @@ const AssistantMessage: FC = () => {
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
       data-role="assistant"
-      className="fade-in slide-in-from-bottom-1 animate-in relative mx-auto w-full max-w-(--thread-max-width) duration-150"
+      className="relative mx-auto w-full max-w-(--thread-max-width)"
     >
       <div
         data-slot="aui_assistant-message-content"
@@ -1109,15 +1127,15 @@ const AssistantActionBar: FC = () => {
     <ActionBarPrimitive.Root
       hideWhenRunning
       autohide="not-last"
-      className="aui-assistant-action-bar-root text-muted-foreground animate-in fade-in col-start-3 row-start-2 -ml-1 flex gap-1 duration-200"
+      className="aui-assistant-action-bar-root text-muted-foreground col-start-3 row-start-2 -ml-1 flex gap-1"
     >
       <ActionBarPrimitive.Copy asChild>
         <TooltipIconButton tooltip="Copy" className="!size-6">
           <AuiIf condition={(s) => s.message.isCopied}>
-            <CheckIcon className="size-3.5 animate-in zoom-in-50 fade-in duration-200 ease-out" />
+            <CheckIcon className="size-3.5" />
           </AuiIf>
           <AuiIf condition={(s) => !s.message.isCopied}>
-            <CopyIcon className="size-3.5 animate-in zoom-in-75 fade-in duration-150" />
+            <CopyIcon className="size-3.5" />
           </AuiIf>
         </TooltipIconButton>
       </ActionBarPrimitive.Copy>
@@ -1159,7 +1177,7 @@ const UserMessage: FC = () => {
     <MessagePrimitive.Root
       data-slot="aui_user-message-root"
       data-role="user"
-      className="fade-in slide-in-from-bottom-1 animate-in mx-auto grid w-full max-w-(--thread-max-width) auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 duration-150 [&:where(>*)]:col-start-2"
+      className="mx-auto grid w-full max-w-(--thread-max-width) auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 [&:where(>*)]:col-start-2"
     >
       <UserMessageAttachments />
 
@@ -1338,7 +1356,7 @@ const DebugSend: FC = () => {
 
 export const Base: FC = () => {
   return (
-    <div className="bg-muted relative flex h-full w-full pl-2">
+    <div className="bg-muted text-foreground relative flex h-full w-full pl-2">
       <ChatErrorTopPopup />
       <ChatErrorWatcher />
       <BrowserAutoOpener />

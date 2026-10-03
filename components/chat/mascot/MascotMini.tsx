@@ -223,7 +223,7 @@ function MascotModel({
     [bodyGeom, eyeGeom, glintGeom],
   );
 
-  const cur = useRef<Pose>({ ...IDLE_POSE, y: reduceMotion ? 0 : 2.4 });
+  const cur = useRef<Pose>({ ...IDLE_POSE });
   const oneshot = useRef<{ kind: MascotOneshotKind; start: number } | null>(null);
   const prevKind = useRef<MascotOneshotKind | null>(null);
   // Re-rolled every fall: sideways drift + lean direction.
@@ -231,11 +231,6 @@ function MascotModel({
   // Hop-to-turn state: rising edge past FULL_BODY_R triggers one hop.
   const wasBeyond = useRef(false);
   const hopT = useRef(1e9);
-  // Entrance drop: wall-clock 3s from the FIRST RENDERED FRAME (not mount,
-  // not render-clock) — immune to slow canvas init and clock stalls. Fires
-  // on its own; only skipped while another gag is literally mid-flight.
-  const bornAt = useRef<number | null>(null);
-  const dropSettled = useRef(false);
   const nextBlinkAt = useRef(1.5);
   // Idle saccades: occasional glance darts when the cursor is far/idle.
   const saccade = useRef({ x: 0, y: 0, until: 0, next: 3 });
@@ -263,23 +258,6 @@ function MascotModel({
     const dt = Math.min(0.05, rawDt || 0.016);
     const t = state.clock.elapsedTime;
     const now = performance.now() / 1000;
-
-    // Entrance: 0.5s of wall time after the first rendered frame, the mascot
-    // drops from the sky. Waits out only a currently-playing gag — a
-    // finished earlier gag (e.g. an early hover giggle) must NOT cancel it,
-    // or casual mouse movement would silently eat the entrance.
-    if (!reduceMotion && !dropSettled.current) {
-      if (bornAt.current === null) bornAt.current = now;
-      if (now - bornAt.current >= 0.5) {
-        if (!oneshot.current) {
-          dropSettled.current = true;
-          oneshot.current = { kind: "drop", start: now };
-          try {
-            console.debug("[mascot] entrance drop fired");
-          } catch {}
-        }
-      }
-    }
 
     // ---- base (idle breathing) ----
     const breathY = reduceMotion ? 0 : Math.sin(t * 2.1) * 0.022;
@@ -396,13 +374,8 @@ function MascotModel({
     // During nod/done/listening the gaze locks to the viewer.
     const lookLock =
       listening || (active && (active.kind === "nod" || active.kind === "done"));
-    // Pre-entrance: park off-screen above until the drop fires, so the
-    // mascot arrives BY falling instead of sitting around first. Ends the
-    // moment anything plays (drop — or an early jump, which swoops it in).
-    const preDrop =
-      !reduceMotion && !dropSettled.current && !oneshot.current && prevKind.current === null;
     const tgt: Pose = {
-      y: (preDrop ? 2.4 : breathY + modeBob + excBob + listenBob + hopY) + (os.y ?? 0),
+      y: breathY + modeBob + excBob + listenBob + hopY + (os.y ?? 0),
       x: os.x ?? 0,
       rx: cursorRx * pursuit + listenRx + modeRx + (os.rx ?? 0),
       ry: cursorRy * pursuit + (os.ry ?? 0),
@@ -656,6 +629,19 @@ export function MascotMini({ size = 24 }: { size?: number }) {
       setWebgl(false);
     }
   }, []);
+
+  // Readiness signal for the home-chat connect strip: fires once the mascot
+  // module has loaded and mounted (3D canvas up, or static logo fallback —
+  // no intro animation, the mascot is simply visible from the first frame).
+  // Thread also sets a window flag so late listeners see it synchronously.
+  useEffect(() => {
+    if (!mounted) return;
+    if (!webgl && !fallbackReady) return;
+    try {
+      (window as any).__qubeMascotReady = true;
+      window.dispatchEvent(new Event("qube-mascot-ready"));
+    } catch {}
+  }, [mounted, webgl, fallbackReady]);
 
   // Global cursor → mascot-centric pursuit vector.
   // x: right+, y: up+, d: closeness 1 = on top of the mascot.

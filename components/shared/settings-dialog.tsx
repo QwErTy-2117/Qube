@@ -1946,7 +1946,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               {/* Allowed directories */}
               <AllowedDirectoriesSection onDialogOpenChange={setAllowedDirsDialogOpen} />
 
-              <div>
+              {/* ChatGPT */}
+              <div className="space-y-1.5 pt-4">
+                <label className="text-sm font-semibold text-foreground">ChatGPT</label>
+                <p className="text-xs text-muted-foreground">Connect your ChatGPT subscription to power Qube.</p>
                 <ChatGPTPreferencesCard />
               </div>
 

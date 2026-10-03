@@ -202,7 +202,7 @@ export function AllowedDirectoriesSection({ onDialogOpenChange }: { onDialogOpen
 
   return (
     <div className="space-y-2">
-      <div className="flex items-start justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div className="space-y-1">
           <label className="text-sm font-semibold text-foreground">Allowed directories</label>
           <p className="text-xs text-muted-foreground">

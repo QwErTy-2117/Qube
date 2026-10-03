@@ -5,6 +5,9 @@ import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "radix-ui";
 import { cn } from "@/lib/utils";
+import { EchoRing } from "@/components/assistant-ui/echo-ring";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Clock,
   Plus,
@@ -84,6 +87,90 @@ function formatDate(ts: number | null): string {
   const isToday = d.toDateString() === now.toDateString();
   if (isToday) return `Today at ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   return d.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function cleanLogOutput(output: string): string {
+  return (output || "").replace(/^\s*\[pi tools=\d+\]\s*/i, "").trim();
+}
+
+function stripMarkdownInline(s: string): string {
+  let out = s;
+  // links [text](url) → text
+  out = out.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  // bold/italic/strike/code
+  out = out.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  out = out.replace(/(\*|_|~~|`)(.*?)\1/g, "$2");
+  out = out.replace(/`([^`]+)`/g, "$1");
+  // headings, quotes, list markers, hr
+  out = out.replace(/^#{1,6}\s+/g, "");
+  out = out.replace(/^>\s?/g, "");
+  out = out.replace(/^[-*+]\s+/g, "");
+  out = out.replace(/^\d+[.)]\s+/g, "");
+  out = out.replace(/^[-*_]{3,}\s*$/g, "");
+  return out.replace(/\s+/g, " ").trim();
+}
+
+function logOneLiner(output: string): string {
+  const cleaned = cleanLogOutput(output);
+  const line =
+    cleaned
+      .split("\n")
+      .map((s) => stripMarkdownInline(s.trim()))
+      .find((s) => s.length > 0 && !/^HEARTBEAT_OK$/i.test(s)) || "";
+  if (!line) return "No output";
+  return line.length > 140 ? `${line.slice(0, 140)}…` : line;
+}
+
+function LogMarkdown({ text }: { text: string }) {
+  const clean = cleanLogOutput(text)
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<script\b[^>]*\/>/gi, "");
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ className, ...props }: any) => (
+          <p className={cn("mb-3 leading-relaxed last:mb-0", className)} {...props} />
+        ),
+        strong: ({ className, ...props }: any) => (
+          <strong className={cn("font-semibold text-foreground", className)} {...props} />
+        ),
+        em: ({ className, ...props }: any) => (
+          <em className={cn("italic", className)} {...props} />
+        ),
+        ul: ({ className, ...props }: any) => (
+          <ul className={cn("mb-3 list-disc space-y-1 pl-5 last:mb-0", className)} {...props} />
+        ),
+        ol: ({ className, ...props }: any) => (
+          <ol className={cn("mb-3 list-decimal space-y-1 pl-5 last:mb-0", className)} {...props} />
+        ),
+        li: ({ className, ...props }: any) => (
+          <li className={cn("leading-relaxed", className)} {...props} />
+        ),
+        code: ({ className, children, ...props }: any) => {
+          const str = String(children ?? "");
+          const isBlock = str.includes("\n");
+          if (isBlock) {
+            return (
+              <pre className="mb-3 overflow-x-auto rounded-lg bg-background/60 p-3 font-mono text-xs last:mb-0">
+                <code {...props}>{children}</code>
+              </pre>
+            );
+          }
+          return (
+            <code className={cn("rounded bg-background/60 px-1 py-0.5 font-mono text-xs", className)} {...props}>
+              {children}
+            </code>
+          );
+        },
+        a: ({ className, ...props }: any) => (
+          <a className={cn("text-primary underline underline-offset-2", className)} {...props} />
+        ),
+      }}
+    >
+      {clean}
+    </ReactMarkdown>
+  );
 }
 
 function SwitchToggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (v: boolean) => void }) {
@@ -765,6 +852,7 @@ export function SchedulingTab() {
   const [creating, setCreating] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -895,7 +983,7 @@ export function SchedulingTab() {
             </Button>
           </div>
 
-          {/* Log Dialog */}
+          {/* Log Dialog — skill-catalog style cards, one-line summaries */}
           <Dialog open={showLog} onOpenChange={setShowLog}>
             <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col rounded-3xl">
               <DialogHeader>
@@ -912,31 +1000,83 @@ export function SchedulingTab() {
                     <p className="text-sm text-muted-foreground/60">No executions yet</p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-border/50">
+                  <div className="space-y-2 py-1">
                     {log.map((entry, i) => (
-                      <div key={i} className="flex items-start gap-3 py-3">
-                        <div className={cn(
-                          "size-2.5 rounded-full mt-1.5 shrink-0",
-                          entry.status === "success" ? "bg-emerald-500" : "bg-red-500"
-                        )} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold">{entry.name}</span>
-                            <span className="text-xs text-muted-foreground/60">
-                              {formatDate(entry.timestamp)}
-                            </span>
-                            <span className="text-xs text-muted-foreground/60">
-                              {(entry.duration / 1000).toFixed(1)}s
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1 leading-relaxed whitespace-pre-wrap">
-                            {entry.output}
-                          </p>
-                        </div>
-                      </div>
+                      <button
+                        key={`${entry.taskId}-${entry.timestamp}-${i}`}
+                        type="button"
+                        onClick={() => setSelectedLog(entry)}
+                        className="flex w-full items-center gap-3 rounded-xl border border-border bg-muted/10 p-3 text-left transition-colors hover:bg-muted/20 cursor-pointer"
+                      >
+                        <span className="flex shrink-0 items-center">
+                          <EchoRing tone={entry.status === "success" ? "done" : "error"} size={16} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-foreground">
+                            {entry.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            {logOneLiner(entry.output)}
+                          </span>
+                        </span>
+                      </button>
                     ))}
                   </div>
                 )}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Log detail popup — subagent-style */}
+          <Dialog open={selectedLog !== null} onOpenChange={(v) => { if (!v) setSelectedLog(null); }}>
+            <DialogContent className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-0 overflow-hidden rounded-3xl border border-border bg-background p-0 shadow-2xl sm:max-w-2xl">
+              <div className="flex items-center justify-between gap-3 border-b border-border/40 bg-background px-5 py-3">
+                <DialogTitle className="flex min-w-0 items-center gap-3 text-sm font-semibold">
+                  <span className="flex shrink-0 items-center">
+                    <EchoRing tone={selectedLog?.status === "success" ? "done" : "error"} size={18} />
+                  </span>
+                  <span className="flex min-w-0 items-baseline gap-3 truncate">
+                    <span className="shrink-0">{selectedLog?.name}</span>
+                    <span className="truncate font-normal text-muted-foreground">
+                      {selectedLog ? formatDate(selectedLog.timestamp) : ""}
+                    </span>
+                  </span>
+                </DialogTitle>
+              </div>
+
+              <div className="flex-1 space-y-4 overflow-y-auto bg-background px-5 py-4">
+                {selectedLog && (
+                  <>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span
+                        className={cn(
+                          "font-medium",
+                          selectedLog.status === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+                        )}
+                      >
+                        {selectedLog.status === "success" ? "Succeeded" : "Failed"}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span>{(selectedLog.duration / 1000).toFixed(1)}s</span>
+                    </div>
+                    <div className="rounded-xl bg-muted px-4 py-2.5 text-sm leading-relaxed text-foreground">
+                      <LogMarkdown text={selectedLog.output || "No output"} />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="border-t border-border/40 bg-background px-5 py-3">
+                <div className="rounded-2xl bg-muted px-4 py-3 text-center text-sm text-muted-foreground">
+                  Execution details are read-only.{" "}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLog(null)}
+                    className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+                  >
+                    Back to log.
+                  </button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>

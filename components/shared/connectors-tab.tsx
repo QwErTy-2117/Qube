@@ -103,6 +103,34 @@ export function ConnectorsTab({
     void fetchData();
   }, [fetchData]);
 
+  // Background refresh: re-check connected state every 8s while the tab is
+  // mounted, so connects/disconnects made elsewhere (OAuth tab, another
+  // device, heartbeat) appear without switching tabs and back. Fully silent
+  // (no spinners): only non-empty results overwrite, in-flight fetches never
+  // overlap, and hidden tabs don't poll.
+  const pollBusyRef = useRef(false);
+  useEffect(() => {
+    const tick = async () => {
+      if (document.hidden || pollBusyRef.current) return;
+      pollBusyRef.current = true;
+      try {
+        const list = await fetchConnectorsList({ fresh: true });
+        if (list.length > 0) {
+          setConnectors(list);
+          setCachedConnectors(list);
+          setDetailConnector((prev) =>
+            prev ? (list.find((c) => c.id === prev.id) ?? prev) : prev,
+          );
+        }
+      } catch {}
+      finally {
+        pollBusyRef.current = false;
+      }
+    };
+    const id = setInterval(() => void tick(), 8000);
+    return () => clearInterval(id);
+  }, []);
+
   // Keep the consume callback in a ref so the deep-link effect below doesn't
   // re-fire when the parent re-renders with a new inline arrow function.
   const consumeRef = useRef(onFocusedConsumed);

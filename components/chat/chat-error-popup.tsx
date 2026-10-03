@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { XIcon } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useChatCenter } from "@/components/updater/use-chat-center";
 
 type ChatError = {
   title: string;
@@ -122,43 +124,68 @@ export function ChatErrorTopPopup() {
   })();
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex justify-center px-4 pt-4">
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            key={error.title + error.message}
-            initial={{ y: -24, opacity: 0, scale: 0.98 }}
-            animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: -24, opacity: 0, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
-            className="pointer-events-auto w-full max-w-[480px]"
-          >
-            <div className="relative rounded-[26px] border border-red-800 bg-red-600 shadow-xl shadow-red-900/30 overflow-hidden">
-              <button
-                type="button"
-                onClick={dismiss}
-                aria-label="Dismiss error"
-                className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full bg-white/10 text-white/80 transition-opacity hover:bg-white/20 hover:text-white hover:opacity-100"
-              >
-                <XIcon className="size-4" />
-              </button>
-              <div className="px-4 pt-4 pb-3 pr-12">
-                <h4 className="text-[14px] font-semibold tracking-tight text-white leading-none">
-                  {error.title || "An error occurred"}
-                </h4>
-                <p className="text-[12.5px] text-white/85 leading-relaxed mt-1.5 whitespace-pre-wrap break-words max-h-[30vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                  {dedupedBody}
-                </p>
-                {error.status ? (
-                  <p className="text-[11px] text-white/60 mt-1.5">Status: {error.status}</p>
-                ) : null}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <ErrorPopupPortal error={error} body={dedupedBody} onDismiss={dismiss} />
   );
+}
+
+function ErrorPopupPortal({
+  error,
+  body,
+  onDismiss,
+}: {
+  error: ChatError | null;
+  body: string;
+  onDismiss: () => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  // Centered on the chat column like the update toast — not the whole
+  // window (the browser panel would otherwise pull it off-center).
+  const centerX = useChatCenter(mounted && !!error);
+
+  if (!mounted || typeof document === "undefined") return null;
+
+  const node = (
+    <AnimatePresence>
+      {error && (
+        <motion.div
+          key={error.title + error.message}
+          initial={{ y: -24, opacity: 0, scale: 0.98 }}
+          animate={{ y: 0, opacity: 1, scale: 1 }}
+          exit={{ y: -24, opacity: 0, scale: 0.98 }}
+          transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
+          className="fixed top-4 z-[100] w-[480px] max-w-[calc(100vw-2rem)] -translate-x-1/2"
+          style={{ left: centerX ?? "50%" }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="relative overflow-hidden rounded-[26px] border border-red-200 bg-red-50 shadow-xl shadow-red-200/50 dark:border-red-800 dark:bg-red-600 dark:shadow-red-900/30">
+            <button
+              type="button"
+              onClick={onDismiss}
+              aria-label="Dismiss error"
+              className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full bg-red-900/5 text-red-700 transition-opacity hover:bg-red-900/10 hover:text-red-900 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/20 dark:hover:text-white"
+            >
+              <XIcon className="size-4" />
+            </button>
+            <div className="px-4 pt-4 pb-3 pr-12">
+              <h4 className="text-[14px] font-semibold tracking-tight text-red-900 leading-none dark:text-white">
+                {error.title || "An error occurred"}
+              </h4>
+              <p className="text-[12.5px] text-red-800/80 leading-relaxed mt-1.5 whitespace-pre-wrap break-words max-h-[30vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden dark:text-white/85">
+                {body}
+              </p>
+              {error.status ? (
+                <p className="text-[11px] text-red-700/60 mt-1.5 dark:text-white/60">Status: {error.status}</p>
+              ) : null}
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
+  return createPortal(node, document.body);
 }
 
 // Helper to parse the ChatGPT 429 error from the stream's errorText

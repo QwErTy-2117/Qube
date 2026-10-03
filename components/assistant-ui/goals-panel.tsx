@@ -31,56 +31,98 @@ function extractTodos(messages: any[]): { todos: Todo[]; running: boolean } | nu
   return { todos: last, running };
 }
 
+function GoalNumber({
+  index,
+  status,
+}: {
+  index: number;
+  status: Todo["status"];
+}) {
+  if (status === "completed") {
+    // Full: solid blue circle with white check (was a number + spinner).
+    return (
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#2f7cf6] text-white">
+        <CheckIcon className="size-4" strokeWidth={3} />
+      </span>
+    );
+  }
+  if (status === "in_progress") {
+    // Number with a spinning wheel: blue number + thin rotating arc over a
+    // faint track. The whole ring spins while the item is active.
+    return (
+      <span className="relative flex size-7 shrink-0 items-center justify-center">
+        <span className="flex size-7 items-center justify-center rounded-full text-[15px] font-medium text-[#2f7cf6]">
+          {index + 1}
+        </span>
+        <svg
+          className="absolute inset-0 size-7 origin-center animate-spin [animation-duration:0.9s]"
+          style={{ transformOrigin: "center" }}
+          viewBox="0 0 28 28"
+          fill="none"
+          aria-hidden
+        >
+          <circle
+            cx="14"
+            cy="14"
+            r="12"
+            stroke="#2f7cf6"
+            strokeOpacity="0.15"
+            strokeWidth="2"
+          />
+          <circle
+            cx="14"
+            cy="14"
+            r="12"
+            stroke="#2f7cf6"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray="14 62"
+            strokeDashoffset="0"
+          />
+        </svg>
+      </span>
+    );
+  }
+  // Pending: gray number in a soft circle.
+  return (
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[15px] font-medium text-muted-foreground">
+      {index + 1}
+    </span>
+  );
+}
+
 /**
  * GoalsPanel — docked TodoWrite checklist above the composer.
- * Matches screenshots: "1 of 8 todos completed" + current task,
- * expandable numbered list, clears when all done (cc-style).
+ * Cowork-style "Progress" card: numbered circles, the active number carries
+ * a spinning wheel that becomes a full blue check when done.
  */
 export const GoalsPanel: FC = () => {
   const messages = useAuiState((s) => s.thread.messages);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   const data = extractTodos(messages as any[]);
   if (!data || data.todos.length === 0) return null;
 
-  const { todos, running } = data;
+  const { todos } = data;
   const done = todos.filter((t) => t.status === "completed").length;
   // cc "all done → clear the panel"
   if (done === todos.length && todos.length > 0) return null;
-
-  const currentIdx = todos.findIndex((t) => t.status === "in_progress");
-  const current = currentIdx >= 0 ? todos[currentIdx] : null;
 
   return (
     <div
       data-slot="aui_goals-panel"
       className="w-full overflow-hidden rounded-2xl border border-border bg-background shadow-lg"
     >
-      {/* Header — count + current task (collapsed) or count only (expanded) */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center justify-between gap-3 bg-background px-4 py-2.5 text-left transition-colors hover:bg-muted"
       >
-        <span className="flex min-w-0 flex-1 items-baseline gap-2 truncate text-sm">
-          <span className="shrink-0 text-muted-foreground">
-            {done} of {todos.length} todos completed
-          </span>
-          {!expanded && current && (
-            <span className="truncate text-muted-foreground/80">
-              {currentIdx + 1}. {current.content}
-            </span>
-          )}
-          {expanded && current && (
-            <span className="truncate text-muted-foreground/80">
-              {currentIdx + 1}. {current.content}
-            </span>
-          )}
-        </span>
+        <span className="text-sm font-medium text-foreground">Progress</span>
         <ChevronDownIcon
           className={cn(
             "size-4 shrink-0 text-muted-foreground/70 transition-transform duration-200",
-            expanded && "rotate-180"
+            !expanded && "rotate-180"
           )}
         />
       </button>
@@ -92,41 +134,26 @@ export const GoalsPanel: FC = () => {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="border-t border-border/40 bg-background px-4 py-2.5"
+            className="border-t border-border/40 bg-background px-4 py-3"
           >
-            <ol className="space-y-1.5">
+            <ol className="space-y-3">
               {todos.map((todo, i) => {
                 const completed = todo.status === "completed";
                 const active = todo.status === "in_progress";
                 return (
-                  <li key={i} className="flex items-start gap-2.5 text-sm">
-                    <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
-                      {completed ? (
-                        <span className="flex size-4 items-center justify-center rounded-full border border-border/60 text-muted-foreground">
-                          <CheckIcon className="size-3" />
-                        </span>
-                      ) : active ? (
-                        <span
-                          className={cn(
-                            "size-1.5 rounded-full bg-foreground/70",
-                            running && "animate-pulse"
-                          )}
-                        />
-                      ) : (
-                        <span className="size-1.5 rounded-full bg-transparent" />
-                      )}
-                    </span>
+                  <li key={i} className="flex items-center gap-3.5">
+                    <GoalNumber index={i} status={todo.status} />
                     <span
                       className={cn(
-                        "leading-snug",
+                        "text-[17px] leading-snug",
                         completed
-                          ? "text-muted-foreground/60 line-through"
+                          ? "text-muted-foreground line-through"
                           : active
-                            ? "text-foreground"
+                            ? "font-normal text-foreground"
                             : "text-muted-foreground"
                       )}
                     >
-                      {i + 1}. {todo.content}
+                      {todo.content}
                     </span>
                   </li>
                 );

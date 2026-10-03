@@ -159,24 +159,24 @@ function ErrorPopupPortal({
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="relative overflow-hidden rounded-[26px] border border-red-200 bg-red-50 shadow-xl shadow-red-200/50 dark:border-red-800 dark:bg-red-600 dark:shadow-red-900/30">
+          <div className="relative overflow-hidden rounded-[26px] border border-red-600 bg-red-600 shadow-xl shadow-red-900/30">
             <button
               type="button"
               onClick={onDismiss}
               aria-label="Dismiss error"
-              className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full bg-red-900/5 text-red-700 transition-opacity hover:bg-red-900/10 hover:text-red-900 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/20 dark:hover:text-white"
+              className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full bg-white/10 text-white/80 transition-opacity hover:bg-white/20 hover:text-white"
             >
               <XIcon className="size-4" />
             </button>
             <div className="px-4 pt-4 pb-3 pr-12">
-              <h4 className="text-[14px] font-semibold tracking-tight text-red-900 leading-none dark:text-white">
+              <h4 className="text-[14px] font-semibold tracking-tight text-white leading-none">
                 {error.title || "An error occurred"}
               </h4>
-              <p className="text-[12.5px] text-red-800/80 leading-relaxed mt-1.5 whitespace-pre-wrap break-words max-h-[30vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden dark:text-white/85">
+              <p className="text-[12.5px] text-white/85 leading-relaxed mt-1.5 whitespace-pre-wrap break-words max-h-[30vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {body}
               </p>
               {error.status ? (
-                <p className="text-[11px] text-red-700/60 mt-1.5 dark:text-white/60">Status: {error.status}</p>
+                <p className="text-[11px] text-white/60 mt-1.5">Status: {error.status}</p>
               ) : null}
             </div>
           </div>

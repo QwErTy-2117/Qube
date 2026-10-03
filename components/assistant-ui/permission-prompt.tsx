@@ -95,22 +95,30 @@ export function PermissionBar({
   const subtitle =
     pending.description || "Access files outside the project directory";
 
-  // Short audit preview of the blocked call (Muse shows what it planned).
-  const argsPreview = (() => {
+  // Plain path lines (no badges, no JSON blob): the requested path and the
+  // "Allow always" scope it maps to, plus any other scalar args.
+  const extraArgLines = (() => {
     try {
-      const a = { ...(pending.args || {}) } as Record<string, any>;
-      if (typeof a.content === "string" && a.content.length > 400) a.content = `${a.content.slice(0, 400)}…`;
-      if (typeof a.newString === "string" && a.newString.length > 200) a.newString = `${a.newString.slice(0, 200)}…`;
-      const s = JSON.stringify(a);
-      if (s === "{}") return "";
-      return s.slice(0, 320);
+      const a = (pending.args || {}) as Record<string, any>;
+      const skip = new Set(["path", "filepath", "cwd", "command", "content", "newString"]);
+      const lines: string[] = [];
+      for (const [k, v] of Object.entries(a)) {
+        if (skip.has(k)) continue;
+        if (v === undefined || v === null) continue;
+        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+          const s = String(v);
+          if (!s.trim()) continue;
+          lines.push(`${k}: ${s.slice(0, 200)}`);
+        }
+      }
+      return lines.slice(0, 3);
     } catch {
-      return "";
+      return [];
     }
   })();
 
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-amber-500/30 bg-popover text-popover-foreground shadow-lg dark:shadow-[0_8px_30px_rgba(0,0,0,0.45)]">
+    <div className="w-full overflow-hidden rounded-xl border border-amber-500/30 bg-background text-foreground shadow-lg dark:border-amber-500/30 dark:bg-[#0e0e0e] dark:text-neutral-100 dark:shadow-[0_8px_30px_rgba(0,0,0,0.45)]">
       <div className="px-4 pt-3.5 pb-3">
         <div className="flex items-center gap-2">
           <span className="flex size-5 items-center justify-center text-amber-500">
@@ -130,38 +138,43 @@ export function PermissionBar({
               <path d="M12 17h.01" />
             </svg>
           </span>
-          <p className="text-[15px] font-semibold tracking-tight text-foreground">
+          <p className="text-[15px] font-semibold tracking-tight text-foreground dark:text-white">
             {title}
           </p>
-          <span className="ml-auto rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-            {pending.toolName}
-          </span>
         </div>
-        <p className="mt-2.5 text-sm leading-6 text-foreground/90">{subtitle}</p>
-        <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+        <p className="mt-2.5 text-sm leading-6 text-foreground/90 dark:text-neutral-300">{subtitle}</p>
+        <p className="mt-1 text-[12px] leading-5 text-muted-foreground dark:text-neutral-400">
           Qube paused before doing this — nothing was sent, deleted, or changed yet. Review below, then allow once or deny.
         </p>
-        {scopePattern && (
-          <p className="mt-1 truncate font-mono text-[13px] leading-6 text-muted-foreground/80">
-            {scopePattern}
+        {rawPath && (
+          <p className="mt-1.5 truncate font-mono text-[13px] leading-6 text-muted-foreground dark:text-neutral-500">
+            Path: {rawPath.slice(0, 300)}
+          </p>
+        )}
+        {scopePattern && scopePattern !== `${rawPath}/*` && (
+          <p className="mt-0.5 truncate font-mono text-[13px] leading-6 text-muted-foreground dark:text-neutral-500">
+            Scope: {scopePattern}
           </p>
         )}
         {commandArg && (
-          <p className="mt-1 truncate font-mono text-[12px] leading-5 text-muted-foreground/70">
+          <p className="mt-0.5 truncate font-mono text-[12px] leading-5 text-muted-foreground dark:text-neutral-500">
             $ {commandArg.slice(0, 300)}
           </p>
         )}
-        {argsPreview && !commandArg && (
-          <p className="mt-1 truncate font-mono text-[12px] leading-5 text-muted-foreground/70">
-            {argsPreview}
+        {extraArgLines.map((line) => (
+          <p
+            key={line.slice(0, 40)}
+            className="mt-0.5 truncate font-mono text-[12px] leading-5 text-muted-foreground dark:text-neutral-500"
+          >
+            {line}
           </p>
-        )}
+        ))}
       </div>
-      <div className="flex items-center justify-end gap-2 border-t border-border bg-muted/40 px-3 py-2">
+      <div className="flex items-center justify-end gap-2 border-t border-border bg-muted/40 px-3 py-2 dark:border-neutral-800/80 dark:bg-[#131313]">
         <button
           type="button"
           onClick={() => onRespond(false)}
-          className="h-8 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          className="h-8 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground dark:text-neutral-300 dark:hover:bg-white/5 dark:hover:text-white"
         >
           Deny
         </button>
@@ -170,7 +183,7 @@ export function PermissionBar({
             type="button"
             onClick={() => onRespond(true, true)}
             title="Always allow this directory (saved in Preferences → Allowed directories)"
-            className="h-8 rounded-lg border border-input bg-background px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="h-8 rounded-lg border border-input bg-background px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800 dark:hover:text-white"
           >
             Allow always
           </button>
@@ -178,7 +191,7 @@ export function PermissionBar({
         <button
           type="button"
           onClick={() => onRespond(true)}
-          className="h-8 rounded-lg bg-primary px-3.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+          className="h-8 rounded-lg bg-neutral-900 px-3.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200"
         >
           Allow once
         </button>

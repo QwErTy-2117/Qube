@@ -12,6 +12,8 @@ import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
+import { getConnectorMeta } from "@/components/assistant-ui/tools/connector-tool-ui";
+import { renderConnectorIcon } from "@/lib/connectors/icons";
 import { Sources } from "@/components/assistant-ui/sources";
 import {
   ToolGroupContent,
@@ -111,15 +113,11 @@ const baseToolGroupBy = groupPartByType({
 });
 
 const messageGroupBy = (part: any, context: any) => {
+  // subagent stays standalone (own pill + dialog) and intentionally breaks
+  // tool groups. TodoWrite + present_file render null inline, so they JOIN
+  // the surrounding tool group instead of splitting it — otherwise one
+  // invisible part would turn a single Activity group into two.
   if (part.type === "tool-call" && part.toolName === "subagent") return [];
-  if (part.type === "tool-call" && part.toolName === "TodoWrite") return [];
-  // present_file renders nothing inline (its slim pill lives in the
-  // PresentedFiles list at the bottom) — keep it out of tool groups so it
-  // never affects group counts. write_file/edit_file stay grouped
-  // (collapsed): they only render compact status rows, never cards, so
-  // builder scripts stay hidden in the transcript instead of splashing
-  // on top of the reply.
-  if (part.type === "tool-call" && part.toolName === "present_file") return [];
   return baseToolGroupBy(part as any, context as any);
 };
 
@@ -922,6 +920,18 @@ function getToolLabel(part: ToolCallMessagePart): string {
   return friendlyToolLabel(part.toolName, part.args);
 }
 
+const HIDDEN_INLINE_TOOLS = new Set(["TodoWrite", "present_file"]);
+
+function getConnectorIconForTool(toolName: string): ReactNode {
+  try {
+    const meta = getConnectorMeta(toolName);
+    if (!meta) return null;
+    return renderConnectorIcon(meta.id, 14);
+  } catch {
+    return null;
+  }
+}
+
 function ToolGroupWithTitle({
   indices,
   active,
@@ -935,17 +945,27 @@ function ToolGroupWithTitle({
   const parts = indices
     .map((i) => message.content[i])
     .filter((p): p is ToolCallMessagePart => p?.type === "tool-call");
+  const visibleParts = parts.filter((p) => !HIDDEN_INLINE_TOOLS.has(p.toolName));
   const reasoningParts = indices
     .map((i) => message.content[i])
     .filter((p): p is { type: "reasoning"; text: string } => p?.type === "reasoning");
-  const labels = parts.map(getToolLabel);
+  // Hidden inline tools (TodoWrite goals panel, present_file bottom list)
+  // join the group to keep it contiguous but never affect title/count.
+  if (visibleParts.length === 0 && reasoningParts.length === 0) return null;
+  // A single visible tool is never a group — render it directly inline.
+  if (visibleParts.length + reasoningParts.length <= 1) return <>{children}</>;
+  const labels = visibleParts.map(getToolLabel);
   const title = labels[labels.length - 1] || (reasoningParts.length > 0 ? "Thinking" : "Working on it");
+  const lastTool = visibleParts[visibleParts.length - 1];
+  const groupIcon = lastTool ? getConnectorIconForTool(lastTool.toolName) : null;
+  const visibleCount = visibleParts.length + reasoningParts.length;
   return (
     <ToolGroupRoot variant="ghost">
       <ToolGroupTrigger
-        count={indices.length}
+        count={visibleCount > 0 ? visibleCount : indices.length}
         active={active}
         label={title}
+        icon={groupIcon}
       />
       <ToolGroupContent>{children}</ToolGroupContent>
     </ToolGroupRoot>
@@ -1067,21 +1087,9 @@ const AssistantMessage: FC = () => {
                 if (part.toolName === "present_file") {
                   return null;
                 }
-                const isDestructive = DESTRUCTIVE_KEYWORDS.some(kw =>
-                  part.toolName.toLowerCase().includes(kw)
-                );
-                return (
-                  <ToolGroupRoot variant="ghost" defaultOpen={isDestructive}>
-                    <ToolGroupTrigger
-                      count={1}
-                      active={part.status.type === "running"}
-                      label={getToolLabel(part)}
-                    />
-                    <ToolGroupContent>
-                      {part.toolUI ?? <ToolFallback {...part} />}
-                    </ToolGroupContent>
-                  </ToolGroupRoot>
-                );
+                // Single tool call: no group wrapper — render the tool UI
+                // directly inline. Groups are only for 2+ visible tools.
+                return part.toolUI ?? <ToolFallback {...part} />;
               case "source":
                 return <Sources {...(part as any)} />;
               case "indicator":

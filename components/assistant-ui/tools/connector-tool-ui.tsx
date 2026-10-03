@@ -30,12 +30,16 @@ const COLORS: Record<string, string> = {
   asana: "#F06A6A", dropbox: "#0061FF",
 };
 
-function getMeta(toolName: string): { id: string; name: string } | null {
+export function getConnectorMeta(toolName: string): { id: string; name: string } | null {
   const lower = toolName.toLowerCase();
   for (const [prefix, meta] of Object.entries(CONNECTOR_PREFIXES)) {
     if (lower.startsWith(prefix)) return meta;
   }
   return null;
+}
+
+function getMeta(toolName: string): { id: string; name: string } | null {
+  return getConnectorMeta(toolName);
 }
 
 function describeAction(toolName: string, args: any): string {

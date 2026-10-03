@@ -97,11 +97,13 @@ function ToolGroupTrigger({
   active = false,
   className,
   label: customLabel,
+  icon,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   count: number;
   active?: boolean;
   label?: string;
+  icon?: React.ReactNode;
 }) {
   // Default stays non-technical: counts are shown separately via NumberRoll.
   const displayLabel =
@@ -119,10 +121,18 @@ function ToolGroupTrigger({
     >
       <span
         data-slot="tool-group-trigger-label"
-        className="inline-flex items-baseline gap-1.5 font-normal"
+        className="inline-flex items-center gap-1.5 font-normal"
       >
+        {icon && (
+          <span
+            data-slot="tool-group-trigger-icon"
+            className="inline-flex size-4 shrink-0 items-center justify-center [&_svg]:size-4"
+          >
+            {icon}
+          </span>
+        )}
         {count > 1 && <NumberRoll value={count} />}
-        <span className={cn(active && "animate-pulse")}>{displayLabel}</span>
+        <span className={cn("leading-none", active && "animate-pulse")}>{displayLabel}</span>
       </span>
       <ChevronDownIcon
         data-slot="tool-group-trigger-chevron"

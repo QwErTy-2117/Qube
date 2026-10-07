@@ -8,7 +8,7 @@
 import { mcpStore, type McpServerConfig } from "./mcp-store";
 import { getBuiltInMcpServers, BROWSER_MCP_SERVER_ID } from "./browser-mcp";
 import { existsSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { isAbsolute, win32 } from "node:path";
 
 /**
  * Windows spawn fix for MCP stdio servers.
@@ -29,7 +29,10 @@ function quoteForCmd(s: string): string {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function normalizeMcpServerForPlatform(srv: McpServerConfig): McpServerConfig {
+export function normalizeMcpServerForPlatform(srv: McpServerConfig, platform: string = process.platform): McpServerConfig {
+  // `platform` is injectable so the Windows-only branches are unit-testable
+  // on any OS (live callers omit it). NOTE: never pass this function
+  // directly to Array.map — map would feed the element index as `platform`.
   const cmd = (srv.command || "").trim().replace(/^["'](.+)["']$/, "$1");
   const args = Array.isArray(srv.args) ? srv.args : [];
   // Bare `node` (including user-configured servers) → absolute binary.
@@ -39,17 +42,20 @@ function normalizeMcpServerForPlatform(srv: McpServerConfig): McpServerConfig {
         return { ...srv, command: process.execPath, args };
       }
     } catch {}
-    if (process.platform === "win32") {
+    if (platform === "win32") {
       return { ...srv, command: process.execPath || "node.exe", args };
     }
     return { ...srv, command: cmd, args };
   }
-  if (process.platform !== "win32") return { ...srv, command: cmd, args };
+  if (platform !== "win32") return { ...srv, command: cmd, args };
 
   // Windows from here on.
   const lower = cmd.toLowerCase();
   const hasSep = cmd.includes("/") || cmd.includes("\\");
-  const isAbs = isAbsolute(cmd);
+  // Platform-correct absoluteness: node:path's isAbsolute follows the RUNTIME
+  // OS, but under test `platform` may differ — win32.isAbsolute is identical
+  // to isAbsolute on real Windows, so production behavior is unchanged.
+  const isAbs = platform === "win32" ? win32.isAbsolute(cmd) : isAbsolute(cmd);
   const isExe = lower.endsWith(".exe");
   const isScriptWrapper = lower.endsWith(".cmd") || lower.endsWith(".bat") || lower.endsWith(".ps1");
 
@@ -420,7 +426,7 @@ export async function getMcpToolsForServers(
   // Load each server in parallel, each with its own startup timeout.
   // Fresh client per invocation for determinism (no cross-request reuse:
   // reused stdio clients go stale and leak child processes).
-  const normalized = servers.map(normalizeMcpServerForPlatform);
+  const normalized = servers.map((s) => normalizeMcpServerForPlatform(s));
   const results = await Promise.allSettled(
     normalized.map(async (srv) => {
       const transport = new Experimental_StdioMCPTransport({

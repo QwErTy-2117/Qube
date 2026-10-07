@@ -133,6 +133,16 @@ jobs:
           kill "$(cat /tmp/qube-sidecar.pid)" || true
           popd >/dev/null
 
+      - name: Smoke test browser MCP (bundled server boots + lists tools)
+        # Turns the Windows production symptom "browser use MCP fails to
+        # start" into a per-OS gate: boots sidecar-dist/node-bin/node with
+        # sidecar-dist/lib/browser/auto-mcp/server.mjs (the exact artifacts
+        # Tauri ships -- not repo copies) and asserts tools/list returns the
+        # browser tools. Catches missing script, missing `ws`, wrong node
+        # arch, or bad perms in the bundle on the OS where it breaks.
+        shell: bash
+        run: node scripts/smoke-mcp.js sidecar-dist
+
   build:
     needs: test
     permissions:
@@ -153,6 +163,12 @@ jobs:
           # args to '--verbose' and run via workflow_dispatch.
           - os: ubuntu-22.04
             args: '--bundles deb,rpm'
+          # Windows builds all targets (NSIS + MSI): the updater self-selects
+          # the right artifact per install — the running app's baked bundle
+          # type picks `{os}-{arch}-{installer}` first (`-nsis` or `-msi`)
+          # and the install procedure sniffs the downloaded bytes, so both
+          # install bases update in place. Shipping only one kind would push
+          # the other base onto a cross-installer update path.
           - os: windows-latest
             args: ''
           - os: macos-latest

@@ -80,7 +80,21 @@ function candidateBinaries(): string[] {
   const list: string[] = [];
   if (fromEnv) list.push(fromEnv);
   if (platform() === "win32") {
+    // Use env vars — C: is not always the system drive, and Program Files
+    // can be localized/redirected. LOCALAPPDATA covers per-user installs.
+    const programFiles = process.env.PROGRAMFILES || "C:\\Program Files";
+    const programFilesX86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
+    const localAppData = process.env.LOCALAPPDATA || join(home, "AppData", "Local");
     list.push(
+      join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
+      join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
+      join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+      // Edge is Chromium + CDP-compatible — valid fallback when Chrome is absent
+      // (common on fresh Windows production machines).
+      join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+      join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
+      join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe"),
+      // Legacy hardcoded paths kept for machines with unusual env.
       "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
       "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
       join(home, "AppData", "Local", "Google", "Chrome", "Application", "chrome.exe")
@@ -98,17 +112,40 @@ function candidateBinaries(): string[] {
     );
   }
   // Playwright's bundled Chromium (headed-capable full build, not headless_shell).
+  // Cache location is OS-specific: Windows uses %LOCALAPPDATA%/ms-playwright
+  // (NOT ~/.cache), macOS ~/Library/Caches/ms-playwright, Linux ~/.cache.
+  // Also honor PLAYWRIGHT_BROWSERS_PATH when set.
   try {
-    const cache = join(home, ".cache", "ms-playwright");
-    const entries = readdirSync(cache);
-    for (const e of entries) {
-      if (!e.startsWith("chromium-") || e.includes("headless")) continue;
-      if (platform() === "win32") list.push(join(cache, e, "chrome-win", "chrome.exe"));
-      else if (platform() === "darwin") list.push(join(cache, e, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"));
-      else {
-        // Newer Playwright builds use chrome-linux64, older use chrome-linux.
-        list.push(join(cache, e, "chrome-linux", "chrome"));
-        list.push(join(cache, e, "chrome-linux64", "chrome"));
+    const caches: string[] = [];
+    const custom = process.env.PLAYWRIGHT_BROWSERS_PATH;
+    if (custom) caches.push(custom);
+    if (platform() === "win32") {
+      const localAppData = process.env.LOCALAPPDATA || join(home, "AppData", "Local");
+      caches.push(join(localAppData, "ms-playwright"));
+      // Fallback for Git-Bash/MSYS-style homes or manual installs.
+      caches.push(join(home, ".cache", "ms-playwright"));
+    } else if (platform() === "darwin") {
+      caches.push(join(home, "Library", "Caches", "ms-playwright"));
+      caches.push(join(home, ".cache", "ms-playwright"));
+    } else {
+      caches.push(join(home, ".cache", "ms-playwright"));
+    }
+    for (const cache of caches) {
+      let entries: string[] = [];
+      try {
+        entries = readdirSync(cache);
+      } catch {
+        continue;
+      }
+      for (const e of entries) {
+        if (!e.startsWith("chromium-") || e.includes("headless")) continue;
+        if (platform() === "win32") list.push(join(cache, e, "chrome-win", "chrome.exe"));
+        else if (platform() === "darwin") list.push(join(cache, e, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"));
+        else {
+          // Newer Playwright builds use chrome-linux64, older use chrome-linux.
+          list.push(join(cache, e, "chrome-linux", "chrome"));
+          list.push(join(cache, e, "chrome-linux64", "chrome"));
+        }
       }
     }
   } catch {}

@@ -11,9 +11,13 @@ export type UpdateInfo = {
   date?: string;
 };
 
-type CheckResult =
+export type CheckResult =
   | { available: true; info: UpdateInfo }
-  | { available: false };
+  // available:false covers BOTH "checked, genuinely current" and "check
+  // failed" — callers must consult `error` to tell them apart. Showing
+  // "You're up to date" on a failed check is the worst outcome: the user
+  // concludes auto-update is broken with zero diagnostics.
+  | { available: false; error?: string };
 
 /**
  * Whole-percent (0..100) of a bundle download, or null when the total
@@ -54,10 +58,20 @@ async function tauriCheck(): Promise<CheckResult> {
     cachedUpdate = null;
     return { available: false };
   } catch (e) {
-    // Not in Tauri, or plugin not available, or dev build without updater artifacts
-    // console.debug("[updater] tauri check failed", e);
+    // Not in Tauri, or plugin not available, or dev build without updater artifacts.
+    // Log loudly: previously this was silent, so Windows production failures
+    // (network, bad latest.json, signature mismatch, missing artifact)
+    // surfaced as "no update available" with zero diagnostics.
+    // Dev builds without updater artifacts are expected — keep those quiet.
+    const msg = e instanceof Error ? e.message : String(e);
+    try {
+      console.error("[updater] tauri check failed:", msg.slice(0, 500));
+    } catch {}
     cachedUpdate = null;
-    return { available: false };
+    // Surface the failure as data: checkForUpdates() never throws, so
+    // without this every caller reads a failed check as "no update" and
+    // shows "You're up to date" on a broken updater.
+    return { available: false, error: msg.slice(0, 500) };
   }
 }
 
@@ -117,18 +131,42 @@ export async function downloadAndInstall(
   onProgress?: (ev: { event: string; data: any }) => void
 ): Promise<void> {
   if (isTauri() && cachedUpdate) {
-    const { relaunch } = await import("@tauri-apps/plugin-process");
     let downloaded = 0;
     let contentLength: number | undefined;
-    await cachedUpdate.downloadAndInstall((event: any) => {
-      if (onProgress) onProgress(event);
-      // Also track for internal logging
-      if (event.event === "Started") contentLength = event.data.contentLength;
-      if (event.event === "Progress") downloaded += event.data.chunkLength;
-    });
-    // Note: on Windows, app auto-exits during install. On other platforms, we relaunch.
+    try {
+      await cachedUpdate.downloadAndInstall((event: any) => {
+        if (onProgress) onProgress(event);
+        // Also track for internal logging
+        if (event.event === "Started") contentLength = event.data.contentLength;
+        if (event.event === "Progress") downloaded += event.data.chunkLength;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      try {
+        console.error("[updater] downloadAndInstall failed:", msg.slice(0, 500));
+      } catch {}
+      throw e;
+    }
+    // Note: on Windows (NSIS passive), the installer exits the app during
+    // install — relaunch is best-effort only. Previously an unconditional
+    // `await relaunch()` could throw after a successful Windows install
+    // (process already exiting), surfacing as a failed update.
     // Preserve data: installMode=passive only replaces bundle; app_data_dir is untouched.
-    await relaunch();
+    try {
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      try {
+        console.warn("[updater] relaunch after install failed (expected on Windows):", msg.slice(0, 300));
+      } catch {}
+      // On Windows the installer has already taken over — swallow relaunch
+      // errors there, rethrow elsewhere so callers can surface them.
+      const isWindows =
+        typeof navigator !== "undefined" &&
+        /win/i.test((navigator as any).userAgentData?.platform || navigator.platform || "");
+      if (!isWindows) throw e;
+    }
     return;
   }
 

@@ -84,7 +84,9 @@ export function UpdateToast() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   // Centered on the chat column, not the whole window (the browser panel
-  // would otherwise pull the popup off-center).
+  // would otherwise pull the popup off-center) — unless a dialog (e.g.
+  // settings) is open, in which case it centers on the whole screen
+  // (i.e. centered to the dialog).
   const centerX = useChatCenter(mounted && showToast);
 
   if (!mounted) return null;

@@ -1521,6 +1521,12 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       if (res.available) {
         updaterStore.setAvailable(res.info);
         // Only the top toast (UpdateToast) is shown; the centered install dialog was removed.
+      } else if (res.error) {
+        // The check itself failed (network, bad latest.json, signature or
+        // installer mismatch) — show the real error, NOT "up to date".
+        // Previously every failure landed here as available:false and the
+        // user was told "You're up to date" on a broken updater.
+        setUpdateError(res.error);
       } else {
         // Show white "up to date" popup (same shape as update, auto dismiss after 2s)
         updaterStore.setShowUpToDate(true);

@@ -140,7 +140,9 @@ function ErrorPopupPortal({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   // Centered on the chat column like the update toast — not the whole
-  // window (the browser panel would otherwise pull it off-center).
+  // window (the browser panel would otherwise pull it off-center), unless
+  // a dialog (e.g. settings) is open, in which case it centers on the
+  // whole screen (i.e. centered to the dialog).
   const centerX = useChatCenter(mounted && !!error);
 
   if (!mounted || typeof document === "undefined") return null;

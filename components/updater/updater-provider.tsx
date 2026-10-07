@@ -23,8 +23,12 @@ export function UpdaterProvider({ children }: { children: React.ReactNode }) {
       const res = await checkForUpdates();
       if (res.available) {
         setAvailable(res.info);
-      } else {
-        if (!isAuto) {
+      } else if (!isAuto) {
+        if (res.error) {
+          // Manual check that never reached the release feed — surface it
+          // instead of the misleading "up to date" popup.
+          setError(res.error);
+        } else {
           // Manual check with no update -> show white "up to date" popup
           setShowUpToDate(true);
         }

@@ -8,7 +8,7 @@
  */
 import type { McpServerConfig } from "./mcp-store";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export const BROWSER_MCP_SERVER_ID = "qube-browser-use";
 export const BROWSER_MCP_TOOL_PREFIX = "obu_"; // legacy prefix kept for compat
@@ -60,7 +60,43 @@ function resolveCommandAndArgs(): { command: string; args: string[] } {
   // Uses the same tool shapes as `obu mcp` but works automatically via 127.0.0.1:9222.
   // If the user has `obu` installed, they can override via BROWSER_MCP_COMMAND=obu.
   // Use the absolute Node binary so Windows never needs PATH lookup for `node`.
-  return { command: resolveNodeBinary(), args: [join(process.cwd(), "lib/browser/auto-mcp/server.mjs")] };
+  // Resolve the script robustly: in production the Next server runs from a
+  // temp copy (qube-sidecar) with cwd set to the sidecar root, but cwd can
+  // differ (e.g. dev, service launch, Windows short-path). Try cwd first,
+  // then the bundled-node location (../ from node-bin/node.exe), then
+  // fall back to cwd-join so the loud missing-file error below still fires.
+  return { command: resolveNodeBinary(), args: [resolveMcpScriptPath()] };
+}
+
+const MCP_SCRIPT_REL = join("lib", "browser", "auto-mcp", "server.mjs");
+
+export function resolveMcpScriptPath(cwd?: string, execPath?: string): string {
+  // Optional params make the Windows fallback branch unit-testable (the
+  // live process.cwd()/execPath can't be faked); callers omit them.
+  const cwdVal = cwd ?? (() => { try { return process.cwd(); } catch { return ""; } })();
+  const execVal = execPath ?? (() => { try { return process.execPath || ""; } catch { return ""; } })();
+  const candidates: string[] = [];
+  try {
+    if (cwdVal) candidates.push(join(cwdVal, MCP_SCRIPT_REL));
+  } catch {}
+  // Bundled node lives at <sidecar>/node-bin/node(.exe); script at <sidecar>/lib/...
+  try {
+    if (typeof execVal === "string" && execVal.length > 0) {
+      candidates.push(join(dirname(execVal), "..", MCP_SCRIPT_REL));
+      candidates.push(join(dirname(execVal), MCP_SCRIPT_REL));
+    }
+  } catch {}
+  for (const p of candidates) {
+    try {
+      if (p && existsSync(p)) return p;
+    } catch {}
+  }
+  // None exists — return the cwd-based path so callers log the actionable
+  // missing-file error with cwd (see getBuiltInMcpServers below).
+  try {
+    if (cwdVal) return join(cwdVal, MCP_SCRIPT_REL);
+  } catch {}
+  return candidates[0] || MCP_SCRIPT_REL;
 }
 
 export function getBuiltInMcpServers(): McpServerConfig[] {

@@ -189,7 +189,7 @@ export function SchedulingTab() {
       transition={{ duration: 0.2 }}
       className="flex-1 flex flex-col overflow-hidden"
     >
-      <div className="shrink-0 h-[min(480px,calc(90vh-184px))] overflow-y-auto space-y-6 pr-1 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {/* Recurring — top, no circles */}
         <div className="shrink-0">
           <div className="flex items-center gap-2 pb-1 mb-3">
@@ -267,10 +267,9 @@ export function SchedulingTab() {
             </div>
           )}
         </div>
-      </div>
-      {/* Execution Log — pinned bottom footer, fixed height, existing behavior unchanged */}
-      <div className="shrink-0 mt-auto pt-2">
-        <div className="flex items-center justify-between pb-1 mb-3">
+        {/* Execution Log — bottom of flow, always last */}
+        <div className="shrink-0">
+          <div className="flex items-center justify-between pb-1 mb-3">
             <div className="flex items-center gap-2">
               <h3 className="text-base font-semibold tracking-tight">Execution Log</h3>
               {log.length > 0 && (
@@ -388,6 +387,7 @@ export function SchedulingTab() {
             </DialogContent>
           </Dialog>
         </div>
+      </div>
     </motion.div>
   );
 }

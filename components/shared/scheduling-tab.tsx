@@ -271,7 +271,7 @@ export function SchedulingTab() {
         </div>
       </div>
       {/* Execution Log — pinned footer below the task region */}
-      <div className="shrink-0">
+      <div className="shrink-0 pt-4">
         <div className="flex items-center justify-between pb-1 mb-3">
             <div className="flex items-center gap-2">
               <h3 className="text-base font-semibold tracking-tight">Execution Log</h3>

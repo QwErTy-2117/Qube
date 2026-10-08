@@ -189,10 +189,10 @@ export function SchedulingTab() {
       transition={{ duration: 0.2 }}
       className="flex-1 flex flex-col overflow-hidden"
     >
-      <div className="flex-1 flex flex-col overflow-hidden space-y-6 pr-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {/* Recurring — top, no circles */}
         <div className="shrink-0">
-          <div className="flex items-center gap-2 pb-3 border-b border-border/60 mb-4">
+          <div className="flex items-center gap-2 pb-1 mb-3">
             <h3 className="text-base font-semibold tracking-tight">Recurring</h3>
             {recurringTasks.length > 0 && (
               <span className="text-[11px] font-medium text-muted-foreground/60 bg-muted/60 px-1.5 py-0.5 rounded-full">
@@ -224,10 +224,9 @@ export function SchedulingTab() {
             </div>
           )}
         </div>
-        <div className="border-t border-border/60" />
         {/* Once tasks — middle, left status circle indicator-only */}
         <div className="shrink-0">
-          <div className="flex items-center gap-2 pb-3 border-b border-border/60 mb-4">
+          <div className="flex items-center gap-2 pb-1 mb-3">
             <h3 className="text-base font-semibold tracking-tight">Tasks</h3>
             {onceTasks.length > 0 && (
               <span className="text-[11px] font-medium text-muted-foreground/60 bg-muted/60 px-1.5 py-0.5 rounded-full">
@@ -268,10 +267,10 @@ export function SchedulingTab() {
             </div>
           )}
         </div>
-        <div className="border-t border-border/60" />
-        {/* Execution Log — bottom, existing behavior unchanged */}
-        <div className="shrink-0">
-          <div className="flex items-center justify-between pb-3 border-b border-border/60 mb-4">
+      </div>
+      {/* Execution Log — pinned bottom footer, fixed height, existing behavior unchanged */}
+      <div className="shrink-0 pt-2">
+        <div className="flex items-center justify-between pb-1 mb-3">
             <div className="flex items-center gap-2">
               <h3 className="text-base font-semibold tracking-tight">Execution Log</h3>
               {log.length > 0 && (
@@ -389,7 +388,6 @@ export function SchedulingTab() {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
     </motion.div>
   );
 }

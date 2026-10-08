@@ -25,7 +25,7 @@ import {
   MoonIcon,
   MonitorIcon,
   Settings2Icon,
-  Clock,
+  ListChecks,
   SearchIcon,
   EyeIcon,
   RefreshCwIcon,
@@ -1892,8 +1892,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           Connectors
         </TabsTrigger>
         <TabsTrigger value="scheduling">
-          <Clock className="size-4" />
-          Scheduling
+          <ListChecks className="size-4" />
+          Tasks
         </TabsTrigger>
         <TabsTrigger value="advanced">
           <Settings2Icon className="size-4" />

@@ -1,24 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { motion } from "motion/react";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { EchoRing } from "@/components/assistant-ui/echo-ring";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+
 import {
-  Loader2,
-  Check,
-  FileText,
-} from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  Column,
+  gentleSpring,
+  type ColumnData,
+  type ColumnStatus,
+  type DragState,
+} from "@/components/ui/kanban-board";
 
 interface ScheduledTask {
   id: string;
@@ -31,365 +24,218 @@ interface ScheduledTask {
     runAt?: number;
   };
   enabled: boolean;
-  permissions: {
-    runCommands: boolean;
-    destructiveCommands: boolean;
-    externalFiles: boolean;
-    webAccess: boolean;
-  };
   lastRunAt: number | null;
   nextRunAt: number;
 }
 
-interface LogEntry {
-  timestamp: number;
-  taskId: string;
-  name: string;
-  status: "success" | "error";
-  output: string;
-  duration: number;
-}
-
-function formatDate(ts: number | null): string {
-  if (!ts) return "—";
-  const d = new Date(ts);
-  const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  if (isToday) return `Today at ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-  return d.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function cleanLogOutput(output: string): string {
-  return (output || "").replace(/^\s*\[pi tools=\d+\]\s*/i, "").trim();
-}
-
-function stripMarkdownInline(s: string): string {
-  let out = s;
-  // links [text](url) → text
-  out = out.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-  // bold/italic/strike/code
-  out = out.replace(/(\*\*|__)(.*?)\1/g, "$2");
-  out = out.replace(/(\*|_|~~|`)(.*?)\1/g, "$2");
-  out = out.replace(/`([^`]+)`/g, "$1");
-  // headings, quotes, list markers, hr
-  out = out.replace(/^#{1,6}\s+/g, "");
-  out = out.replace(/^>\s?/g, "");
-  out = out.replace(/^[-*+]\s+/g, "");
-  out = out.replace(/^\d+[.)]\s+/g, "");
-  out = out.replace(/^[-*_]{3,}\s*$/g, "");
-  return out.replace(/\s+/g, " ").trim();
-}
-
-function logOneLiner(output: string): string {
-  const cleaned = cleanLogOutput(output);
-  const line =
-    cleaned
-      .split("\n")
-      .map((s) => stripMarkdownInline(s.trim()))
-      .find((s) => s.length > 0 && !/^HEARTBEAT_OK$/i.test(s)) || "";
-  if (!line) return "No output";
-  return line.length > 140 ? `${line.slice(0, 140)}…` : line;
-}
-
-function LogMarkdown({ text }: { text: string }) {
-  const clean = cleanLogOutput(text)
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<script\b[^>]*\/>/gi, "");
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        p: ({ className, ...props }: any) => (
-          <p className={cn("mb-3 leading-relaxed last:mb-0", className)} {...props} />
-        ),
-        strong: ({ className, ...props }: any) => (
-          <strong className={cn("font-semibold text-foreground", className)} {...props} />
-        ),
-        em: ({ className, ...props }: any) => (
-          <em className={cn("italic", className)} {...props} />
-        ),
-        ul: ({ className, ...props }: any) => (
-          <ul className={cn("mb-3 list-disc space-y-1 pl-5 last:mb-0", className)} {...props} />
-        ),
-        ol: ({ className, ...props }: any) => (
-          <ol className={cn("mb-3 list-decimal space-y-1 pl-5 last:mb-0", className)} {...props} />
-        ),
-        li: ({ className, ...props }: any) => (
-          <li className={cn("leading-relaxed", className)} {...props} />
-        ),
-        code: ({ className, children, ...props }: any) => {
-          const str = String(children ?? "");
-          const isBlock = str.includes("\n");
-          if (isBlock) {
-            return (
-              <pre className="mb-3 overflow-x-auto rounded-lg bg-background/60 p-3 font-mono text-xs last:mb-0">
-                <code {...props}>{children}</code>
-              </pre>
-            );
-          }
-          return (
-            <code className={cn("rounded bg-background/60 px-1 py-0.5 font-mono text-xs", className)} {...props}>
-              {children}
-            </code>
-          );
-        },
-        a: ({ className, ...props }: any) => (
-          <a className={cn("text-primary underline underline-offset-2", className)} {...props} />
-        ),
-      }}
-    >
-      {clean}
-    </ReactMarkdown>
-  );
+function isDone(task: ScheduledTask): boolean {
+  return task.schedule.kind === "once" && task.lastRunAt != null;
 }
 
 export function SchedulingTab() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [log, setLog] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showLog, setShowLog] = useState(false);
-  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
+  const [dragState, setDragState] = useState<DragState>(null);
+  // Ids of tasks currently executing (triggered via the board).
+  const [runningIds, setRunningIds] = useState<string[]>([]);
+  const runningRef = useRef<Set<string>>(new Set());
+  // Delete-zone highlight while a dragged card hovers it.
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const deleteTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchTasks = useCallback(async () => {
     try {
-      const [tasksRes, logRes] = await Promise.all([
-        fetch("/api/scheduler/tasks"),
-        fetch("/api/scheduler/log"),
-      ]);
-      const tasksData = await tasksRes.json();
-      const logData = await logRes.json();
-      setTasks(tasksData.tasks || []);
-      setLog(logData.entries || []);
+      const res = await fetch("/api/scheduler/tasks", { cache: "no-store" });
+      const data = await res.json();
+      setTasks(data.tasks || []);
     } catch {}
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    // Placements are state-driven now — drop the old manual-position store.
+    try {
+      localStorage.removeItem("qube-tasks-board");
+    } catch {}
+    (async () => {
+      await fetchTasks();
+      setLoading(false);
+    })();
+  }, [fetchTasks]);
 
-  function isDone(task: ScheduledTask): boolean {
-    return task.schedule.kind === "once" && task.lastRunAt != null;
-  }
+  // Every scheduled task lives on the board — pending interval (recurring)
+  // tasks as well as one-shots. Only ran one-shots count as Done.
+  const boardTasks = useMemo(
+    () => tasks.filter((t) => t.type === "scheduled"),
+    [tasks]
+  );
 
-  const scheduledTasks = tasks.filter((t) => t.type === "scheduled");
-  const recurringTasks = scheduledTasks.filter((t) => t.schedule.kind === "interval");
-  const onceTasks = scheduledTasks.filter((t) => t.schedule.kind === "once");
+  // Columns always match task state: done when ran, in progress while the
+  // execution triggered from the board is running, to do otherwise.
+  const columns: ColumnData[] = useMemo(() => {
+    const buckets: Record<ColumnStatus, ScheduledTask[]> = {
+      todo: [],
+      "in-progress": [],
+      done: [],
+    };
+    for (const task of boardTasks) {
+      if (isDone(task)) {
+        buckets.done.push(task);
+      } else if (runningIds.includes(task.id)) {
+        buckets["in-progress"].push(task);
+      } else {
+        buckets.todo.push(task);
+      }
+    }
+    // Newest completion first, so a just-finished task is always visible
+    // at the top and the oldest is the one that falls off past the cap.
+    buckets.done.sort((a, b) => (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0));
+    return [
+      {
+        id: "todo",
+        title: "To do",
+        status: "todo",
+        cards: buckets.todo.map((t) => ({ id: t.id, title: t.name, done: false })),
+      },
+      {
+        id: "in-progress",
+        title: "In progress",
+        status: "in-progress",
+        cards: buckets["in-progress"].map((t) => ({ id: t.id, title: t.name, done: false })),
+      },
+      {
+        id: "done",
+        title: "Done",
+        status: "done",
+        cards: buckets.done.map((t) => ({ id: t.id, title: t.name, done: true })),
+      },
+    ];
+  }, [boardTasks, runningIds]);
+
+  // Dropping a card into In progress triggers the task for real. Anything
+  // else is a no-op — placement always derives from task state.
+  const triggerTask = useCallback(
+    async (id: string) => {
+      if (runningRef.current.has(id)) return;
+      const task = boardTasks.find((t) => t.id === id);
+      if (!task || isDone(task)) return;
+      runningRef.current.add(id);
+      setRunningIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      try {
+        await fetch("/api/scheduler/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "trigger", id }),
+        });
+      } catch {}
+      runningRef.current.delete(id);
+      setRunningIds((prev) => prev.filter((rid) => rid !== id));
+      fetchTasks();
+    },
+    [boardTasks, fetchTasks]
+  );
+
+  // A Done card that slid out (past the cap of 5) is deleted for good —
+  // removed locally at once, deleted server-side in the background.
+  const handleCardGone = useCallback((cardId: string) => {
+    setTasks((prev) => prev.filter((t) => t.id !== cardId));
+    fetch("/api/scheduler/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", id: cardId }),
+    }).catch(() => {});
+  }, []);
+
+  const handleDrop = useCallback(
+    (cardId: string, fromColumnId: ColumnStatus, toColumnId: ColumnStatus) => {
+      if (fromColumnId === toColumnId) return;
+      // Done is locked: no manual moves into or out of it.
+      if (fromColumnId === "done" || toColumnId === "done") return;
+      if (toColumnId === "in-progress" && fromColumnId === "todo") {
+        triggerTask(cardId);
+      }
+    },
+    [triggerTask]
+  );
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <Loader2 className="size-5 animate-spin text-muted-foreground/40" />
       </div>
     );
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, filter: "blur(4px)" }}
-      animate={{ opacity: 1, filter: "blur(0px)" }}
-      transition={{ duration: 0.2 }}
-      className="flex-1 flex flex-col overflow-hidden"
-    >
-      <div className="flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        <div className="min-h-full flex flex-col space-y-6">
-        {/* Recurring — top, no circles */}
-        <div className="shrink-0">
-          <div className="flex items-center gap-2 pb-1 mb-3">
-            <h3 className="text-base font-semibold tracking-tight">Recurring</h3>
-            {recurringTasks.length > 0 && (
-              <span className="text-[11px] font-medium text-muted-foreground/60 bg-muted/60 px-1.5 py-0.5 rounded-full">
-                {recurringTasks.length}
-              </span>
-            )}
+    <MotionConfig transition={gentleSpring}>
+      <motion.div
+        initial={{ opacity: 0, filter: "blur(4px)" }}
+        animate={{ opacity: 1, filter: "blur(0px)" }}
+        transition={{ duration: 0.2 }}
+        className="flex min-h-[500px] w-full flex-1 items-start justify-center px-6 py-8 antialiased"
+        style={{
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif',
+          WebkitFontSmoothing: "antialiased",
+        }}
+      >
+        <div className="w-full space-y-4">
+          <h3 className="text-base font-semibold tracking-tight">Tasks</h3>
+          <div className="grid grid-cols-3 gap-5">
+            {columns.map((col) => (
+              <Column
+                column={col}
+                dragState={dragState}
+                key={col.id}
+                onCardGone={handleCardGone}
+                onDrop={handleDrop}
+                setDragState={setDragState}
+              />
+            ))}
           </div>
-          {recurringTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-center rounded-xl border border-border/60 bg-muted/10">
-              <p className="text-sm text-muted-foreground/60">No recurring tasks</p>
-            </div>
-          ) : (
-            <div className="space-y-2 pr-1">
-              {recurringTasks.map((task) => (
-                <div key={task.id} className="flex items-start gap-3 px-4 py-3 rounded-xl border border-border/60 bg-muted/10">
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm font-semibold">{task.name}</span>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{task.instructions}</p>
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60 mt-1.5">
-                      <span>
-                        {task.schedule.intervalMinutes === 1440 ? "Every day" : task.schedule.intervalMinutes === 10080 ? "Every week" : task.schedule.intervalMinutes === 43200 ? "Every month" : `Every ${task.schedule.intervalMinutes || 1440} min`}
-                      </span>
-                      <span>Next: {formatDate(task.nextRunAt)}</span>
-                      <span>Last: {formatDate(task.lastRunAt)}</span>
-                    </div>
-                  </div>
+          {/* Delete zone — slides up from the bottom while dragging a card */}
+          <AnimatePresence initial={false}>
+            {dragState && (
+              <motion.div
+                key="delete-zone"
+                initial={{ opacity: 0, height: 0, y: 16 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: 16 }}
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                className="overflow-hidden"
+              >
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (deleteTimeout.current) clearTimeout(deleteTimeout.current);
+                    setDeleteArmed(true);
+                  }}
+                  onDragLeave={() => {
+                    deleteTimeout.current = setTimeout(() => setDeleteArmed(false), 60);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDeleteArmed(false);
+                    const cardId =
+                      dragState?.cardId || e.dataTransfer.getData("text/plain");
+                    if (cardId) handleCardGone(cardId);
+                    setDragState(null);
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-2 rounded-2xl border border-dashed px-4 py-3 text-sm font-medium transition-colors",
+                    deleteArmed
+                      ? "border-red-500 bg-red-500/20 text-red-600 dark:text-red-400"
+                      : "border-red-500/40 bg-red-500/10 text-red-600/80 dark:text-red-400/80"
+                  )}
+                >
+                  <Trash2 className="size-4" />
+                  Drop here to delete
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-        {/* Once tasks — middle, left status circle indicator-only */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex items-center gap-2 pb-1 mb-3 shrink-0">
-            <h3 className="text-base font-semibold tracking-tight">Tasks</h3>
-            {onceTasks.length > 0 && (
-              <span className="text-[11px] font-medium text-muted-foreground/60 bg-muted/60 px-1.5 py-0.5 rounded-full">
-                {onceTasks.length}
-              </span>
+              </motion.div>
             )}
-          </div>
-          {onceTasks.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center min-h-[120px] py-8 text-center rounded-xl border border-border/60 bg-muted/10">
-            <p className="text-sm text-muted-foreground/60">No tasks</p>
-          </div>
-          ) : (
-            <div className="space-y-2 pr-1">
-              {onceTasks.map((task) => {
-                const done = isDone(task);
-                return (
-                  <div key={task.id} className="flex items-start gap-3 px-4 py-3 rounded-xl border border-border/60 bg-muted/10">
-                    <span aria-hidden="true" className="shrink-0 pt-0.5">
-                      {done ? (
-                        <span className="flex size-5 items-center justify-center rounded-full bg-emerald-500 text-white">
-                          <Check className="size-3" />
-                        </span>
-                      ) : (
-                        <span className="block size-5 rounded-full border-2 border-border" />
-                      )}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold">{task.name}</span>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{task.instructions}</p>
-                      <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60 mt-1.5">
-                        <span>Once on {formatDate(task.schedule.runAt || null)}</span>
-                        {done ? <span>Ran: {formatDate(task.lastRunAt)}</span> : <span>Next: {formatDate(task.nextRunAt)}</span>}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          </AnimatePresence>
         </div>
-        </div>
-      </div>
-      {/* Execution Log — pinned footer below the task region */}
-      <div className="shrink-0 pt-4">
-        <div className="flex items-center justify-between pb-1 mb-3">
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-semibold tracking-tight">Execution Log</h3>
-              {log.length > 0 && (
-                <span className="text-[11px] font-medium text-muted-foreground/60 bg-muted/60 px-1.5 py-0.5 rounded-full">
-                  {log.length}
-                </span>
-              )}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowLog(true)}
-              className="h-8 text-xs rounded-full"
-            >
-              <FileText className="size-3.5 mr-1" />
-              View Log
-            </Button>
-          </div>
-
-          {/* Log Dialog — skill-catalog style cards, one-line summaries */}
-          <Dialog open={showLog} onOpenChange={setShowLog}>
-            <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col rounded-3xl">
-              <DialogHeader>
-                <DialogTitle>Execution Log</DialogTitle>
-                <DialogDescription>
-                  Recent task execution history.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="flex-1 overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden min-h-0">
-                {log.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <FileText className="size-8 text-muted-foreground/30 mb-2" />
-                    <p className="text-sm text-muted-foreground/60">No executions yet</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2 py-1">
-                    {log.map((entry, i) => (
-                      <button
-                        key={`${entry.taskId}-${entry.timestamp}-${i}`}
-                        type="button"
-                        onClick={() => setSelectedLog(entry)}
-                        className="flex w-full items-center gap-3 rounded-xl border border-border bg-muted/10 p-3 text-left transition-colors hover:bg-muted/20 cursor-pointer"
-                      >
-                        <span className="flex shrink-0 items-center">
-                          <EchoRing tone={entry.status === "success" ? "done" : "error"} size={16} />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold text-foreground">
-                            {entry.name}
-                          </span>
-                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                            {logOneLiner(entry.output)}
-                          </span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          {/* Log detail popup — subagent-style */}
-          <Dialog open={selectedLog !== null} onOpenChange={(v) => { if (!v) setSelectedLog(null); }}>
-            <DialogContent className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-0 overflow-hidden rounded-3xl border border-border bg-background p-0 shadow-2xl sm:max-w-2xl">
-              <div className="flex items-center justify-between gap-3 border-b border-border/40 bg-background px-5 py-3">
-                <DialogTitle className="flex min-w-0 items-center gap-3 text-sm font-semibold">
-                  <span className="flex shrink-0 items-center">
-                    <EchoRing tone={selectedLog?.status === "success" ? "done" : "error"} size={18} />
-                  </span>
-                  <span className="flex min-w-0 items-baseline gap-3 truncate">
-                    <span className="shrink-0">{selectedLog?.name}</span>
-                    <span className="truncate font-normal text-muted-foreground">
-                      {selectedLog ? formatDate(selectedLog.timestamp) : ""}
-                    </span>
-                  </span>
-                </DialogTitle>
-              </div>
-
-              <div className="flex-1 space-y-4 overflow-y-auto bg-background px-5 py-4">
-                {selectedLog && (
-                  <>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span
-                        className={cn(
-                          "font-medium",
-                          selectedLog.status === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-                        )}
-                      >
-                        {selectedLog.status === "success" ? "Succeeded" : "Failed"}
-                      </span>
-                      <span aria-hidden="true">·</span>
-                      <span>{(selectedLog.duration / 1000).toFixed(1)}s</span>
-                    </div>
-                    <div className="rounded-xl bg-muted px-4 py-2.5 text-sm leading-relaxed text-foreground">
-                      <LogMarkdown text={selectedLog.output || "No output"} />
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="border-t border-border/40 bg-background px-5 py-3">
-                <div className="rounded-2xl bg-muted px-4 py-3 text-center text-sm text-muted-foreground">
-                  Execution details are read-only.{" "}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLog(null)}
-                    className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
-                  >
-                    Back to log.
-                  </button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-    </motion.div>
+      </motion.div>
+    </MotionConfig>
   );
 }

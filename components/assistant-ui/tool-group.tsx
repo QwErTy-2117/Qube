@@ -21,11 +21,11 @@ import { NumberRoll } from "./tools/number-roll";
 
 const ANIMATION_DURATION = 200;
 
-const toolGroupVariants = cva("aui-tool-group-root group/tool-group w-full", {
+const toolGroupVariants = cva("aui-tool-group-root group/tool-group mt-2 w-full", {
   variants: {
     variant: {
       outline: "rounded-lg border py-3 mb-3",
-      ghost: "mb-0.5",
+      ghost: "mb-1",
     },
   },
   defaultVariants: { variant: "ghost" },
@@ -97,15 +97,18 @@ function ToolGroupTrigger({
   active = false,
   className,
   label: customLabel,
+  detail: customDetail,
   icon,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   count: number;
   active?: boolean;
   label?: string;
+  detail?: string;
   icon?: React.ReactNode;
 }) {
-  // Default stays non-technical: counts are shown separately via NumberRoll.
+  // Screenshot style: bold verb + muted inline summary, subtle chevron.
+  // Naming stays playful / non-technical (customLabel wins, else Activity).
   const displayLabel =
     customLabel || (active ? "Working…" : "Activity");
 
@@ -113,32 +116,40 @@ function ToolGroupTrigger({
     <CollapsibleTrigger
       data-slot="tool-group-trigger"
       className={cn(
-        "aui-tool-group-trigger group/trigger flex origin-left items-center gap-1 text-base transition-[color,scale] active:scale-[0.98]",
-        "text-muted-foreground hover:text-foreground py-0.5",
+        "aui-tool-group-trigger group/trigger flex w-full origin-left items-baseline gap-2 py-1 text-left text-[15px] leading-relaxed transition-[color] active:scale-[0.998]",
+        "text-foreground hover:text-foreground",
         className,
       )}
       {...props}
     >
       <span
         data-slot="tool-group-trigger-label"
-        className="inline-flex items-center gap-1.5 font-normal"
+        className="inline-flex min-w-0 items-baseline gap-2"
       >
         {icon && (
           <span
             data-slot="tool-group-trigger-icon"
-            className="inline-flex size-4 shrink-0 items-center justify-center [&_svg]:size-4"
+            className="inline-flex size-4 shrink-0 translate-y-0.5 items-center justify-center self-center [&_svg]:size-4"
           >
             {icon}
           </span>
         )}
-        {count > 1 && <NumberRoll value={count} />}
-        <span className={cn("leading-none", active && "animate-pulse")}>{displayLabel}</span>
+        <span className={cn("shrink-0 font-medium tracking-[-0.01em] text-foreground/90", active && "animate-pulse")}>
+          {displayLabel}
+        </span>
+        {customDetail ? (
+          <span className="min-w-0 truncate font-normal text-muted-foreground">
+            {customDetail}
+          </span>
+        ) : count > 1 ? (
+          <NumberRoll value={count} />
+        ) : null}
       </span>
       <ChevronDownIcon
         data-slot="tool-group-trigger-chevron"
         className={cn(
-          "size-3 shrink-0",
-          "transition-transform duration-(--animation-duration) ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+          "size-3.5 shrink-0 self-center text-muted-foreground/50",
+          "opacity-0 transition-[opacity,transform] duration-200 group-hover/trigger:opacity-100 group-data-[state=open]/trigger:opacity-100",
           "group-data-[state=closed]/trigger:-rotate-90",
           "group-data-[state=open]/trigger:rotate-0",
         )}
@@ -170,7 +181,8 @@ function ToolGroupContent({
     >
       <div
         className={cn(
-          "ml-4 flex flex-col gap-0.5 pb-1",
+          "ml-5 flex flex-col gap-0.5 pt-0.5 pb-1",
+          "[&_[data-slot=tool-row]]:mt-2",
           "[&>*]:animate-in [&>*]:fade-in-0 [&>*]:blur-in-[2px] [&>*]:slide-in-from-top-1 [&>*]:duration-(--animation-duration) [&>*]:ease-[cubic-bezier(0.32,0.72,0,1)]",
           "[&>*]:motion-reduce:animate-none",
           "[&>*:nth-child(2)]:[animation-delay:40ms]",

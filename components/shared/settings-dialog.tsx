@@ -792,34 +792,6 @@ async function fetchProviderModels(baseURL: string, apiKey: string, providerId?:
   throw new Error(`Unexpected response format from ${url}`);
 }
 
-/**
- * Minimal no-tools chat probe: verifies the key can actually run inference.
- * Listing /models alone is NOT enough (it passes even when chat quota is
- * gone, the workspace is blocked, or the model needs another endpoint).
- * Returns null when chat works, otherwise the human-readable reason.
- */
-async function probeProviderChat(
-  providerId: string,
-  baseURL: string,
-  apiKey: string,
-  modelId: string,
-): Promise<string | null> {
-  try {
-    const res = await fetch("/api/providers/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ providerId, baseURL, apiKey, modelId }),
-    });
-    const body = await res.json().catch(() => null);
-    if (body?.ok) return null;
-    const err = body?.error || "Chat probe failed";
-    const hint = body?.hint ? ` ${body.hint}` : "";
-    return `${err}${hint}`;
-  } catch (e) {
-    return e instanceof Error ? e.message : "Chat probe failed";
-  }
-}
-
 function SwitchToggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (v: boolean) => void }) {
   return (
     <Switch.Root
@@ -1364,23 +1336,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         reasoning: model.reasoning,
       }));
 
-      // Chat probe: listing models only checks the key. A 1-token test chat
-      // catches quota/blocked/endpoint problems upfront with a clear message.
-      // Rate limits are temporary so they warn but don't block saving.
-      if (fetchedModels.length > 0 && configApiKey) {
-        const probeId =
-          provId === "opencode"
-            ? fetchedModels.find((m) => /^(gpt-|deepseek|glm|kimi|minimax|big-pickle|mimo|ling|nemotron)/i.test(m.id))?.id ||
-              fetchedModels[0].id
-            : fetchedModels[0].id;
-        const probeError = await probeProviderChat(provId, configBaseUrl || "", configApiKey || "", probeId);
-        if (probeError) {
-          const temporary = /rate limit|quota exceeded|429/i.test(probeError);
-          if (!temporary) {
-            throw new Error(`Models listed OK, but a test chat with "${probeId}" failed:\n${probeError}`);
-          }
-          console.warn(`[SettingsDialog] Chat probe rate-limited (saving anyway): ${probeError}`);
-        }
+      if (fetchedModels.length === 0) {
+        throw new Error("No models returned for this provider/endpoint.");
       }
 
       await new Promise((r) => setTimeout(r, 400));

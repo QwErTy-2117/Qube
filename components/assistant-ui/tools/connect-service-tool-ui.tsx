@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
-import { ExternalLinkIcon, Loader2Icon } from "lucide-react";
+import { composioLogoUrlForIconId, composioLogoDarkClass } from "@/lib/connectors/composio-logo";
+import { ToolRow } from "@/components/assistant-ui/tools/tool-row";
+import { ExternalLinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const CONNECTOR_NAMES: Record<string, string> = {
@@ -22,7 +25,8 @@ const CONNECTOR_COLORS: Record<string, string> = {
 export const ConnectServiceToolUI: ToolCallMessagePartComponent = ({ args: rawArgs, result, status }) => {
   const args = (rawArgs || {}) as any;
   const connectorId = args.connectorId || "";
-  const isRunning = status?.type === "running";
+  const running = (status as { type?: string })?.type === "running";
+  const [logoFailed, setLogoFailed] = useState(false);
 
   const parsed = (() => {
     try { return typeof result === "string" ? JSON.parse(result) : result; } catch { return {}; }
@@ -32,34 +36,47 @@ export const ConnectServiceToolUI: ToolCallMessagePartComponent = ({ args: rawAr
   const error: string | undefined = parsed?.error;
   const name = CONNECTOR_NAMES[connectorId] || connectorId;
   const color = CONNECTOR_COLORS[connectorId] || "#888";
-  const icon = renderConnectorIcon(connectorId, 18);
+  // Live Composio logo CDN artwork first (most up-to-date vendor mark),
+  // static brand glyph as offline/error fallback only.
+  const composioLogo = !logoFailed ? composioLogoUrlForIconId(connectorId) : null;
+  const icon = renderConnectorIcon(connectorId, 14);
+  const hasAction = Boolean(connectUrl || error);
 
   return (
-    <div className="rounded-xl border border-border/60 bg-background p-2.5 text-sm">
-      <div className="flex items-center gap-2">
-        {icon && (
-          <div className="size-6 flex items-center justify-center shrink-0 rounded-md bg-muted/40" style={{ color }}>
-            {icon}
-          </div>
-        )}
-        <span className="text-xs font-medium text-foreground/80" style={{ color }}>
-          {name}
+    <ToolRow
+      verb={
+        <span className="flex min-w-0 items-center gap-2">
+          {composioLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={composioLogo} alt="" className={`size-4 shrink-0 object-contain${composioLogoDarkClass(connectorId)}`} loading="lazy" onError={() => setLogoFailed(true)} />
+          ) : (
+            icon && (
+              <span className="flex shrink-0 items-center justify-center" style={{ color }}>
+                {icon}
+              </span>
+            )
+          )}
+          <span className="truncate" style={{ color: color === "currentColor" ? undefined : color }}>
+            {name}
+          </span>
         </span>
-        {isRunning && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground/40 shrink-0 ml-auto" />}
-      </div>
-
-      {connectUrl && (
-        <Button asChild size="sm" className="w-full rounded-full h-7 text-[11px] mt-2 font-medium"
+      }
+      summary={running ? "…" : connectUrl ? "Tap to connect" : ""}
+      status={status}
+      open={hasAction ? true : undefined}
+      onOpenChange={() => {}}
+    >
+      {connectUrl ? (
+        <Button asChild size="sm" className="w-full rounded-full h-7 text-[11px] font-medium"
           style={{ backgroundColor: color === "currentColor" ? undefined : color, color: "#fff" }}>
           <a href={connectUrl} target="_blank" rel="noopener noreferrer">
             <ExternalLinkIcon className="size-3 mr-1.5" /> Connect
           </a>
         </Button>
-      )}
-
-      {error && (
-        <p className="text-[11px] text-destructive/80 mt-1">{error}</p>
-      )}
-    </div>
+      ) : null}
+      {error ? (
+        <p className="text-[11px] text-destructive/80">{error}</p>
+      ) : null}
+    </ToolRow>
   );
 };

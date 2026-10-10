@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "motion/react";
-import { renderConnectorIcon } from "@/lib/connectors/icons";
+import { ConnectorBrandIcon } from "@/components/shared/connector-brand-icon";
 import {
   getCachedConnectors,
   fetchConnectorsList,
   setCachedConnectors,
   getOrCreateInstanceId,
 } from "@/lib/connectors/connectors-cache";
-import { SearchIcon, Loader2Icon, XIcon, LinkIcon, UnplugIcon } from "lucide-react";
+import { SearchIcon, Loader2Icon, XIcon, UnplugIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -23,11 +23,6 @@ async function openUrl(url: string) {
   }
 }
 
-const KNOWN_ICON_IDS = new Set([
-  "linear","atlassian","trello","airtable","notion",
-  "slack","github","google","hubspot","asana","dropbox",
-]);
-
 const TOOLKIT_SLUGS: Record<string, string[]> = {
   linear: ["linear"],
   atlassian: ["jira"],
@@ -40,6 +35,7 @@ const TOOLKIT_SLUGS: Record<string, string[]> = {
   hubspot: ["hubspot"],
   asana: ["asana"],
   dropbox: ["dropbox"],
+  canva: ["canva"],
 };
 
 interface DisplayConnector {
@@ -338,11 +334,14 @@ export function ConnectorsTab({
                   className="size-9 flex items-center justify-center shrink-0"
                   style={{ color: connector.brandColor || undefined }}
                 >
-                  {KNOWN_ICON_IDS.has(connector.id)
-                    ? renderConnectorIcon(connector.id, 24)
-                    : connector.icon?.startsWith("http")
-                      ? <img src={connector.icon} alt="" className="size-6 object-contain" />
-                      : <LinkIcon className="size-5 text-muted-foreground/50" />}
+                  <ConnectorBrandIcon
+                    id={connector.id}
+                    icon={connector.icon}
+                    brandColor={connector.brandColor}
+                    size={24}
+                    imgClassName="size-6"
+                    linkClassName="size-5"
+                  />
                 </div>
               </div>
             );
@@ -396,11 +395,14 @@ export function ConnectorsTab({
                   className="size-12 rounded-xl bg-background border border-border/60 flex items-center justify-center shrink-0"
                   style={{ color: detailConnector.brandColor || undefined }}
                 >
-                  {KNOWN_ICON_IDS.has(detailConnector.id)
-                    ? renderConnectorIcon(detailConnector.id, 28)
-                    : detailConnector.icon?.startsWith("http")
-                      ? <img src={detailConnector.icon} alt="" className="size-7 object-contain" />
-                      : <LinkIcon className="size-6 text-muted-foreground/50" />}
+                  <ConnectorBrandIcon
+                    id={detailConnector.id}
+                    icon={detailConnector.icon}
+                    brandColor={detailConnector.brandColor}
+                    size={28}
+                    imgClassName="size-7"
+                    linkClassName="size-6"
+                  />
                 </div>
                 <div className="min-w-0 flex-1 space-y-1">
                   <p className="text-sm font-semibold text-foreground leading-none">{detailConnector.name}</p>

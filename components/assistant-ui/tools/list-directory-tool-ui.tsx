@@ -2,10 +2,14 @@
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { FolderIcon, FileIcon } from "lucide-react";
+import { ToolRow } from "./tool-row";
+import { friendlyToolLabel } from "./tool-labels";
 
 export const ListDirectoryToolUI: ToolCallMessagePartComponent = ({
+  args,
   argsText,
   result,
+  status,
 }) => {
   let data: {
     path?: string;
@@ -18,51 +22,56 @@ export const ListDirectoryToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   const items = data.items || [];
+  const argPath = (args as any)?.path || "";
+  const displayPath = data.path || argPath || "";
+  const displayName = displayPath.split("/").pop() || displayPath || "…";
 
   const treeLines = buildTreeLines(items);
 
+  const summary =
+    data.totalItems !== undefined
+      ? `${displayName} (${data.totalItems} items)`
+      : displayName;
+
+  if (treeLines.length === 0) {
+    return (
+      <ToolRow verb={friendlyToolLabel("list_directory", args)} summary={summary} status={status} />
+    );
+  }
+
   return (
-    <div className="bg-muted/30 px-3 py-2 text-sm">
-      {data.path && (
-        <div className="mb-2 font-mono text-xs text-muted-foreground">
-          {data.path}
-          {data.totalItems !== undefined && (
-            <span className="ml-2 text-muted-foreground/60">
-              ({data.totalItems} items)
+    <ToolRow
+      verb={friendlyToolLabel("list_directory", args)}
+      summary={summary}
+      defaultOpen={false}
+      status={status}
+    >
+      <div className="font-mono text-xs">
+        {treeLines.map((line, i) => (
+          <div key={i} className="flex items-center gap-1.5 py-0.5">
+            {line.type === "directory" ? (
+              <FolderIcon className="size-3.5 shrink-0 text-amber-500" />
+            ) : (
+              <FileIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
+            )}
+            <span
+              className={
+                line.type === "directory"
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground"
+              }
+            >
+              {line.name}
             </span>
-          )}
-        </div>
-      )}
-      <div className="rounded-md border border-border bg-background p-2 font-mono text-xs">
-        {treeLines.length > 0 ? (
-          treeLines.map((line, i) => (
-            <div key={i} className="flex items-center gap-1.5 py-0.5">
-              {line.type === "directory" ? (
-                <FolderIcon className="size-3.5 shrink-0 text-amber-500" />
-              ) : (
-                <FileIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
-              )}
-              <span
-                className={
-                  line.type === "directory"
-                    ? "font-medium text-foreground"
-                    : "text-muted-foreground"
-                }
-              >
-                {line.name}
+            {line.size > 0 && (
+              <span className="ml-auto text-muted-foreground/50">
+                {formatSize(line.size)}
               </span>
-              {line.size > 0 && (
-                <span className="ml-auto text-muted-foreground/50">
-                  {formatSize(line.size)}
-                </span>
-              )}
-            </div>
-          ))
-        ) : (
-          <div className="text-muted-foreground/60">(empty directory)</div>
-        )}
+            )}
+          </div>
+        ))}
       </div>
-    </div>
+    </ToolRow>
   );
 };
 

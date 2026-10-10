@@ -1,10 +1,13 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
+import { ToolRow } from "./tool-row";
+import { friendlyToolLabel } from "./tool-labels";
 
 export const DeleteFileToolUI: ToolCallMessagePartComponent = ({
   args,
   result,
+  status,
 }) => {
   const filePath = (args as any)?.path || "";
   let data: { path?: string; status?: string } = {};
@@ -14,20 +17,9 @@ export const DeleteFileToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   const displayPath = data.path || filePath;
+  const displayName = displayPath.split("/").pop() || displayPath || "…";
 
   return (
-    <div className="bg-red-50/50 px-3 py-2 text-sm dark:bg-red-950/20">
-      {displayPath && (
-        <div className="mb-2 font-mono text-xs text-red-600/80 dark:text-red-400/80">
-          {displayPath}
-        </div>
-      )}
-      {data.status === "deleted" && (
-        <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
-          <span className="size-1.5 rounded-full bg-red-500" />
-          File deleted
-        </div>
-      )}
-    </div>
+    <ToolRow verb={friendlyToolLabel("delete_file", args)} summary={displayName} status={status} />
   );
 };

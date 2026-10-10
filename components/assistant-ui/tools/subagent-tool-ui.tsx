@@ -300,6 +300,20 @@ export function SubagentToolUI({ args, result, isExecuting }: SubagentToolUIProp
   const searches = usage?.searches ?? steps.filter((s: any) => s.type === "tool" && (s.toolName === "web_search" || s.toolName === "web_fetch")).length;
   const verb = AGENT_VERB[agentType] || AGENT_VERB[displayType] || "Working";
 
+  // The final response is often recorded twice: once as a `text` step in
+  // the working transcript and again as `summary`. Only render the
+  // summary block when it adds something new — never repeat the same
+  // text a second time below the working section.
+  const norm = (v: string) => v.replace(/\s+/g, " ").trim();
+  const normSummary = norm(summary);
+  const stepTexts = steps
+    .filter((s: any) => s?.type === "text" && typeof s.content === "string")
+    .map((s: any) => norm(s.content as string))
+    .filter((t: string) => t.length > 0);
+  const summaryDuplicated =
+    normSummary.length > 0 &&
+    stepTexts.some((t: string) => t === normSummary || t.includes(normSummary));
+
   return (
     <>
       {/* Pill in main chat — small component showing the subagent is working */}
@@ -307,13 +321,13 @@ export function SubagentToolUI({ args, result, isExecuting }: SubagentToolUIProp
         type="button"
         onClick={() => setOpen(true)}
         data-slot="aui_subagent-pill"
-        className="my-1 flex w-fit max-w-full items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-left transition-colors hover:bg-muted"
+        className="my-2 flex w-fit max-w-full items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-left transition-colors hover:bg-muted"
       >
         <span className="flex shrink-0 items-center">
           <EchoRing tone={isExecuting ? "working" : isFailed ? "error" : "done"} size={16} />
         </span>
         <span className="flex min-w-0 items-baseline gap-3 text-sm">
-          <span className="shrink-0 font-semibold text-foreground">{displayType}</span>
+          <span className="shrink-0 font-medium tracking-[-0.01em] text-foreground/90">{displayType}</span>
           <span className="truncate text-muted-foreground">{description}</span>
         </span>
       </button>
@@ -366,7 +380,7 @@ export function SubagentToolUI({ args, result, isExecuting }: SubagentToolUIProp
               </div>
             )}
 
-            {summary && (
+            {summary && !summaryDuplicated && (
               <div
                 className={cn(
                   steps.length > 0 ? "border-t border-border/20 pt-3" : "",

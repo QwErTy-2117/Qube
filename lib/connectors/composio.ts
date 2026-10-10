@@ -208,11 +208,24 @@ export interface ConnectorDisplay {
   hasIcon: boolean;
   appUrl: string;
   connected: boolean;
+  /**
+   * Per-toolkit Composio logo URLs (Composio logo CDN) for connectors that
+   * bundle several apps — e.g. google → { gmail, googlecalendar,
+   * googledrive }. Lets tool cards show each app's own colored logo instead
+   * of the parent connector mark.
+   */
+  toolkitLogos?: Record<string, string>;
 }
+
+import { composioLogoUrl } from "./composio-logo";
+
+/** Re-exported for back-compat (now lives in client-safe `./composio-logo`). */
+export { composioLogoUrl } from "./composio-logo";
 
 const KNOWN_ICON_IDS = new Set([
   "linear","atlassian","trello","airtable","notion",
   "slack","github","google","hubspot","asana","dropbox",
+  "canva",
 ]);
 
 const KNOWN_COLORS: Record<string, string> = {
@@ -227,6 +240,7 @@ const KNOWN_COLORS: Record<string, string> = {
   hubspot: "#FF7A59",
   asana: "#F06A6A",
   dropbox: "#0061FF",
+  canva: "#00C4CC",
 };
 
 // Static metadata for the curated connectors — lets listConnectors return
@@ -309,15 +323,34 @@ export async function listConnectors(userId?: string, opts?: { bypassCache?: boo
       const logo = meta?.logo ?? "";
       const appUrl = staticMeta?.appUrl ?? meta?.appUrl ?? "";
       if (KNOWN_ICON_IDS.has(slug)) {
+        // Primary artwork is always the Composio logo CDN (most up-to-date
+        // vendor mark). `google` is our own bundle (Gmail + Calendar + Drive)
+        // with no single Composio logo (`/api/google` is a fallback grid),
+        // so it keeps the static "G" id and the frontend renders the current
+        // Google mark; its per-app `toolkitLogos` below still carry the live
+        // Gmail / Calendar / Drive artwork.
+        const toolkits = COMPOSIO_TOOLKIT_MAP[slug] || [slug];
+        const firstToolkit = toolkits[0] || slug;
+        const logoUrl = slug === "google"
+          ? slug
+          : tkMap.get(firstToolkit)?.meta?.logo
+            || tkMap.get(slug)?.meta?.logo
+            || composioLogoUrl(firstToolkit);
         result.push({
           id: slug,
           name,
           description: desc,
           brandColor: KNOWN_COLORS[slug]!,
-          icon: slug,
+          icon: logoUrl,
           hasIcon: true,
           appUrl,
           connected: isConnected(slug),
+          toolkitLogos: Object.fromEntries(
+            toolkits.map((t) => [
+              t,
+              tkMap.get(t)?.meta?.logo || composioLogoUrl(t),
+            ]),
+          ),
         });
       } else {
         result.push({

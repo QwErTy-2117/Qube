@@ -297,12 +297,9 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
     if (activeRuns.has(threadId)) {
       try { activeRuns.delete(threadId); } catch {}
     }
-    try {
-      const id = `pi-steer-${Date.now()}`;
-      writer.write({ type: "text-start", id } as any);
-      writer.write({ type: "text-delta", id, delta: `Steered — incorporating your latest message…` } as any);
-      writer.write({ type: "text-end", id } as any);
-    } catch {}
+    // Steer stays silent: nothing is written to the transcript. The new
+    // turn's own tool activity already signals progress, and injected
+    // "Steered — …" text would persist in history as chat clutter.
   }
   if (activeRuns.size >= MAX_CONCURRENT_RUNS) {
     const err = new Error(`Concurrent run limit exceeded (${MAX_CONCURRENT_RUNS} active). Try again shortly.`);

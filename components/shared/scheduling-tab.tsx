@@ -2,8 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 import {
   Column,
@@ -42,6 +50,15 @@ export function SchedulingTab() {
   // Delete-zone highlight while a dragged card hovers it.
   const [deleteArmed, setDeleteArmed] = useState(false);
   const deleteTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Create-task dialog.
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createInstructions, setCreateInstructions] = useState("");
+  const [createKind, setCreateKind] = useState<"once" | "interval">("once");
+  const [createRunAt, setCreateRunAt] = useState("");
+  const [createInterval, setCreateInterval] = useState(1440);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -157,6 +174,61 @@ export function SchedulingTab() {
     [triggerTask]
   );
 
+  function resetCreateForm() {
+    setCreateName("");
+    setCreateInstructions("");
+    setCreateKind("once");
+    setCreateRunAt("");
+    setCreateInterval(1440);
+    setCreateError(null);
+  }
+
+  const canCreate =
+    createName.trim().length > 0 &&
+    createInstructions.trim().length > 0 &&
+    (createKind === "interval" ||
+      (createRunAt !== "" && new Date(createRunAt).getTime() > Date.now()));
+
+  async function handleCreate() {
+    if (!canCreate || creating) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const body: Record<string, unknown> =
+        createKind === "once"
+          ? {
+              action: "create",
+              name: createName.trim(),
+              instructions: createInstructions.trim(),
+              scheduleKind: "once",
+              runAt: new Date(createRunAt).toISOString(),
+            }
+          : {
+              action: "create",
+              name: createName.trim(),
+              instructions: createInstructions.trim(),
+              scheduleKind: "interval",
+              intervalMinutes: createInterval,
+            };
+      const res = await fetch("/api/scheduler/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.task) {
+        throw new Error(data?.error || "Failed to create task.");
+      }
+      setCreateOpen(false);
+      resetCreateForm();
+      fetchTasks();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -179,7 +251,21 @@ export function SchedulingTab() {
         }}
       >
         <div className="w-full space-y-4">
-          <h3 className="text-base font-semibold tracking-tight">Tasks</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold tracking-tight">Tasks</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                resetCreateForm();
+                setCreateOpen(true);
+              }}
+              className="h-8 text-xs rounded-full"
+            >
+              <Plus className="size-3.5 mr-1" />
+              New task
+            </Button>
+          </div>
           <div className="grid grid-cols-3 gap-5">
             {columns.map((col) => (
               <Column
@@ -235,6 +321,133 @@ export function SchedulingTab() {
             )}
           </AnimatePresence>
         </div>
+
+        {/* Create task dialog */}
+        <Dialog
+          open={createOpen}
+          onOpenChange={(v) => {
+            setCreateOpen(v);
+            if (!v) resetCreateForm();
+          }}
+        >
+          <DialogContent className="sm:max-w-md rounded-3xl">
+            <DialogHeader>
+              <DialogTitle>New task</DialogTitle>
+              <DialogDescription>
+                One-off tasks run once and land in Done. Recurring tasks stay
+                in To do and run on repeat.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">Name</label>
+                <input
+                  type="text"
+                  placeholder="What needs doing?"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">
+                  Instructions
+                </label>
+                <textarea
+                  placeholder="What should the agent do?"
+                  value={createInstructions}
+                  onChange={(e) => setCreateInstructions(e.target.value)}
+                  rows={3}
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground">Run</label>
+                <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-muted/30 p-1">
+                  {(["once", "interval"] as const).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => setCreateKind(kind)}
+                      className={cn(
+                        "rounded-lg py-1.5 text-xs font-semibold transition-colors",
+                        createKind === kind
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {kind === "once" ? "Once" : "Recurring"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {createKind === "once" ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">
+                    Run at
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={createRunAt}
+                    onChange={(e) => setCreateRunAt(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">
+                    Repeat every
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: "Hour", minutes: 60 },
+                      { label: "Day", minutes: 1440 },
+                      { label: "Week", minutes: 10080 },
+                      { label: "Month", minutes: 43200 },
+                    ].map((opt) => (
+                      <button
+                        key={opt.minutes}
+                        type="button"
+                        onClick={() => setCreateInterval(opt.minutes)}
+                        className={cn(
+                          "rounded-full px-3.5 py-1.5 text-xs font-semibold border transition-colors",
+                          createInterval === opt.minutes
+                            ? "border-primary bg-primary/10 text-foreground"
+                            : "border-border text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {createError && (
+                <p className="text-xs text-red-600 dark:text-red-400">{createError}</p>
+              )}
+
+              <Button
+                onClick={handleCreate}
+                disabled={!canCreate || creating}
+                className="w-full rounded-xl"
+              >
+                {creating ? (
+                  <>
+                    <Loader2 className="size-4 mr-1 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  "Create task"
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </motion.div>
     </MotionConfig>
   );

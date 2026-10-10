@@ -12,8 +12,8 @@ import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
-import { getConnectorMeta } from "@/components/assistant-ui/tools/connector-tool-ui";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
+import { composioLogoUrlForIconId, composioLogoDarkClass } from "@/lib/connectors/composio-logo";
 import { Sources } from "@/components/assistant-ui/sources";
 import {
   ToolGroupContent,
@@ -34,7 +34,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
-import { ChangedFiles } from "@/components/assistant-ui/tools/changed-files";
 import { ConnectorsStrip } from "@/components/shared/connectors-strip";
 import { PresentedFiles } from "@/components/assistant-ui/tools/presented-files";
 import { SubagentToolUI } from "@/components/assistant-ui/tools/subagent-tool-ui";
@@ -341,7 +340,7 @@ const Thread: FC = () => {
   const stripReady = mascotReady && modelsReady;
   return (
     <ThreadPrimitive.Root
-      className="aui-root aui-thread-root bg-background text-foreground @container flex h-full flex-col"
+      className="aui-root aui-thread-root relative bg-background text-foreground @container flex h-full flex-col"
       style={{
         ["--thread-max-width" as string]: "44rem",
         ["--composer-bg" as string]:
@@ -408,7 +407,6 @@ const Thread: FC = () => {
               className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-2 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
             >
               <ThreadScrollToBottom />
-              <GoalsPanel />
               <QuestionPanel />
               {/* On send the bar glides center → bottom; on navigation it is
                   simply there (mount-only initial, never traps the UI). */}
@@ -423,6 +421,13 @@ const Thread: FC = () => {
           </div>
         )}
       </ThreadPrimitive.Viewport>
+
+      {/* Goals float top-right, overlaying the thread — never docked over the composer. */}
+      <div className="pointer-events-none absolute top-4 right-4 z-20 flex justify-end">
+        <div className="pointer-events-auto">
+          <GoalsPanel />
+        </div>
+      </div>
 
       <SelectionToolbar />
     </ThreadPrimitive.Root>
@@ -924,12 +929,62 @@ const HIDDEN_INLINE_TOOLS = new Set(["TodoWrite", "present_file"]);
 
 function getConnectorIconForTool(toolName: string): ReactNode {
   try {
-    const meta = getConnectorMeta(toolName);
-    if (!meta) return null;
-    return renderConnectorIcon(meta.id, 14);
+    const { getConnectorMetaForTool } = require("@/lib/connectors/connector-meta") as typeof import("@/lib/connectors/connector-meta");
+    const meta = getConnectorMetaForTool(toolName);
+    if (!meta || meta.displayId === "composio") return null;
+    // Per-app Composio logo first (same source as the tool cards): cached
+    // toolkit logo, else the live Composio CDN artwork (works before the
+    // list has ever been fetched — e.g. Calendar / Drive on first load),
+    // else the static brand mark.
+    try {
+      const { getCachedConnectors } = require("@/lib/connectors/connectors-cache") as typeof import("@/lib/connectors/connectors-cache");
+      const entry = getCachedConnectors?.()?.find?.(
+        (c: any) => c.id?.toLowerCase?.() === meta.displayId.toLowerCase(),
+      );
+      const url = entry?.toolkitLogos?.[meta.prefixes[0]];
+      if (url) {
+        // eslint-disable-next-line @next/next/no-img-element
+        return <img src={url} alt="" className={`size-3.5 object-contain${composioLogoDarkClass(meta.prefixes[0])}`} loading="lazy" />;
+      }
+    } catch {}
+    try {
+      // Null for ids with no single Composio logo (e.g. parent "google"
+      // bundle) — falls through to the static mark below.
+      const direct = composioLogoUrlForIconId(meta.iconId);
+      if (direct) {
+        // eslint-disable-next-line @next/next/no-img-element
+        return <img src={direct} alt="" className={`size-3.5 object-contain${composioLogoDarkClass(meta.prefixes[0])}`} loading="lazy" />;
+      }
+    } catch {}
+    return renderConnectorIcon(meta.iconId, 14);
   } catch {
     return null;
   }
+}
+
+function isReadTool(name: string): boolean {
+  const n = name.toLowerCase();
+  return (
+    n.includes("read") ||
+    n.includes("list") ||
+    n === "glob" ||
+    n.endsWith("_glob")
+  );
+}
+
+function isSearchTool(name: string): boolean {
+  const n = name.toLowerCase();
+  return (
+    n.includes("search") ||
+    n.includes("fetch") ||
+    n.includes("grep") ||
+    n.includes("glob") ||
+    n.includes("find")
+  );
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 function ToolGroupWithTitle({
@@ -955,16 +1010,40 @@ function ToolGroupWithTitle({
   // A single visible tool is never a group — render it directly inline.
   if (visibleParts.length + reasoningParts.length <= 1) return <>{children}</>;
   const labels = visibleParts.map(getToolLabel);
-  const title = labels[labels.length - 1] || (reasoningParts.length > 0 ? "Thinking" : "Working on it");
   const lastTool = visibleParts[visibleParts.length - 1];
   const groupIcon = lastTool ? getConnectorIconForTool(lastTool.toolName) : null;
   const visibleCount = visibleParts.length + reasoningParts.length;
+
+  // Screenshot-style multi-call summary ("Explored 9 reads, 2 searches"):
+  // pure read/search groups get the friendly "Explored" verb with a
+  // counts breakdown; mixed groups keep the playful last-tool label.
+  const reads = visibleParts.filter((p) => isReadTool(p.toolName)).length;
+  const searches = visibleParts.filter(
+    (p) => !isReadTool(p.toolName) && isSearchTool(p.toolName),
+  ).length;
+  const others = visibleParts.length - reads - searches;
+  const allExplore = others === 0 && reads + searches === visibleParts.length;
+
+  let title: string;
+  let detail: string | undefined;
+  if (allExplore && (reads > 0 || searches > 0)) {
+    title = "Explored";
+    const bits: string[] = [];
+    if (reads > 0) bits.push(plural(reads, "read", "reads"));
+    if (searches > 0) bits.push(plural(searches, "search", "searches"));
+    detail = bits.join(", ");
+  } else {
+    title = labels[labels.length - 1] || (reasoningParts.length > 0 ? "Thinking" : "Working on it");
+    detail = undefined;
+  }
+
   return (
     <ToolGroupRoot variant="ghost">
       <ToolGroupTrigger
         count={visibleCount > 0 ? visibleCount : indices.length}
         active={active}
         label={title}
+        detail={detail}
         icon={groupIcon}
       />
       <ToolGroupContent>{children}</ToolGroupContent>
@@ -1077,7 +1156,7 @@ const AssistantMessage: FC = () => {
                     />
                   );
                 }
-                // TodoWrite renders in the docked GoalsPanel above the composer, not inline.
+                // TodoWrite renders in the floating GoalsPanel top-right, not inline.
                 if (part.toolName === "TodoWrite") {
                   return null;
                 }
@@ -1102,7 +1181,6 @@ const AssistantMessage: FC = () => {
           }}
         </MessagePrimitive.GroupedParts>
         <PresentedFiles />
-        <ChangedFiles />
         <MessageError />
       </div>
 

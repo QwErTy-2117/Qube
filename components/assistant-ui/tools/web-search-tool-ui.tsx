@@ -1,7 +1,9 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { SearchIcon, GlobeIcon } from "lucide-react";
+import { GlobeIcon } from "lucide-react";
+import { ToolRow } from "./tool-row";
+import { friendlyToolLabel } from "./tool-labels";
 
 function domainOf(url: string): string {
   try {
@@ -27,24 +29,22 @@ export const WebSearchToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   const results = Array.isArray(data.results) ? data.results : [];
+  const verb = friendlyToolLabel("web_search", args);
+  const summary = query
+    ? results.length > 0
+      ? `"${query}" (${results.length})`
+      : `"${query}"`
+    : running
+      ? "…"
+      : "";
+
+  if (results.length === 0) {
+    return <ToolRow verb={verb} summary={summary} status={status} />;
+  }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-muted/20 text-sm">
-      <div className="flex items-center gap-2 bg-muted/40 px-3 py-2">
-        <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground/90">
-          {query || "Searching web"}
-        </span>
-        {running ? (
-          <span className="shrink-0 text-[11px] text-amber-600 dark:text-amber-400">working…</span>
-        ) : results.length > 0 ? (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            {results.length} source{results.length === 1 ? "" : "s"}
-          </span>
-        ) : null}
-      </div>
-      {results.length > 0 ? (
-        <div className="flex flex-col divide-y divide-border/60 px-3">
+    <ToolRow verb={verb} summary={summary} defaultOpen={false} status={status}>
+      <div className="flex flex-col divide-y divide-border/50">
           {results.map((r, i) => (
             <div key={i} className="flex items-center gap-2.5 py-2">
               {r.url ? (
@@ -85,12 +85,9 @@ export const WebSearchToolUI: ToolCallMessagePartComponent = ({
                   {domainOf(r.url)}
                 </span>
               )}
-            </div>
-          ))}
-        </div>
-      ) : !running ? (
-        <p className="px-3 py-2 text-xs text-muted-foreground">No results found.</p>
-      ) : null}
-    </div>
+          </div>
+        ))}
+      </div>
+    </ToolRow>
   );
 };

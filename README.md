@@ -18,14 +18,15 @@
 
 Qube is a personal assistant that lives on your computer. You talk to it like you would to a person. If you can install an app and type a message, you can use Qube — no coding, no terminal, no server to manage.
 
-Instead of giving you ideas and leaving you to do the work, Qube actually does it — it can organize your files, write documents, look things up online and work with the apps you already use.
+Instead of giving you ideas and leaving you to do the work, Qube actually does it — it organizes files, writes documents, looks things up online, works with the apps you already use, and follows through until the job is done.
 
 Just say what you want in your own words. For example:
 
 - "Turn these notes into a nice presentation"
 - "Organize the files on my desktop"
-- "Find the latest info on this topic and summarize it for me"
-- "Draft an email based on the report you just made"
+- "Go through my inbox, what did I miss?"
+- "Tailor my CV to this job posting and draft a cover letter"
+- "Plan meals for the week, we're vegetarian, and make the grocery list"
 
 Qube figures out the steps and does them, showing you what it's doing along the way so you can check and approve anything important.
 
@@ -42,7 +43,7 @@ Most AI agents assume you're comfortable with the terminal. Qube doesn't.
 **Bring the AI you already pay for.** Qube doesn't ship with an AI — you connect the one you already use:
 
 - Have a ChatGPT subscription? Sign in with it in the welcome screen and use your plan. No API key, no copying long secret codes, no extra per-token bill.
-- Prefer another provider? Add a key from OpenAI, Anthropic, Google, Mistral, and dozens of others, or point Qube at a local model with Ollama or LM Studio if you'd rather keep everything offline.
+- Prefer another provider? Add a key from OpenAI, Anthropic, Google, Mistral, xAI, DeepSeek, Perplexity, OpenRouter, Groq, Together, and dozens of others, or point Qube at a local model with Ollama or LM Studio if you'd rather keep everything offline.
 
 You can switch anytime in Settings.
 
@@ -77,25 +78,37 @@ Honest note: if you want a fleet of bots on Telegram, Discord, and WhatsApp at o
 These are the things Qube can really do today, built for everyday use:
 
 ### A conversation that actually finishes things
-Ask, and watch it happen. Qube explains what it's about to do, shows progress as it goes, and drops the results right into the chat. You can come back to any past conversation — Qube remembers titles, summaries, and what you talked about, so you can dig up "that presentation from three weeks ago" just by asking.
-
-### A tidy workspace, not a folder disaster
-Qube has its own workspace on your computer for the files it creates, and it sorts them automatically — reports go to `documents`, decks to `presentations`, tables to `spreadsheets` — so you can always find them again. If it needs to touch something outside that workspace, like a file on your desktop, it asks first.
+Ask, and watch it happen. Qube explains what it's about to do in plain words, shows progress as it goes, and drops the results right into the chat. For bigger jobs it keeps a short checklist so you can see where it is, and it only stops to ask when there's a real choice only you can make. You can come back to any past conversation — Qube remembers titles, summaries, and what you talked about, so you can dig up "that presentation from three weeks ago" just by asking.
 
 ### Real files, ready to use
-Ask for a report, a presentation, or a spreadsheet and get back something properly formatted — headings, tables, charts, styling — not placeholder text. Hand it something you already have, like a résumé or a budget, and ask it to update or improve it. Everything shows up in the chat, ready to download.
+Ask for a report, a presentation, or a spreadsheet and get back something properly formatted — headings, tables, charts, styling — not placeholder text. Slides always come back as a real `.pptx` file, docs as Word-style files, sheets with live totals that recalculate when you change a number. Hand it something you already have, like a résumé or a budget, and ask it to update or improve it. Everything shows up in the chat with a file card, ready to open or download.
+
+### A tidy workspace, not a folder disaster
+Qube has its own workspace on your computer for the files it creates, and it sorts them automatically — reports go to `documents`, decks to `presentations`, tables to `spreadsheets` — so you can always find them again. You can open files right beside the chat, keep several open in tabs, and pick out text to ask about. If it needs to touch something outside that workspace, like a file on your desktop, it asks first.
 
 ### Answers, not eleven open tabs
-"What's a good kids' bike for a 6-year-old, under €150?" — Qube searches, reads through what it finds, and comes back with a short, sourced answer instead of a page of links. Give it a specific link and it'll pull out just what matters from that page.
+"What's a good kids' bike for a 6-year-old, under €150?" — Qube searches, reads through what it finds, and comes back with a short, sourced answer instead of a page of links. Give it a specific link and it'll pull out just what matters from that page. For bigger questions it writes a brief with what it found, where it disagrees, and links to the sources so you can check.
+
+### A browser you can watch
+For things that need a real website — checking hours and prices, comparing options, filling in a form, tracking a parcel — Qube opens its own browser window you can watch in the side panel. It narrates briefly while it works, stops before anything final like paying or submitting, and hands control to you for logins, captchas, or 2FA codes. It never claims to open other apps on your computer — for files it uses the workspace viewer instead.
 
 ### The apps you already use, working together
-Connect Gmail, Google Drive and Calendar, Slack, GitHub, Notion, Trello, and others you rely on. Releases include a built-in key for this; if you build from source, add your own `COMPOSIO_API_KEY`. Sign in once, and from then on you can just say what you want — "summarize this inbox thread," "post this in Slack after I approve." Send/create/delete-type actions pause for your approval first; read-only lookups don't.
+Connect Gmail, Google Drive and Calendar, Slack, GitHub, Notion, Linear, Jira and Confluence, Trello, Asana, Airtable, HubSpot, Dropbox, and others you rely on. Releases include a built-in key for this; if you build from source, add your own `COMPOSIO_API_KEY`. Sign in once, and from then on you can just say what you want — "summarize this inbox thread," "pull the leads into a sheet," "post this in Slack after I approve." Send/create/delete-type actions pause for your approval first; read-only lookups don't. Power users can also plug in their own custom integrations.
+
+### It remembers you, so you don't repeat yourself
+Qube remembers your preferences, your projects, and decisions you've already made, so you're not re-explaining yourself in every new conversation. Tell it your name once, that you prefer short answers, that you're vegetarian, or what project you're working on — it keeps the durable bits and uses them next time. It also gets better at your recurring jobs by learning reusable routines for things like research, documents, and trip planning.
 
 ### Things that happen without you asking twice
-Set something up once — "check this folder every morning," "put together a summary every 7 days" — and Qube's scheduler repeats it on its own, within whatever limits you set. (Weekday-cron like "every Friday" needs exact schedule support — use an interval or one-shot for now.) It also checks its workspace periodically and flags anything that needs attention.
+Set something up once — "check this folder every morning," "put together a summary every 7 days," "remind me about this next week" — and Qube repeats it on its own, within whatever limits you set. (Weekday-cron like "every Friday" needs exact schedule support — use an interval or one-shot for now.) It also quietly checks its workspace and connected apps between chats and flags anything that needs attention next time you talk. Scheduled work runs from inside Qube, so it runs while Qube is open and running. It suggests automation only once — if you ignore it, it drops it.
 
-### Continuity, not a blank slate every time
-Qube remembers your preferences, your projects, and decisions you've already made, so you're not re-explaining yourself in every new conversation.
+Everyday jobs people hand it:
+
+- **Inbox, calendar, and people:** "go through my inbox," "I'm meeting Sara tomorrow — brief me," "write my weekly update from my recent work," "pull the leads out of my email into a sheet"
+- **Files and paperwork:** "rename these by what's inside," "pull the totals out of these invoices," "does my policy cover X?," "organize this messy folder," "help total up my year," "log every house repair from my email"
+- **Money, bills, and buying:** "my internet bill went up — find me a better rate and draft the message," "help me sell my bike," "book dinner for four on Friday," "which laptop under €1000?," "sort my receipts and total them"
+- **Jobs and goals:** "tailor my CV to this posting," "turn my half-marathon goal into a week-by-week plan," "plan dinner for Saturday, two friends are vegetarian," "turn my meeting notes into tasks"
+- **Trips, verified:** "plan 3 days in Rome" — Qube checks the actual hotel, museum, and transport sites for hours, prices, and availability for your dates, and marks what it could verify
+- **Watching and coming back:** "tell me when the price drops," "what could you take off my plate?"
 
 > Behind the scenes, Qube also breaks larger requests into parts and works through them together — so you don't have to manage that complexity yourself.
 

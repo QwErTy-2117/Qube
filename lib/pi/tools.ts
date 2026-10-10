@@ -121,7 +121,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
 
   // TodoWrite — session task checklist (transcript IS the store, cc-style).
   // Each call replaces the entire snapshot. Frontend GoalsPanel derives
-  // the docked goals UI above the composer from the last call.
+  // the floating goals widget in the top-right corner from the last call.
   if (includeTodos) {
     extraTools.TodoWrite = tool({
       description:

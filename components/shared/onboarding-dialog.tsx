@@ -19,7 +19,6 @@ import {
   SearchIcon,
   Loader2Icon,
   UnplugIcon,
-  LinkIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Highlighter } from "@/components/ui/highlighter";
@@ -33,7 +32,7 @@ import {
 } from "./settings-dialog";
 import { detectModelImageSupport } from "@/lib/agent/vision-support";
 import { detectModelThinkingSupport } from "@/lib/agent/thinking-support";
-import { renderConnectorIcon } from "@/lib/connectors/icons";
+import { ConnectorBrandIcon } from "@/components/shared/connector-brand-icon";
 import {
   getCachedConnectors,
   fetchConnectorsList,
@@ -42,11 +41,6 @@ import {
 } from "@/lib/connectors/connectors-cache";
 import { ChatGPTOnboardingSection } from "@/components/chatgpt/chatgpt-onboarding";
 import { TermsPrivacyContent } from "./terms-content";
-
-const KNOWN_ICON_IDS = new Set([
-  "linear","atlassian","trello","airtable","notion",
-  "slack","github","google","hubspot","asana","dropbox",
-]);
 
 function getInstanceId(): string {
   // Shared per-install UUID (created synchronously on first use) — never the
@@ -120,28 +114,6 @@ async function fetchProviderModels(baseURL: string, apiKey: string, providerId?:
     return models;
   }
   throw new Error("Unexpected model list format");
-}
-
-async function probeProviderChat(
-  providerId: string,
-  baseURL: string,
-  apiKey: string,
-  modelId: string,
-): Promise<string | null> {
-  try {
-    const res = await fetch("/api/providers/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ providerId, baseURL, apiKey, modelId }),
-    });
-    const body = await res.json().catch(() => null);
-    if (body?.ok) return null;
-    const err = body?.error || "Chat probe failed";
-    const hint = body?.hint ? ` ${body.hint}` : "";
-    return `${err}${hint}`;
-  } catch (e) {
-    return e instanceof Error ? e.message : "Chat probe failed";
-  }
 }
 
 export function OnboardingModal() {
@@ -384,20 +356,8 @@ export function OnboardingModal() {
         reasoning: model.reasoning,
       }));
 
-      if (fetchedModels.length > 0 && configApiKey) {
-        const probeId =
-          provId === "opencode"
-            ? fetchedModels.find((m) => /^(gpt-|deepseek|glm|kimi|minimax|big-pickle|mimo|ling|nemotron)/i.test(m.id))?.id ||
-              fetchedModels[0].id
-            : fetchedModels[0].id;
-        const probeError = await probeProviderChat(provId, configBaseUrl || "", configApiKey || "", probeId);
-        if (probeError) {
-          const temporary = /rate limit|quota exceeded|429/i.test(probeError);
-          if (!temporary) {
-            throw new Error(`Models listed OK, but a test chat with "${probeId}" failed:\n${probeError}`);
-          }
-          console.warn(`[Onboarding] Chat probe rate-limited (saving anyway): ${probeError}`);
-        }
+      if (fetchedModels.length === 0) {
+        throw new Error("No models returned for this provider/endpoint.");
       }
 
       const targetProv: ProviderConfig = {
@@ -857,11 +817,14 @@ export function OnboardingModal() {
                                           className="size-9 flex items-center justify-center shrink-0"
                                           style={{ color: (connector as any).brandColor || undefined }}
                                         >
-                                          {KNOWN_ICON_IDS.has(connector.id)
-                                            ? renderConnectorIcon(connector.id, 24)
-                                            : (connector as any).icon?.startsWith("http")
-                                              ? <img src={(connector as any).icon} alt="" className="size-6 object-contain" />
-                                              : <LinkIcon className="size-5 text-muted-foreground/50" />}
+                                          <ConnectorBrandIcon
+                                            id={connector.id}
+                                            icon={(connector as any).icon}
+                                            brandColor={(connector as any).brandColor}
+                                            size={24}
+                                            imgClassName="size-6"
+                                            linkClassName="size-5"
+                                          />
                                         </div>
                                       </div>
                                     );
@@ -1203,11 +1166,14 @@ export function OnboardingModal() {
                   className="size-12 rounded-xl bg-background border border-border/60 flex items-center justify-center shrink-0 shadow-sm"
                   style={{ color: (connectorDetail as any).brandColor || undefined }}
                 >
-                  {KNOWN_ICON_IDS.has(connectorDetail.id)
-                    ? renderConnectorIcon(connectorDetail.id, 28)
-                    : (connectorDetail as any).icon?.startsWith("http")
-                      ? <img src={(connectorDetail as any).icon} alt="" className="size-7 object-contain" />
-                      : <LinkIcon className="size-6 text-muted-foreground/50" />}
+                  <ConnectorBrandIcon
+                    id={connectorDetail.id}
+                    icon={(connectorDetail as any).icon}
+                    brandColor={(connectorDetail as any).brandColor}
+                    size={28}
+                    imgClassName="size-7"
+                    linkClassName="size-6"
+                  />
                 </div>
                 <div className="min-w-0 flex-1 space-y-1">
                   <p className="text-sm font-semibold text-foreground leading-none">{connectorDetail.name}</p>

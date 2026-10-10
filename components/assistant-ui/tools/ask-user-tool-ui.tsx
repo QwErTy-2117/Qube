@@ -75,7 +75,7 @@ export const AskUserToolUI: ToolCallMessagePartComponent = ({
   if (answeredCount === 0) return null;
 
   return (
-    <div className="rounded-xl border border-border/60 bg-background px-4 py-3 text-sm shadow-sm">
+    <div className="mt-2 rounded-xl border border-border/60 bg-background px-4 py-3 text-sm shadow-sm">
       <div className="flex items-center gap-2">
         <HelpCircleIcon className="size-4 shrink-0 text-muted-foreground" />
         <span className="font-medium text-foreground">

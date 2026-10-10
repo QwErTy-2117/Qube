@@ -88,6 +88,48 @@ fn read_app_settings(data_dir: &std::path::Path) -> (bool, bool) {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // Safety net: never navigate the app webview to an external site.
+        // External http(s) links (and mailto:/tel:) are opened in the system
+        // browser instead — the frontend ExternalLinkHandler covers clicks,
+        // this covers anything that slips through (window.open, redirects,
+        // context-menu / drag navigation).
+        .plugin(
+            tauri::plugin::Builder::new("external-links")
+                .on_navigation(|_webview, url| {
+                    let scheme = url.scheme();
+                    // App-internal schemes always stay inside the webview.
+                    if matches!(scheme, "tauri" | "file" | "data" | "blob") {
+                        return true;
+                    }
+                    if scheme == "http" || scheme == "https" {
+                        if let Some(host) = url.host_str() {
+                            // Local sidecar (dev + production) stays inside.
+                            if host == "localhost"
+                                || host == "127.0.0.1"
+                                || host == "[::1]"
+                                || host.ends_with(".localhost")
+                            {
+                                return true;
+                            }
+                            // Tauri's own hosts stay inside.
+                            if host == "tauri.localhost" {
+                                return true;
+                            }
+                        }
+                        // External web link → system browser.
+                        #[allow(deprecated)]
+                        let _ = tauri_plugin_shell::open::open(None, url.as_str(), None);
+                        return false;
+                    }
+                    if matches!(scheme, "mailto" | "tel") {
+                        #[allow(deprecated)]
+                        let _ = tauri_plugin_shell::open::open(None, url.as_str(), None);
+                        return false;
+                    }
+                    true
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_autostart::init(MacosLauncher::AppleScript, Some(vec!["--autostart"])))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

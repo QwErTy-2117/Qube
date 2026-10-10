@@ -1,9 +1,14 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
+import { ToolRow } from "./tool-row";
+import { friendlyToolLabel } from "./tool-labels";
 
 export const ReadSessionSummaryToolUI: ToolCallMessagePartComponent = ({
+  toolName,
+  args,
   result,
+  status,
 }) => {
   let data: { session?: { title?: string; summary?: string; updatedAt?: number } } = {};
   try {
@@ -12,28 +17,32 @@ export const ReadSessionSummaryToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   const session = data.session;
+  const verb = friendlyToolLabel(toolName || "read_session_summary", args);
 
+  if (!session || ("error" in (session as any))) {
+    return <ToolRow verb={verb} summary="Not found." status={status} />;
+  }
+
+  // Compressed by default — tap to expand the past chat.
   return (
-    <div className="bg-muted/30 px-3 py-2 text-sm">
-      {session && !("error" in (session as any)) ? (
-        <div className="flex flex-col gap-2">
-          {session.title && (
-            <div className="text-xs font-medium">{session.title}</div>
-          )}
-          {session.summary && (
-            <div className="rounded-md bg-background p-2 text-xs text-muted-foreground">
-              {session.summary}
-            </div>
-          )}
-          {session.updatedAt && (
-            <div className="text-xs text-muted-foreground/60">
-              {new Date(session.updatedAt).toLocaleString()}
-            </div>
-          )}
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">Session not found.</p>
-      )}
-    </div>
+    <ToolRow
+      verb={verb}
+      summary={session.title || ""}
+      defaultOpen={false}
+      status={status}
+    >
+      <div className="flex flex-col gap-2">
+        {session.summary && (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {session.summary}
+          </p>
+        )}
+        {session.updatedAt && (
+          <div className="text-[11px] text-muted-foreground/60">
+            {new Date(session.updatedAt).toLocaleString()}
+          </div>
+        )}
+      </div>
+    </ToolRow>
   );
 };

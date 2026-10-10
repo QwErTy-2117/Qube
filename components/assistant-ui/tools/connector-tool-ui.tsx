@@ -1,50 +1,36 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { renderConnectorIcon } from "@/lib/connectors/icons";
+import {
+  getConnectorMetaForTool,
+  inferConnectorMetasFromArgs,
+  type ConnectorMeta,
+} from "@/lib/connectors/connector-meta";
+import { getCachedConnectors, type CachedConnector } from "@/lib/connectors/connectors-cache";
+import { ConnectorBrandIcon } from "@/components/shared/connector-brand-icon";
+import { composioLogoDarkClass } from "@/lib/connectors/composio-logo";
+import { ToolRow } from "@/components/assistant-ui/tools/tool-row";
 import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
-import { Loader2Icon, CheckIcon, XIcon } from "lucide-react";
+import { XIcon, CheckIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const CONNECTOR_PREFIXES: Record<string, { id: string; name: string }> = {
-  linear: { id: "linear", name: "Linear" },
-  jira: { id: "atlassian", name: "Jira" },
-  trello: { id: "trello", name: "Trello" },
-  airtable: { id: "airtable", name: "Airtable" },
-  notion: { id: "notion", name: "Notion" },
-  slack: { id: "slack", name: "Slack" },
-  github: { id: "github", name: "GitHub" },
-  gmail: { id: "google", name: "Gmail" },
-  googlecalendar: { id: "google", name: "Google Calendar" },
-  googledrive: { id: "google", name: "Google Drive" },
-  hubspot: { id: "hubspot", name: "HubSpot" },
-  asana: { id: "asana", name: "Asana" },
-  dropbox: { id: "dropbox", name: "Dropbox" },
-};
-
-const COLORS: Record<string, string> = {
-  linear: "#5E6AD2", atlassian: "#0052CC", trello: "#0052CC",
-  airtable: "#FFBF00", notion: "currentColor", slack: "#4A154B",
-  github: "currentColor", google: "#4285F4", hubspot: "#FF7A59",
-  asana: "#F06A6A", dropbox: "#0061FF",
-};
-
+/**
+ * Back-compat: previously a local prefix map. Now delegates to the shared
+ * `connector-meta` resolver (strict "_" boundary, longest-first). Returns the
+ * app-specific icon id (gmail → Gmail envelope, calendar → Calendar glyph)
+ * so each card shows its own app's icon.
+ */
 export function getConnectorMeta(toolName: string): { id: string; name: string } | null {
-  const lower = toolName.toLowerCase();
-  for (const [prefix, meta] of Object.entries(CONNECTOR_PREFIXES)) {
-    if (lower.startsWith(prefix)) return meta;
-  }
-  return null;
-}
-
-function getMeta(toolName: string): { id: string; name: string } | null {
-  return getConnectorMeta(toolName);
+  const meta = getConnectorMetaForTool(toolName);
+  if (!meta) return null;
+  return { id: meta.iconId, name: meta.name };
 }
 
 function describeAction(toolName: string, args: any): string {
   const a = args || {};
-  if (toolName.toLowerCase().includes("send") || toolName.toLowerCase().includes("create")) {
+  const lower = String(toolName || "").toLowerCase();
+  if (lower.includes("send") || lower.includes("create")) {
     const parts: string[] = [];
     if (a.to) parts.push(`to ${a.to}`);
     if (a.subject) parts.push(`"${String(a.subject).slice(0, 60)}"`);
@@ -60,27 +46,121 @@ function describeAction(toolName: string, args: any): string {
   return "";
 }
 
+// Tilts cycle for stacked app tiles — same playful overlapping-tray look as
+// the "Connect your apps" strip under the home-page composer.
+const STACK_TILTS = [-8, 6, -5, 7, -6];
+
+function ConnectorAppIcons({
+  metas,
+}: {
+  metas: ConnectorMeta[];
+}) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  // The generic "composio" entry has no app tile — a card with only that
+  // resolves to no icons.
+  const visible = metas.filter((m) => m.displayId !== "composio");
+  if (visible.length === 0) return null;
+  let cached: CachedConnector[] | null = null;
+  try {
+    cached = getCachedConnectors();
+  } catch {}
+  // Row-height tiles (size-4 = 16px = the text line height) so the header is
+  // exactly as tall as every other ToolRow — no taller card.
+  return (
+    <span className="flex shrink-0 items-center">
+      {visible.map((meta, i) => {
+        // Per-app Composio logo first (logos.composio.dev artwork served via
+        // the cached connector entry) — Gmail gets the envelope, Calendar the
+        // calendar, Drive the triangle. Falls back to the shared static mark.
+        const entry = cached?.find((c) => c.id.toLowerCase() === meta.displayId.toLowerCase()) ?? null;
+        const composioLogo = entry?.toolkitLogos?.[meta.prefixes[0]];
+        const isHovered = hovered === i;
+        const push = hovered === null || isHovered ? 0 : i < hovered ? -4 : 4;
+        const tilt = visible.length > 1 ? STACK_TILTS[i % STACK_TILTS.length] : 0;
+        return (
+          <span
+            key={`${meta.iconId}-${i}`}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered(null)}
+            title={meta.name}
+            style={{
+              transform: `rotate(${isHovered ? 0 : tilt}deg) translateX(${push}px)`,
+            }}
+            className={
+              "relative flex size-4 items-center justify-center rounded-[5px] bg-background transition-transform duration-200 hover:scale-110 hover:z-10" +
+              (i > 0 ? " -ml-1" : "")
+            }
+          >
+            {composioLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={composioLogo} alt="" className={`size-3 object-contain${composioLogoDarkClass(meta.prefixes[0])}`} loading="lazy" />
+            ) : (
+              <ConnectorBrandIcon
+                id={meta.iconId}
+                icon={entry?.icon}
+                brandColor={meta.brandColor}
+                size={12}
+                imgClassName="size-3"
+                linkClassName="size-3"
+              />
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 export const ConnectorToolUI: ToolCallMessagePartComponent = ({
   toolName,
   args: rawArgs,
   result,
   status,
 }) => {
-  const meta = getMeta(toolName);
+  const directMeta = useMemo(() => getConnectorMetaForTool(toolName), [toolName]);
   const args = (rawArgs || {}) as any;
-  const isRunning = status?.type === "running";
-  const isComplete = status?.type === "complete";
   const needsConfirmation = status?.type === "requires-action";
-  const icon = meta ? renderConnectorIcon(meta.id, 18) : null;
-  const color = meta ? (COLORS[meta.id] || "#888") : "#888";
-  // Model-provided label first, then the app name, then a friendly
-  // generic — the raw tool id never shows.
-  const label =
-    (typeof args.label === "string" && args.label.trim()
+
+  // Meta-tools (`composio_search_tools`, `COMPOSIO_MULTI_EXECUTE_TOOL`) hide
+  // the real app inside their payload — the tool name alone only resolves to
+  // the generic "Apps" entry. Deep-scan the args for app identifiers so each
+  // card still shows its own pre-made playful name + logo.
+  const inferred = useMemo(() => {
+    if (directMeta && directMeta.displayId !== "composio") return [];
+    try {
+      return inferConnectorMetasFromArgs(args).slice(0, 3);
+    } catch {
+      return [];
+    }
+  }, [directMeta, args]);
+  const effective: ConnectorMeta | null =
+    inferred.length === 1 ? inferred[0] : directMeta;
+  // Icon tiles resolve per app (gmail → envelope, calendar → calendar glyph)
+  // through the shared brand-icon sources — never the generic Google "G".
+  const iconMetas: ConnectorMeta[] = useMemo(() => {
+    const metas = inferred.length > 1 ? inferred : effective ? [effective] : [];
+    const seen = new Set<string>();
+    return metas.filter((m) => {
+      const key = `${m.displayId}:${m.iconId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 3);
+  }, [inferred, effective]);
+  const color = effective?.brandColor || "#888";
+  // Pre-made playful name wins (same voice as every other tool card).
+  // Explicit model `label` arg first, then the inferred/direct app playful,
+  // then the generic fallback. The raw tool id, the "· App" suffix, and
+  // serious "Agent is using X" strings never show.
+  const explicitLabel =
+    typeof args.label === "string" && args.label.trim()
       ? args.label.trim().slice(0, 120)
-      : "") ||
-    meta?.name ||
-    friendlyToolLabel(toolName, args);
+      : "";
+  const playful =
+    explicitLabel ||
+    (inferred.length === 1
+      ? inferred[0].playful
+      : friendlyToolLabel(toolName, args));
   const action = describeAction(toolName, args);
 
   const [confirming, setConfirming] = useState(false);
@@ -140,28 +220,26 @@ export const ConnectorToolUI: ToolCallMessagePartComponent = ({
     }
   }, [pendingId]);
 
-  return (
-    <div className="rounded-xl border border-border/60 bg-background p-2.5 text-sm">
-      <div className="flex items-center gap-2">
-        {icon && (
-          <div className="size-6 flex items-center justify-center shrink-0 rounded-md bg-muted/40" style={{ color }}>
-            {icon}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <span className="text-xs font-medium text-foreground/80" style={{ color: meta ? color : undefined }}>
-            {label}
-          </span>
-          {action && (
-            <span className="text-[11px] text-muted-foreground/60 ml-1.5 truncate">{action}</span>
-          )}
-        </div>
-        {isRunning && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground/40 shrink-0" />}
-        {isComplete && !needsConfirmation && <CheckIcon className="size-3.5 text-emerald-500 shrink-0" />}
-      </div>
+  void result;
 
-      {needsConfirmation && (
-        <div className="flex items-center gap-1.5 mt-2 justify-end">
+  // Same shared row as every other tool call — icons + playful verb in the
+  // header at identical height, confirm/cancel flat below the divider when
+  // the run blocks on confirmation.
+  return (
+    <ToolRow
+      verb={
+        <span className="flex min-w-0 items-center gap-2">
+          <ConnectorAppIcons metas={iconMetas} />
+          <span className="truncate">{playful}</span>
+        </span>
+      }
+      summary={action}
+      status={status}
+      open={needsConfirmation ? true : undefined}
+      onOpenChange={() => {}}
+    >
+      {needsConfirmation ? (
+        <div className="flex items-center gap-1.5 justify-end">
           <Button variant="ghost" size="sm" className="h-6 rounded-full px-2.5 text-[11px]" onClick={handleCancel} disabled={confirming}>
             <XIcon className="size-3 mr-1" /> Cancel
           </Button>
@@ -171,7 +249,7 @@ export const ConnectorToolUI: ToolCallMessagePartComponent = ({
             <CheckIcon className="size-3 mr-1" /> Confirm
           </Button>
         </div>
-      )}
-    </div>
+      ) : null}
+    </ToolRow>
   );
 };

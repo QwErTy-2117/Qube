@@ -1,7 +1,8 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { GlobeIcon } from "lucide-react";
+import { ToolRow } from "./tool-row";
+import { friendlyToolLabel } from "./tool-labels";
 
 function domainOf(url: string): string {
   try {
@@ -14,6 +15,7 @@ function domainOf(url: string): string {
 export const WebFetchToolUI: ToolCallMessagePartComponent = ({
   args,
   result,
+  status,
 }) => {
   const url = (args as any)?.url || "";
   let data: { url?: string; status?: number; content?: string } = {};
@@ -23,36 +25,19 @@ export const WebFetchToolUI: ToolCallMessagePartComponent = ({
   } catch {}
 
   const displayUrl = data.url || url;
-  const failed = data.status !== undefined && data.status >= 400;
+  const verb = friendlyToolLabel("web_fetch", args);
+  const summary = displayUrl ? domainOf(displayUrl) : "";
+
+  if (!data.content) {
+    return <ToolRow verb={verb} summary={summary} status={status} />;
+  }
 
   return (
-    <div className="bg-muted/30 px-3 py-2 text-sm">
-      {displayUrl && (
-        <div className="mb-2 flex items-center gap-2">
-          <GlobeIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          <span
-            className="truncate text-xs text-muted-foreground"
-            title={displayUrl}
-          >
-            {domainOf(displayUrl)}
-          </span>
-        </div>
-      )}
-      {failed && (
-        <p className="mb-2 text-xs text-red-500/90">
-          Couldn&apos;t open that page.
-        </p>
-      )}
-      {data.content && (
-        <div className="max-h-48 overflow-auto rounded-md bg-muted/50 p-2">
-          <pre className="whitespace-pre-wrap text-xs text-muted-foreground">
-            {data.content.slice(0, 2000)}
-            {data.content.length > 2000
-              ? "\n\n... [showing the first part]"
-              : ""}
-          </pre>
-        </div>
-      )}
-    </div>
+    <ToolRow verb={verb} summary={summary} defaultOpen={false} status={status}>
+      <div className="max-h-48 overflow-auto font-mono text-xs whitespace-pre-wrap break-words text-muted-foreground">
+        {data.content.slice(0, 2000)}
+        {data.content.length > 2000 ? "\n\n... [showing the first part]" : ""}
+      </div>
+    </ToolRow>
   );
 };

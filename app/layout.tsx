@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans";
 import "@fontsource/caveat/600.css";
 import { Provider } from "./provider";
 import { Titlebar } from "@/components/tauri/titlebar";
+import { ExternalLinkHandler } from "@/components/tauri/external-link-handler";
 import { AgentRuntimeProvider } from "@/components/assistant-ui/agent-runtime-provider";
 import { AppShell } from "@/components/app-shell";
 import "./globals.css";
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${GeistSans.className} ${GeistMono.variable} antialiased`}>
+        <ExternalLinkHandler />
         <Titlebar />
         <Provider>
           <AgentRuntimeProvider>

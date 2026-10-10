@@ -35,14 +35,14 @@ export const GoalToolUI: ToolCallMessagePartComponent = ({ args, result }) => {
     const goals = r.goals as any[];
     if (goals.length === 0) {
       return (
-        <div className="flex items-center gap-2 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
           <ListChecks className="size-4" />
           No goals yet
         </div>
       );
     }
     return (
-      <div className="rounded-lg border p-2.5 text-sm">
+      <div className="mt-2 rounded-lg border p-2.5 text-sm">
         <div className="mb-2 flex items-center gap-2 font-medium">
           <ListChecks className="size-4 text-primary" />
           Goals — {r.summary || `${goals.length} items`}
@@ -93,7 +93,7 @@ export const GoalToolUI: ToolCallMessagePartComponent = ({ args, result }) => {
   const isError = r?.error;
 
   return (
-    <div className="flex items-start gap-2 rounded-lg border p-2.5 text-sm">
+    <div className="mt-2 flex items-start gap-2 rounded-lg border p-2.5 text-sm">
       {isError ? <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" /> : <Icon className="mt-0.5 size-4 shrink-0 text-primary" />}
       <div className="min-w-0 flex-1">
         <div className="font-medium">{title}</div>

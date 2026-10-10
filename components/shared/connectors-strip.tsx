@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
+import { composioLogoUrlForIconId, composioLogoDarkClass } from "@/lib/connectors/composio-logo";
+import { getCachedConnectors } from "@/lib/connectors/connectors-cache";
 import { prefetchConnectors } from "@/lib/connectors/connectors-cache";
 
 // Most-used connectors: Gmail, Slack, GitHub, Notion, Trello.
@@ -59,10 +61,34 @@ function TrelloIcon({ size = 16 }: { size?: number }) {
   );
 }
 
-function FeaturedIcon({ id }: { id: string }) {
+function StaticFallbackIcon({ id }: { id: string }) {
   if (id === "gmail") return <GmailIcon size={15} />;
   if (id === "trello") return <TrelloIcon size={15} />;
   return <>{renderConnectorIcon(id, 15)}</>;
+}
+
+/**
+ * Featured tile icon: live Composio logo CDN artwork first (most up-to-date
+ * vendor mark), static vendored glyph as offline/error fallback only.
+ */
+function FeaturedIcon({ id }: { id: string }) {
+  const [failed, setFailed] = useState(false);
+  const [cachedUrl, setCachedUrl] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const entry = getCachedConnectors()?.find(
+        (c) => c.id.toLowerCase() === id.toLowerCase(),
+      );
+      const url = entry?.icon && entry.icon.startsWith("http") ? entry.icon : null;
+      if (url) setCachedUrl(url);
+    } catch {}
+  }, [id]);
+  const url = !failed && (cachedUrl || composioLogoUrlForIconId(id));
+  if (url) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={url} alt="" width={15} height={15} className={`object-contain${composioLogoDarkClass(id)}`} loading="lazy" onError={() => setFailed(true)} />;
+  }
+  return <StaticFallbackIcon id={id} />;
 }
 
 function openConnectorsSettings(connectorId?: string) {

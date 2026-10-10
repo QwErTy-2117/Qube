@@ -1,3 +1,5 @@
+import { getConnectorMetaForTool } from "@/lib/connectors/connector-meta";
+
 /**
  * Friendly, non-technical names for tool calls.
  *
@@ -107,6 +109,8 @@ export const FRIENDLY_TOOL_LABELS: Record<string, string> = {
  * Connected-app prefixes (prefix match, e.g. gmail_send_email, composio_*).
  * Kept separate from exact names so a short exact key can never mislabel an
  * unrelated tool (e.g. a ClickUp tool must not match "click").
+ * Single source of truth lives in lib/connectors/connector-meta — this map
+ * mirrors it so existing imports keep working.
  */
 export const CONNECTOR_PREFIX_LABELS: Record<string, string> = {
   gmail: "Fiddling with your inbox",
@@ -115,6 +119,7 @@ export const CONNECTOR_PREFIX_LABELS: Record<string, string> = {
   github: "Poking the repo",
   googlecalendar: "Rearranging your life",
   googledrive: "Digging through files",
+  google: "Rummaging through Google",
   notion: "Notion-ing around",
   hubspot: "CRM-ing it up",
   asana: "Asana-ing tasks",
@@ -122,6 +127,8 @@ export const CONNECTOR_PREFIX_LABELS: Record<string, string> = {
   airtable: "Databasing casually",
   dropbox: "Dropping files",
   jira: "Ticketing around",
+  atlassian: "Ticketing around",
+  canva: "Doodling a design",
   composio: "Rooting around your apps",
 };
 
@@ -141,9 +148,10 @@ export function friendlyToolLabel(
   if (typeof toolName !== "string" || !toolName) return FALLBACK_TOOL_LABEL;
   const exact = FRIENDLY_TOOL_LABELS[toolName];
   if (exact) return exact;
-  const lower = toolName.toLowerCase();
-  for (const [prefix, title] of Object.entries(CONNECTOR_PREFIX_LABELS)) {
-    if (lower.startsWith(prefix)) return title;
-  }
+  // Connector prefix match via the shared resolver (longest-first, strict
+  // "_" boundary so "clickup_*" never matches "click" etc.). Every known
+  // connector tool gets its pre-made playful name here.
+  const meta = getConnectorMetaForTool(toolName);
+  if (meta) return meta.playful;
   return FALLBACK_TOOL_LABEL;
 }

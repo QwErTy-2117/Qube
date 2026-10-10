@@ -9,14 +9,17 @@ export interface CachedConnector {
   hasIcon: boolean;
   appUrl: string;
   connected: boolean;
+  /** Per-toolkit Composio logo URLs (see ConnectorDisplay.toolkitLogos). */
+  toolkitLogos?: Record<string, string>;
 }
 
 const INSTANCE_KEY = "qube-instance-id";
-// v2 cache: keyed per instance id. v1 used one global key, so a list fetched
-// as the shared "qube-default-user" (before the UUID existed) poisoned every
-// later view with someone else's connected flags.
-const STORAGE_KEY_PREFIX = "qube-connectors-cache:v2:";
-const STORAGE_TS_PREFIX = "qube-connectors-cache-ts:v2:";
+// v3 cache: keyed per instance id + carries per-toolkit Composio logo URLs
+// (toolkitLogos). v1 used one global key, so a list fetched as the shared
+// "qube-default-user" (before the UUID existed) poisoned every later view
+// with someone else's connected flags. v2 entries lack toolkitLogos.
+const STORAGE_KEY_PREFIX = "qube-connectors-cache:v3:";
+const STORAGE_TS_PREFIX = "qube-connectors-cache-ts:v3:";
 // localStorage placeholder is usable for up to 10 min (instant open across
 // restarts); in-memory is the hot path within a session.
 const STORAGE_MAX_AGE_MS = 10 * 60 * 1000;

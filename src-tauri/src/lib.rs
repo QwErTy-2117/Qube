@@ -94,7 +94,7 @@ pub fn run() {
         // this covers anything that slips through (window.open, redirects,
         // context-menu / drag navigation).
         .plugin(
-            tauri::plugin::Builder::new("external-links")
+            tauri::plugin::Builder::<tauri::Wry>::new("external-links")
                 .on_navigation(|_webview, url| {
                     let scheme = url.scheme();
                     // App-internal schemes always stay inside the webview.

@@ -1,7 +1,7 @@
 import type { ActionDescriptor } from "./types";
 import { BROWSER_MCP_TOOL_PREFIX } from "@/lib/pi/browser-mcp";
 
-const OBSERVE_SUFFIX = new Set(["snapshot", "screenshot", "tabs", "page_info", "ping", "wait_load", "move_mouse"]);
+const OBSERVE_SUFFIX = new Set(["snapshot", "screenshot", "tabs", "page_info", "ping", "wait_load", "move_mouse", "user_tabs"]);
 const NAVIGATE_SUFFIX = new Set(["navigate", "open_tab"]);
 
 function base(tool: string, domain: ActionDescriptor["domain"], kind: ActionDescriptor["kind"], mutating: boolean): ActionDescriptor {
@@ -109,6 +109,20 @@ export function describeAction(tool: string, args: Record<string, unknown>): Act
         const text = String((act as any)?.text ?? "");
         if (text) d.typed.push(text.slice(0, 200));
       }
+    } else if (suffix === "dismiss_dialogs" || suffix === "switch_tab") {
+      d.kind = "interact"; d.mutating = false;
+    } else if (suffix === "close_tab") {
+      d.kind = "interact"; d.mutating = true;
+    } else if (suffix === "download") {
+      d.kind = "interact"; d.mutating = false;
+      const url = String(a.url ?? "");
+      if (url) { d.urls = [url]; d.targetText = url; }
+    } else if (suffix === "upload") {
+      d.kind = "input"; d.mutating = true;
+      const ref = String(a.ref ?? "");
+      if (/^e\d+$/.test(ref)) d.refs.push(ref);
+      const fp = String(a.path ?? "");
+      if (fp) d.targetText = fp;
     }
     d.summary = summarize(tool, d.refs.concat(d.urls).concat(d.typed.map((t) => `"${t.slice(0, 40)}"`)));
     return d;

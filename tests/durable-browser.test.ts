@@ -6,7 +6,7 @@ import { buildDurableRegistry } from "@/lib/pi/durable-registry";
 describe("durable browser extension", () => {
   it("exposes the kernel-backed browser tools", () => {
     resetDurableBrowserForTests();
-    const ext = buildBrowserExtension() as { name: string; tools: Array<{ name: string }> };
+    const ext = buildBrowserExtension() as unknown as { name: string; tools: Array<{ name: string }> };
     assert.equal(ext.name, "browser");
     const names = ext.tools.map((t) => t.name).sort();
     assert.deepEqual(names, [

@@ -59,4 +59,16 @@ describe("durable guard", () => {
     assert.equal(ext.name, "guard");
     assert.equal(ext.hooks.length, 1);
   });
+
+
+  it("honors a durable ledger allowance and denial", async () => {
+    const key = "approval:delete_file:{\"path\":\"x\"}";
+    const allowApi = { ...fakeMemoApi(), snapshot: async () => ({ allowed: { [key]: 1 }, denied: {} }) };
+    const allow = await createGuardBeforeTool()({ name: "delete_file", arguments: { path: "x" } }, allowApi as never, BACKGROUND_CONTEXT);
+    assert.equal(allow, undefined);
+
+    const denyApi = { ...fakeMemoApi(), snapshot: async () => ({ allowed: {}, denied: { [key]: 1 } }) };
+    const deny = await createGuardBeforeTool()({ name: "delete_file", arguments: { path: "x" } }, denyApi as never, BACKGROUND_CONTEXT);
+    assert.match(String(deny?.block || ""), /was denied/);
+  });
 });

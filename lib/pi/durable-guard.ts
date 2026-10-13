@@ -2,6 +2,7 @@ import { defineExtension, hook, ToolTask } from "@earendil-works/pi-durable";
 import { approvalMemoKey } from "@/lib/pi/durable-registry";
 import { isSensitiveConnectorTool } from "@/lib/permissions/sensitive";
 import { isDestructiveCommand } from "@/lib/middleware/workspace";
+import { Approvals } from "@/lib/pi/durable-docs";
 
 const COMPUTER_READONLY = new Set(["computer_list_apps", "computer_get_app_state"]);
 
@@ -37,6 +38,8 @@ export function argsHash(args: unknown): string {
 export type GuardMemoApi = {
   memo<T>(name: string, context: unknown): Promise<T | undefined>;
   memo<T>(name: string, candidate: T, context: unknown): Promise<T>;
+  /** HookApi is a DocumentReader: read the session approvals ledger. */
+  snapshot?<T>(token: unknown, context: unknown): Promise<T | undefined>;
 };
 
 /**
@@ -54,6 +57,24 @@ export function createGuardBeforeTool() {
   ): Promise<{ block?: string } | undefined> => {
     if (!isSensitiveDurableTool(call.name, call.arguments)) return undefined;
     const key = approvalMemoKey(call.name, argsHash(call.arguments));
+
+    // 1) Durable session ledger written by the app/UI on user decision.
+    if (api.snapshot) {
+      try {
+        const snap = await api.snapshot<{ allowed?: Record<string, number>; denied?: Record<string, number> }>(
+          Approvals,
+          context,
+        );
+        if (snap?.allowed?.[key]) return undefined;
+        if (snap?.denied?.[key]) {
+          return { block: `Not approved: ${call.name} was denied. Ask the user before retrying.` };
+        }
+      } catch {
+        // Ledger read is best-effort; fall through to the task memo.
+      }
+    }
+
+    // 2) Task memo (a prior decision within this tool task).
     const prior = await api.memo<boolean>(key, context).catch(() => undefined);
     if (prior === true) return undefined;
     if (prior === false) return { block: `Not approved: ${call.name} was denied earlier. Ask the user before retrying.` };
@@ -62,7 +83,7 @@ export function createGuardBeforeTool() {
     return {
       block:
         `Approval required before ${call.name}: this action reaches outside the workspace or deletes data. ` +
-        `Ask the user for explicit approval first (durable denial recorded; an approval memo for the same call allows it).`,
+        `Ask the user for explicit approval first (key ${key}; an approval for that key allows the call).`,
     };
   };
 }

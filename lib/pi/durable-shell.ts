@@ -1,10 +1,17 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { exec } from "node:child_process";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import { getWorkspacePath } from "@/lib/middleware/workspace";
 
 const execAsync = promisify(exec);
+
+/** The workspace dir may not exist yet (fresh checkout / CI): fall back to cwd. */
+function resolveCwd(): string {
+  const ws = getWorkspacePath();
+  return existsSync(ws) ? ws : process.cwd();
+}
 
 export const runCommandTool = defineTool({
   name: "run_command",
@@ -15,7 +22,7 @@ export const runCommandTool = defineTool({
     timeoutMs: Type.Optional(Type.Number({ description: "Timeout in ms, default 120000" })),
   }),
   execute: async (args) => {
-    const cwd = getWorkspacePath();
+    const cwd = resolveCwd();
     const timeout = args.timeoutMs ?? 120000;
     const payload = (extra: Record<string, unknown>) => ({
       output: [{ type: "text", text: JSON.stringify({ command: args.command, cwd, ...extra }) }] as Array<{ type: "text"; text: string }>,

@@ -1,7 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { readFile, writeFile, unlink, readdir, stat, mkdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import {
   getWorkspacePath,
   resolvePathInWorkspace,
@@ -152,7 +152,7 @@ export const presentFileTool = defineTool({
       return textOut({
         path: resolved,
         relativePath: displayAgentPath(resolved),
-        filename: displayAgentPath(resolved).split("/").pop() || args.path,
+        filename: basename(resolved) || args.path,
         size: s.size,
         status: "presented",
       });

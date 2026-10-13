@@ -105,6 +105,8 @@ export async function buildDurableRegistry() {
   const registry = createRegistry();
   registry.install(defineExtension({ name: "workspace", tools: [readFileTool, writeFileTool] }));
   registry.install(defineExtension({ name: "memory", tools: [readMemoryTool, saveMemoryTool] }));
+  const { buildGoalsExtension } = await import("@/lib/pi/durable-goals");
+  registry.install(buildGoalsExtension());
   return registry;
 }
 

@@ -31,10 +31,12 @@ describe("durable storage singleton", () => {
     assert.ok(extNames.includes("workspace"), `extensions: ${extNames.join(",")}`);
     assert.ok(extNames.includes("skills"), `extensions: ${extNames.join(",")}`);
     assert.ok(extNames.includes("memory"), `extensions: ${extNames.join(",")}`);
+    assert.ok(extNames.includes("goals"), `extensions: ${extNames.join(",")}`);
     const toolNames = agent.tools.map((t) => t.name);
     assert.ok(toolNames.includes("read_file"), `tools: ${toolNames.join(",")}`);
     assert.ok(toolNames.includes("read_memory"), `tools: ${toolNames.join(",")}`);
     assert.ok(toolNames.includes("save_memory"), `tools: ${toolNames.join(",")}`);
+    assert.ok(toolNames.includes("TodoWrite"), `tools: ${toolNames.join(",")}`);
     await closeDurableHarness(BACKGROUND_CONTEXT);
   });
 });

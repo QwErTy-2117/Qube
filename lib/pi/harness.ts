@@ -498,15 +498,20 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     }
   } catch {}
 
-  // Provider/type resolution with reasoning effort mapping (preserve thinking-support behavior)
+  // Reasoning effort mapping. The providerOptions key is the AI SDK provider
+  // name, not the Qube provider id: every OpenAI-compatible provider
+  // (openai, deepseek, openrouter, ollama, custom, opencode/zen, chatgpt
+  // proxy, …) is a createOpenAI() client, so `openai.reasoningEffort` is
+  // forwarded as `reasoning_effort` on all of them. Only mistral uses its
+  // own SDK key. Previously only openai/mistral/chatgpt were mapped and
+  // thinking was silently dropped for every other provider.
   const provResult = providerStore.getProviderByModel(config.modelName || "");
   const providerId = provResult?.provider.id;
   const providerOptions: Record<string, any> = {};
   const effort = config.reasoningEffort;
   if (effort && effort !== "off") {
-    if (providerId === "openai") providerOptions.openai = { reasoningEffort: effort };
-    else if (providerId === "mistral") providerOptions.mistral = { reasoningEffort: effort };
-    else if (providerId === "chatgpt") providerOptions.openai = { reasoningEffort: effort };
+    if (providerId === "mistral") providerOptions.mistral = { reasoningEffort: effort };
+    else providerOptions.openai = { reasoningEffort: effort };
   }
 
   const resolveModel = (modelId?: string | null) => {

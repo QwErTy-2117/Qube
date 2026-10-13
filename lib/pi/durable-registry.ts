@@ -87,6 +87,7 @@ export async function buildDurableRegistry(opts?: {
   userAbout?: string;
   mcpTools?: Record<string, import("@/lib/pi/durable-mcp").VercelMcpTool>;
   mcpServerName?: string;
+  connectorTools?: Record<string, import("@/lib/pi/durable-connectors").ConnectorTool>;
 }) {
   const registry = createRegistry();
   const { buildQubeExtension } = await import("@/lib/pi/durable-prompt");
@@ -112,6 +113,13 @@ export async function buildDurableRegistry(opts?: {
   if (opts?.mcpTools && Object.keys(opts.mcpTools).length > 0) {
     const { buildMcpExtension } = await import("@/lib/pi/durable-mcp");
     registry.install(buildMcpExtension(opts.mcpTools, opts.mcpServerName || "custom"));
+  }
+  // Connector tools are caller-loaded (loadConnectorTools owns the
+  // Composio session); sensitive sends/creates/deletes are gated by
+  // the guard hook above.
+  if (opts?.connectorTools && Object.keys(opts.connectorTools).length > 0) {
+    const { buildConnectorsExtension } = await import("@/lib/pi/durable-connectors");
+    registry.install(buildConnectorsExtension(opts.connectorTools));
   }
   return registry;
 }

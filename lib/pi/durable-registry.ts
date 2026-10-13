@@ -9,7 +9,7 @@ const readFileTool = defineTool({
   replay: "safe",
   execute: async (args) => {
     const text = await readFile(args.path, "utf-8").catch((e: Error) => `Error: ${e.message}`);
-    return { content: [{ type: "text", text: text.slice(0, 20000) }] };
+    return { output: [{ type: "text", text: text.slice(0, 20000) }] as const };
   },
 });
 
@@ -17,7 +17,7 @@ const writeFileTool = defineTool({
   name: "write_file",
   description: "Write a workspace file (never auto-replayed after crash)",
   parameters: Type.Object({ path: Type.String(), content: Type.String() }),
-  execute: async () => ({ content: [{ type: "text", text: "written (stub)" }] }),
+  execute: async () => ({ output: [{ type: "text", text: "written (stub)" }] as const }),
 });
 
 export async function buildDurableRegistry() {

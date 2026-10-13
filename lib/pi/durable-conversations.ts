@@ -1,5 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { defineDoc } from "@earendil-works/pi-durable";
+import { defineDoc, type ConversationId } from "@earendil-works/pi-durable";
 import { getDurableHarness } from "@/lib/pi/durable";
 
 export const ThreadMap = defineDoc<{ ids: Record<string, string>; titles: Record<string, string> }>({
@@ -15,14 +15,16 @@ export async function getOrCreateConversation(threadId: string, context = BACKGR
   const mapped = await h.snapshot(ThreadMap, context);
   const existingId = mapped?.ids[threadId];
   if (existingId) {
-    const handle = await h.conversation(existingId, context);
+    // Runtime conversation IDs are UUIDv7 strings (proven by round-trip
+    // tests); the .d.ts brands them as numbers, hence the cast.
+    const handle = await h.conversation(existingId as unknown as ConversationId, context);
     if (handle) return handle;
   }
   const root = await h.root(context);
   const created = await root.commit(async (tx) => {
     const rec = await tx.createConversation({ ownership: { kind: "ownerless" } });
     const doc = await tx.doc(ThreadMap);
-    doc.ids[threadId] = rec.id;
+    doc.ids[threadId] = String(rec.id);
     if (!doc.titles[threadId]) doc.titles[threadId] = "New Chat";
     return rec;
   }, context);
@@ -39,9 +41,9 @@ export async function listDurableThreads(context = BACKGROUND_CONTEXT) {
   const reverse = new Map<string, string>();
   for (const [qubeId, convId] of Object.entries(mapped?.ids ?? {})) reverse.set(convId, qubeId);
   return page.items
-    .filter((c) => reverse.has(c.id))
+    .filter((c) => reverse.has(String(c.id)))
     .map((c) => {
-      const qubeId = reverse.get(c.id)!;
+      const qubeId = reverse.get(String(c.id))!;
       return { id: qubeId, title: mapped?.titles[qubeId] ?? "New Chat" };
     });
 }

@@ -74,11 +74,30 @@ export async function POST(req: Request) {
       `thread_${Date.now()}`;
 
     if (process.env.PI_DURABLE_ENABLED === "1") {
-      const { submitDurableChat, buildRequestId } = await import("@/lib/pi/durable-stream");
+      const { streamDurableToWriter, buildRequestId } = await import("@/lib/pi/durable-stream");
       const last = Array.isArray(messages) ? messages[messages.length - 1] : null;
-      const text = typeof (last as any)?.content === "string" ? (last as any).content : JSON.stringify(last ?? {});
-      const answer = await submitDurableChat(currentThreadId, text, buildRequestId(currentThreadId, String(Date.now())));
-      return new Response(JSON.stringify({ answer }), { headers: { "content-type": "application/json" } });
+      const text = last ? extractText(last as Record<string, unknown>) : "";
+      const durableStream = createUIMessageStream({
+        originalMessages: (messages ?? []) as any[],
+        execute: async ({ writer }) => {
+          try {
+            await streamDurableToWriter(currentThreadId, text, buildRequestId(currentThreadId, String(Date.now())), writer as never, {
+              modelName,
+              signal: req.signal ?? undefined,
+            });
+          } catch (e) {
+            const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+            if (!/abort/i.test(msg)) {
+              try {
+                writer.write({ type: "text-start", id: "error" } as any);
+                writer.write({ type: "text-delta", id: "error", delta: `Error: ${msg}` } as any);
+                writer.write({ type: "text-end", id: "error" } as any);
+              } catch {}
+            }
+          }
+        },
+      });
+      return createUIMessageStreamResponse({ stream: durableStream });
     }
 
     // If MCP servers provided per-request, sync to store for persistence

@@ -32,3 +32,9 @@ export async function closeDurableHarness(context = BACKGROUND_CONTEXT) {
   await harness.close(context);
   harness = null;
 }
+
+export async function abortDurable(threadId: string, context = BACKGROUND_CONTEXT) {
+  const { getOrCreateConversation } = await import("@/lib/pi/durable-conversations");
+  const conv = await getOrCreateConversation(threadId, context);
+  await conv.abort(context);
+}

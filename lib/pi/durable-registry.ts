@@ -25,3 +25,7 @@ export async function buildDurableRegistry() {
   registry.install(defineExtension({ name: "workspace", tools: [readFileTool, writeFileTool] }));
   return registry;
 }
+
+export function approvalMemoKey(tool: string, argsHash: string): string {
+  return `approval:${tool}:${argsHash}`;
+}

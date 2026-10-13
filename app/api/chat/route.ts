@@ -73,6 +73,14 @@ export async function POST(req: Request) {
       threadId ||
       `thread_${Date.now()}`;
 
+    if (process.env.PI_DURABLE_ENABLED === "1") {
+      const { submitDurableChat, buildRequestId } = await import("@/lib/pi/durable-stream");
+      const last = Array.isArray(messages) ? messages[messages.length - 1] : null;
+      const text = typeof (last as any)?.content === "string" ? (last as any).content : JSON.stringify(last ?? {});
+      const answer = await submitDurableChat(currentThreadId, text, buildRequestId(currentThreadId, String(Date.now())));
+      return new Response(JSON.stringify({ answer }), { headers: { "content-type": "application/json" } });
+    }
+
     // If MCP servers provided per-request, sync to store for persistence
     if (Array.isArray(mcpServers) && mcpServers.length >= 0) {
       try {

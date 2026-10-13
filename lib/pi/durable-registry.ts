@@ -82,7 +82,12 @@ export const saveMemoryTool = defineTool({
   },
 });
 
-export async function buildDurableRegistry(opts?: { userName?: string; userAbout?: string }) {
+export async function buildDurableRegistry(opts?: {
+  userName?: string;
+  userAbout?: string;
+  mcpTools?: Record<string, import("@/lib/pi/durable-mcp").VercelMcpTool>;
+  mcpServerName?: string;
+}) {
   const registry = createRegistry();
   const { buildQubeExtension } = await import("@/lib/pi/durable-prompt");
   registry.install(buildQubeExtension(opts));
@@ -99,6 +104,12 @@ export async function buildDurableRegistry(opts?: { userName?: string; userAbout
   registry.install(buildSubagentsExtension());
   const { buildGuardExtension } = await import("@/lib/pi/durable-guard");
   registry.install(buildGuardExtension());
+  // MCP tools are caller-loaded (loadMcpTools owns client lifecycle);
+  // the bridge converts them without connecting anything itself.
+  if (opts?.mcpTools && Object.keys(opts.mcpTools).length > 0) {
+    const { buildMcpExtension } = await import("@/lib/pi/durable-mcp");
+    registry.install(buildMcpExtension(opts.mcpTools, opts.mcpServerName || "custom"));
+  }
   return registry;
 }
 

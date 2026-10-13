@@ -43,6 +43,8 @@ describe("durable storage singleton", () => {
     assert.ok(toolNames.includes("list_directory"), `tools: ${toolNames.join(",")}`);
     assert.ok(toolNames.includes("run_command"), `tools: ${toolNames.join(",")}`);
     assert.ok(toolNames.includes("subagent"), `tools: ${toolNames.join(",")}`);
+    assert.ok(toolNames.includes("schedule_task"), `tools: ${toolNames.join(",")}`);
+    assert.ok(toolNames.includes("update_heartbeat"), `tools: ${toolNames.join(",")}`);
     const sectionKeys = agent.sections.map((s) => (s as { key?: string }).key);
     assert.ok(sectionKeys.includes("preamble"), `sections: ${sectionKeys.join(",")}`);
     await closeDurableHarness(BACKGROUND_CONTEXT);

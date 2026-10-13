@@ -102,6 +102,8 @@ export async function buildDurableRegistry(opts?: {
   registry.install(buildShellExtension());
   const { buildSubagentsExtension } = await import("@/lib/pi/durable-subagents");
   registry.install(buildSubagentsExtension());
+  const { buildSchedulerExtension } = await import("@/lib/pi/durable-scheduler");
+  registry.install(buildSchedulerExtension());
   const { buildGuardExtension } = await import("@/lib/pi/durable-guard");
   registry.install(buildGuardExtension());
   // MCP tools are caller-loaded (loadMcpTools owns client lifecycle);

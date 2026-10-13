@@ -49,8 +49,7 @@ export async function listDurableThreads(context = BACKGROUND_CONTEXT) {
     });
 }
 
-export type DurableAgentSync = {
-  modelName?: string | null;
+export type DurableAgentSync = {  modelName?: string | null;
   reasoningEffort?: string;
   cwd?: string | null;
 };
@@ -90,4 +89,13 @@ export async function syncConversationAgent(
     await conv.configure(change as never, context);
   }
   return conv;
+}
+
+export async function setThreadTitle(threadId: string, title: string, context = BACKGROUND_CONTEXT): Promise<void> {
+  const h = await getDurableHarness(context);
+  const root = await h.root(context);
+  await root.commit(async (tx) => {
+    const doc = await tx.doc(ThreadMap);
+    if (doc.ids[threadId]) doc.titles[threadId] = title.slice(0, 120) || "New Chat";
+  }, context);
 }

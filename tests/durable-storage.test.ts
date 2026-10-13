@@ -41,6 +41,7 @@ describe("durable storage singleton", () => {
     assert.ok(toolNames.includes("web_fetch"), `tools: ${toolNames.join(",")}`);
     assert.ok(toolNames.includes("edit_file"), `tools: ${toolNames.join(",")}`);
     assert.ok(toolNames.includes("list_directory"), `tools: ${toolNames.join(",")}`);
+    assert.ok(toolNames.includes("run_command"), `tools: ${toolNames.join(",")}`);
     await closeDurableHarness(BACKGROUND_CONTEXT);
   });
 });

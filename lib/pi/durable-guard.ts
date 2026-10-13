@@ -1,6 +1,7 @@
 import { defineExtension, hook, ToolTask } from "@earendil-works/pi-durable";
 import { approvalMemoKey } from "@/lib/pi/durable-registry";
 import { isSensitiveConnectorTool } from "@/lib/permissions/sensitive";
+import { isDestructiveCommand } from "@/lib/middleware/workspace";
 
 const COMPUTER_READONLY = new Set(["computer_list_apps", "computer_get_app_state"]);
 
@@ -10,9 +11,13 @@ const COMPUTER_READONLY = new Set(["computer_list_apps", "computer_get_app_state
  * require an explicit decision. Single source of truth stays in
  * lib/permissions/sensitive.ts (connector classifier).
  */
-export function isSensitiveDurableTool(toolName: string): boolean {
+export function isSensitiveDurableTool(toolName: string, args?: unknown): boolean {
   if (toolName === "delete_file") return true;
   if (toolName.startsWith("computer_") && !COMPUTER_READONLY.has(toolName)) return true;
+  if (toolName === "run_command") {
+    const command = (args as { command?: unknown } | null)?.command;
+    return typeof command === "string" && isDestructiveCommand(command);
+  }
   try {
     if (isSensitiveConnectorTool(toolName)) return true;
   } catch {
@@ -47,7 +52,7 @@ export function createGuardBeforeTool() {
     api: GuardMemoApi,
     context: unknown,
   ): Promise<{ block?: string } | undefined> => {
-    if (!isSensitiveDurableTool(call.name)) return undefined;
+    if (!isSensitiveDurableTool(call.name, call.arguments)) return undefined;
     const key = approvalMemoKey(call.name, argsHash(call.arguments));
     const prior = await api.memo<boolean>(key, context).catch(() => undefined);
     if (prior === true) return undefined;

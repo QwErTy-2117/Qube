@@ -91,6 +91,8 @@ export async function buildDurableRegistry() {
   registry.install(buildGoalsExtension());
   const { buildWebExtension } = await import("@/lib/pi/durable-web");
   registry.install(buildWebExtension());
+  const { buildShellExtension } = await import("@/lib/pi/durable-shell");
+  registry.install(buildShellExtension());
   const { buildGuardExtension } = await import("@/lib/pi/durable-guard");
   registry.install(buildGuardExtension());
   return registry;

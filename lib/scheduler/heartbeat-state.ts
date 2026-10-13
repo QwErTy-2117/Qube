@@ -23,13 +23,15 @@ export type HeartbeatState = {
   lastAttemptedCheck: number | null;
   lastAction: string | null;
   lastActionAt: number | null;
-  pendingActions: Array<{ id: string; description: string; createdAt: number; deferredUntil?: number }>;
+  pendingActions: Array<{ id: string; description: string; createdAt: number; deferredUntil?: number; fileRefs?: string[]; contentHash?: string }>;
   deferredActions: Array<{ id: string; description: string; deferredUntil: number }>;
   failedActions: Array<{ id: string; description: string; failedAt: number; retryAt: number; attempts: number; lastError: string }>;
   taskStatus: Record<string, "idle" | "in_progress" | "failed" | "needs_attention">;
   notificationStatus: Record<string, { lastNotifiedAt: number; count: number }>;
   consecutiveEmptyTicks: number;
   totalTicks: number;
+  lastDiscoveryHash?: string | null;
+  lastDiscoveryAt?: number | null;
 };
 
 function defaultState(): HeartbeatState {
@@ -140,22 +142,29 @@ export function classifyHeartbeatNeed(state: HeartbeatState): "nothing" | "later
   return "nothing";
 }
 
-export async function addPendingAction(description: string, deferredUntil?: number): Promise<{ added: boolean; duplicate: boolean }> {
+export async function addPendingAction(description: string, deferredUntil?: number, fileRefs?: string[]): Promise<{ added: boolean; duplicate: boolean }> {
   const state = await loadHeartbeatState();
   const norm = description.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 200);
-  // Muse rule: never repeat the same suggestion twice — dedup against
-  // pending + recently notified (7d window) by normalized prefix match.
-  const isDupe = (d: string) => {
+  // Content-hash dedup (unified with proactive suggestions): same fingerprint
+  // => duplicate even if wording drifts slightly. Falls back to the legacy
+  // normalized-prefix match for entries recorded before hashes existed.
+  let hash = "";
+  try {
+    const { hashContent } = await import("@/lib/proactivity/store");
+    hash = hashContent(description.toLowerCase().slice(0, 2000));
+  } catch {}
+  const isDupe = (d: string, h?: string) => {
+    if (hash && h && h === hash) return true;
     const n = d.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 200);
     return n === norm || (norm.length > 24 && n.startsWith(norm.slice(0, 48))) || (n.length > 24 && norm.startsWith(n.slice(0, 48)));
   };
-  if (state.pendingActions.some((a) => isDupe(a.description))) return { added: false, duplicate: true };
+  if (state.pendingActions.some((a) => isDupe(a.description, (a as any).contentHash))) return { added: false, duplicate: true };
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
   for (const [key, entry] of Object.entries(state.notificationStatus)) {
     if (entry.lastNotifiedAt > weekAgo && isDupe(key)) return { added: false, duplicate: true };
   }
   const id = `hbact_${Date.now()}_${Math.random().toString(36).slice(2, 4)}`;
-  state.pendingActions.push({ id, description, createdAt: Date.now(), deferredUntil });
+  state.pendingActions.push({ id, description, createdAt: Date.now(), deferredUntil, ...(fileRefs?.length ? { fileRefs: fileRefs.slice(0, 8) } : {}), ...(hash ? { contentHash: hash } : {}) });
   await saveHeartbeatState(state);
   return { added: true, duplicate: false };
 }
@@ -177,7 +186,7 @@ export async function hasBeenNotified(topic: string, windowMs = 7 * 24 * 3600 * 
   return Date.now() - entry.lastNotifiedAt < windowMs;
 }
 
-export async function consumeDueActions(): Promise<Array<{ id: string; description: string }>> {
+export async function consumeDueActions(): Promise<Array<{ id: string; description: string; fileRefs?: string[] }>> {
   const state = await loadHeartbeatState();
   const now = Date.now();
   const due = state.pendingActions.filter((a) => !a.deferredUntil || a.deferredUntil <= now);
@@ -188,7 +197,21 @@ export async function consumeDueActions(): Promise<Array<{ id: string; descripti
   state.deferredActions = state.deferredActions.filter((a) => a.deferredUntil > now);
   for (const d of dueDeferred) state.pendingActions.push({ id: d.id, description: d.description, createdAt: now });
   await saveHeartbeatState(state);
-  return [...due, ...dueDeferred].map(({ id, description }) => ({ id, description }));
+  return [
+    ...due.map(({ id, description, fileRefs }) => ({ id, description, ...(fileRefs ? { fileRefs } : {}) })),
+    ...dueDeferred.map(({ id, description }) => ({ id, description })),
+  ];
+}
+
+/** Re-queue dues that were consumed but NOT acted on (empty/failed tick) so
+ * they are never lost. Dedups against anything re-added meanwhile. */
+export async function requeueDueActions(due: Array<{ description: string; fileRefs?: string[] }>): Promise<void> {
+  if (due.length === 0) return;
+  for (const d of due) {
+    try {
+      await addPendingAction(d.description, undefined, d.fileRefs);
+    } catch {}
+  }
 }
 
 export async function shouldSkipHeartbeatDueToQuiet(state: HeartbeatState, minIntervalMs: number): Promise<boolean> {

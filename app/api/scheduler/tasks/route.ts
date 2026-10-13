@@ -9,6 +9,10 @@ import {
 } from "@/lib/scheduler/task-store";
 
 export async function GET() {
+  try {
+    const { ensureSchedulerStarted } = await import("@/lib/scheduler/init");
+    ensureSchedulerStarted();
+  } catch {}
   const tasks = await getTasks();
   return NextResponse.json({ tasks });
 }
@@ -29,9 +33,14 @@ export async function POST(req: NextRequest) {
             { status: 400 },
           );
         }
+        const extras: string[] = [];
+        if (data.doneCriteria) extras.push(`Done criteria: ${data.doneCriteria}`);
+        if (data.condition) extras.push(`Only-report-if: ${data.condition}`);
+        if (data.deliverablePath) extras.push(`Deliverable: ${data.deliverablePath}`);
+        const instructions = extras.length > 0 ? `${data.instructions}\n\n${extras.join("\n")}` : data.instructions;
         const task = await createTask({
           name: data.name,
-          instructions: data.instructions,
+          instructions,
           scheduleKind: data.scheduleKind,
           intervalMinutes: data.intervalMinutes,
           runAt: data.runAt ? new Date(data.runAt).getTime() : undefined,

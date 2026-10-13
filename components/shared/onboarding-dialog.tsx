@@ -94,22 +94,32 @@ async function fetchProviderModels(baseURL: string, apiKey: string, providerId?:
   if (body?.data && Array.isArray(body.data)) {
     const seen = new Set<string>();
     const models: FetchedModel[] = [];
-    for (const m of body.data) {
-      if (m.object === "model" || !m.object) {
-        if (seen.has(m.id)) continue;
-        seen.add(m.id);
-        // Prefer ground-truth capabilities when the server provides them
-        // (Ollama /api/show: ["completion","vision","thinking","tools"...]).
-        const caps: string[] = Array.isArray(m.capabilities)
-          ? m.capabilities.map((c: unknown) => String(c).toLowerCase())
-          : [];
-        const hasCaps = caps.length > 0;
-        models.push({
-          id: m.id,
-          imageInput: hasCaps ? caps.includes("vision") : detectModelImageSupport(m.id),
-          reasoning: hasCaps ? caps.includes("thinking") : detectModelThinkingSupport(m.id),
-        });
-      }
+    for (const raw of body.data) {
+      const m: any = raw;
+      const rawId: unknown =
+        typeof m === "string" ? m : m?.id ?? m?.name ?? m?.model;
+      const modelId = typeof rawId === "string" ? rawId.trim() : String(rawId ?? "").trim();
+      if (!modelId) continue;
+      const obj = typeof m === "object" && m !== null ? (m as any).object : undefined;
+      if (obj !== "model" && obj !== undefined) continue;
+      if (seen.has(modelId)) continue;
+      seen.add(modelId);
+      // Prefer ground-truth capabilities when the server provides them
+      // (Ollama /api/show: ["completion","vision","thinking","tools"...]).
+      const caps: string[] = Array.isArray(m?.capabilities)
+        ? m.capabilities.map((c: unknown) => String(c).toLowerCase())
+        : [];
+      const hasCaps = caps.length > 0;
+      models.push({
+        id: modelId,
+        imageInput: hasCaps ? caps.includes("vision") : detectModelImageSupport(modelId),
+        reasoning: hasCaps ? caps.includes("thinking") : detectModelThinkingSupport(modelId),
+      });
+    }
+    if (models.length === 0) {
+      throw new Error(
+        `No usable models returned — the endpoint returned ${body.data.length} entr${body.data.length === 1 ? "y" : "ies"} but none had a valid model id.`
+      );
     }
     return models;
   }
@@ -972,9 +982,10 @@ export function OnboardingModal() {
               ).values())
                 .filter((p) => !(p as any).isBuiltIn)
                 .filter((p) => p.id !== "chatgpt")
-                .filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.id.toLowerCase().includes(searchQuery.toLowerCase()))
+                .filter((p) => String(p.name ?? "").toLowerCase().includes(searchQuery.toLowerCase()) || String(p.id ?? "").toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((p) => {
-                  const detectedIcon = PROVIDER_ID_TO_ICON[p.id] || p.id.charAt(0).toUpperCase() + p.id.slice(1);
+                  const safeId = String(p.id ?? "");
+                  const detectedIcon = PROVIDER_ID_TO_ICON[safeId] || (safeId ? safeId.charAt(0).toUpperCase() + safeId.slice(1) : "OpenAI");
                   return (
                     <div
                       key={p.id}

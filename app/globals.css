@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "tw-shimmer";
 @import "@assistant-ui/react-markdown/styles/dot.css";
+@import "@openuidev/react-ui/styles/index.css";
 
 @custom-variant dark (&:is(.dark *));
 

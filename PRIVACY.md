@@ -18,6 +18,7 @@ This Policy explains what information Qube may handle locally, what it may send 
 * **Local-first by design.** Your workspace files, session history, persistent memory, provider credentials, and settings are stored on your device. They are not sent to us unless you use a feature that requires it (for example, forwarding a request through the ChatGPT proxy).
 * **You choose what leaves your device.** Prompts, file excerpts, tool outputs, and other context are sent to the Model Provider you configured only to fulfill your request. Connector actions are sent to the integration partner and then to the external service you authorized. Where you enable browser automation, observations from your computer environment may be included as context for the model where necessary to perform the requested computer task.
 * **Browser Use depends on your permissions and environment.** When you use browser automation, the Agent browses websites server-side on your behalf. The pages it can reach depend on the URLs you approve and normal website availability. See Section 5A.
+* **Computer Use sees your desktop only when you ask, and acts only with approval.** When you install the open-codex-computer-use driver and ask for something outside the browser, the Agent may list running apps and read the target app's visible state (see Section 5B). Clicks, keystrokes, and changes always pause for your explicit approval; observations needed to decide the next step may be sent to your Model Provider as described in Section 6.
 * **No advertising tracker.** Qube does not embed advertising, analytics, or cross-site tracking scripts. It uses essential local browser storage and, if you use Login with ChatGPT, a session cookie to keep you signed in.
 * **You are responsible for the Agent's actions.** Files it changes, messages it sends, and actions it takes in connected services are legally yours, not Qube's — even when you didn't foresee the exact steps. See Terms §6.
 * **You control deletion.** You can delete sessions, memory entries, tasks, workspace files, and local configuration at any time (see Sections 6 and 9).
@@ -85,6 +86,18 @@ Depending on the permissions, environment, and capabilities involved, this may i
 We do not claim that Qube universally has access to every file, application, or system on every machine. The Agent's access is limited to what the operating system, the driver, and your permissions actually make available in that session. For example, if browser automation is disabled or the required system permission is not granted, the Agent cannot observe or interact with the desktop through that path; if you close an application or file, it is no longer visible to the Agent through browser automation.
 
 You should not enable browser automation in an environment containing information you are not authorized to have processed, and you should close or avoid exposing sensitive windows, files, or sessions you do not want the Agent to be able to observe or interact with.
+
+## 5B. Computer Use — what the Agent may access
+
+When you install the open-codex-computer-use driver (`open-computer-use` / `ocu`) and ask the Agent to do something outside the browser, Qube runs that driver locally on your device to observe and — only with your approval — act on your desktop. Nothing here happens unless you both install the driver and request a computer task; subagents and background runs cannot click, type, or change anything (mutating actions refuse headless and return read-only findings instead).
+
+Depending on the task and the permissions you grant the driver at the OS level, this may include, for example:
+
+* the list of running and recently used applications (names, bundle identifiers, window titles);
+* the target application's visible state: accessibility information (roles, names, values of on-screen controls) and screenshots where the harness includes them as model context to decide the next action;
+* the results of approved actions (what was clicked, typed, or set) as returned by the driver.
+
+System permissions required: Accessibility and Screen Recording on macOS (macOS 14 or later; grant once via `ocu doctor`); the signed-in desktop user's accessibility session on Linux (AT-SPI2/GDK); no special grant on Windows. Set `COMPUTER_USE_DISABLED=1` to turn this path off entirely, and revoke the OS permissions if you no longer want the access path available. As with browser automation, observations the harness includes as model context may be transmitted to the Model Provider you configured where necessary to interpret the screen and choose the next step (see Section 6.1), and are governed by that Provider's policy — close or avoid exposing sensitive windows, files, or sessions you do not want processed, and consider a local model when stricter controls are needed.
 
 ## 6. How AI providers and other third parties receive data
 

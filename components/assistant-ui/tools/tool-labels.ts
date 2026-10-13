@@ -47,6 +47,7 @@ export const FRIENDLY_TOOL_LABELS: Record<string, string> = {
   read_memory: "Scratching the brain",
   save_memory: "Remembering that",
   goal: "Working toward the goal",
+  generate_ui: "Cooking up a visual",
   // Apps & services
   connect_service: "Connecting an app",
   mcp_tool_call: "Using an app",
@@ -103,6 +104,24 @@ export const FRIENDLY_TOOL_LABELS: Record<string, string> = {
   browser_wait_for: "Waiting for the page",
   browser_tabs: "Checking open pages",
   browser_close: "Closing the page",
+  // Computer Use (OS-level control via open-codex-computer-use)
+  computer_list_apps: "Checking open apps",
+  computer_get_app_state: "Looking at the app",
+  computer_click: "Clicking something",
+  computer_secondary_action: "Right-clicking something",
+  computer_scroll: "Scrolling",
+  computer_drag: "Dragging something",
+  computer_type_text: "Typing",
+  computer_press_key: "Pressing a key",
+  computer_set_value: "Filling something in",
+  computer_launch_app: "Opening an app",
+  computer_activate_window: "Bringing an app forward",
+  computer_run_sequence: "Working the computer",
+  computer_list_windows: "Checking windows",
+  computer_get_window: "Looking at the window",
+  computer_get_window_state: "Looking at the window",
+  computer_doctor: "Checking computer access",
+  computer_capabilities: "Checking computer access",
 };
 
 /**

@@ -147,6 +147,12 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
         if (!Array.isArray(todos)) return "Error: `todos` must be an array.";
         // Transcript IS the store — no persistence needed. Return short confirmation.
         const done = todos.filter((t) => t.status === "completed").length;
+        // Mirror into the durable goal store so background runs + next chats
+        // can resume (non-fatal, fire-and-forget).
+        try {
+          const { mirrorChatPlan } = await import("@/lib/goals/store");
+          await mirrorChatPlan(threadId, todos).catch(() => {});
+        } catch {}
         return `Todos have been updated (${done}/${todos.length} completed). Continue to use TodoWrite to track progress.`;
       },
     });
@@ -473,6 +479,55 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
 
   return {
     ...extraTools,
+    generate_ui: tool({
+      description:
+        "Render a native Qube-styled interactive visual (OpenIntelligentUI pattern: explanations, comparisons, calculators, planners). " +
+        "Use when the user would benefit from something they can interact with instead of plain text — a working calculator/bill-splitter, a comparison table/chart, a step-through explanation, a planner with controls. " +
+        "The UI renders in a sandboxed iframe with Qube theme tokens (var(--background), var(--foreground), var(--muted), var(--border), var(--primary), var(--radius)) in light/dark — ALWAYS use those vars, never hardcode white/black. " +
+        "Keep html/css/js self-contained: no external URLs, no fetch/XHR, no localStorage, no top-navigation. Local controls run inside the sandbox; a follow-up can be started via window.qube.sendPrompt(text). " +
+        "Keep total payload small (html <60k chars, js <60k chars). Returns a confirmation string.",
+      inputSchema: z.object({
+        title: z.string().describe("Short title shown above the visual (max 120 chars)"),
+        kind: z
+          .enum(["calculator", "chart", "table", "explanation", "planner", "map", "custom"])
+          .optional()
+          .describe("Visual kind for the header badge"),
+        html: z.string().describe("Self-contained HTML body markup (no <html>/<head>, body content only)"),
+        css: z.string().optional().describe("Additional CSS (uses Qube theme vars)"),
+        js: z
+          .string()
+          .optional()
+          .describe("Plain script body (no top-level await; no fetch/XHR/storage/top-navigation). Runs in sandbox."),
+        height: z.number().optional().describe("Initial iframe height px (120-900, default 320)"),
+      }),
+      execute: async (input: {
+        title: string;
+        kind?: string;
+        html: string;
+        css?: string;
+        js?: string;
+        height?: number;
+      }) => {
+        const title = String(input?.title || "Interactive answer").slice(0, 120);
+        const htmlLen = typeof input?.html === "string" ? input.html.length : 0;
+        const cssLen = typeof input?.css === "string" ? input.css.length : 0;
+        const jsLen = typeof input?.js === "string" ? input.js.length : 0;
+        if (!input?.html || htmlLen < 10) return JSON.stringify({ error: "html is required (body markup)" });
+        if (htmlLen > 60000 || cssLen > 20000 || jsLen > 60000) {
+          return JSON.stringify({ error: "Payload too large: keep html<60k, css<20k, js<60k chars" });
+        }
+        const h = typeof input.height === "number" && Number.isFinite(input.height)
+          ? Math.min(900, Math.max(120, Math.round(input.height)))
+          : 320;
+        return JSON.stringify({
+          status: "rendered",
+          title,
+          kind: input.kind || "custom",
+          height: h,
+          sizes: { html: htmlLen, css: cssLen, js: jsLen },
+        });
+      },
+    }),
     present_file: tool({
       description: "Surface a workspace file in chat as a slim file card, rendered in a list at the bottom of your reply. Call this ONCE per FINAL deliverable (document, spreadsheet, presentation, image, code). Only documents, spreadsheets and code get an Open button (viewer popup); images, PDFs and presentations are download-only. NEVER present intermediate builder/scaffolding scripts (e.g. .py scripts used to generate a .docx/.xlsx/.pptx) — only the final outputs. For presentations always present the real presentations/*.pptx file (python-pptx), never an .md outline.",
       inputSchema: z.object({

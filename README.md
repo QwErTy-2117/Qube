@@ -8,10 +8,6 @@
   <strong>An AI agent for anyone.</strong>
 </p>
 
-<p align="center">
-  <a href="#support-qube">❤️ Donate</a>
-</p>
-
 ---
 
 ## What is Qube?
@@ -90,7 +86,10 @@ Qube has its own workspace on your computer for the files it creates, and it sor
 "What's a good kids' bike for a 6-year-old, under €150?" — Qube searches, reads through what it finds, and comes back with a short, sourced answer instead of a page of links. Give it a specific link and it'll pull out just what matters from that page. For bigger questions it writes a brief with what it found, where it disagrees, and links to the sources so you can check.
 
 ### A browser you can watch
-For things that need a real website — checking hours and prices, comparing options, filling in a form, tracking a parcel — Qube opens its own browser window you can watch in the side panel. It narrates briefly while it works, stops before anything final like paying or submitting, and hands control to you for logins, captchas, or 2FA codes. It never claims to open other apps on your computer — for files it uses the workspace viewer instead.
+For things that need a real website — checking hours and prices, comparing options, filling in a form, tracking a parcel — Qube opens its own browser window you can watch in the side panel. It narrates briefly while it works, stops before anything final like paying or submitting, and hands control to you for logins, captchas, or 2FA codes.
+
+### Your computer, when you ask it to step in
+For things that need the rest of your computer — opening an app, clicking a button in a desktop program, typing into a form outside the browser — Qube can operate your computer directly (via open-codex-computer-use). It lists your running apps, looks at the app you point it to, and acts there. Anything that clicks, types, or changes something outside Qube pauses for your approval first; just looking (listing apps, reading an app window) doesn't. Setup is one install (`npm i -g open-computer-use`, then `ocu doctor` — on macOS, grant Accessibility + Screen Recording). For files it still uses the workspace viewer instead.
 
 ### The apps you already use, working together
 Connect Gmail, Google Drive and Calendar, Slack, GitHub, Notion, Linear, Jira and Confluence, Trello, Asana, Airtable, HubSpot, Dropbox, and others you rely on. Releases include a built-in key for this; if you build from source, add your own `COMPOSIO_API_KEY`. Sign in once, and from then on you can just say what you want — "summarize this inbox thread," "pull the leads into a sheet," "post this in Slack after I approve." Send/create/delete-type actions pause for your approval first; read-only lookups don't. Power users can also plug in their own custom integrations.

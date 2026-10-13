@@ -55,6 +55,32 @@ async function executeHeartbeat(task: any): Promise<void> {
   await logEvent({ threadId: "heartbeat", type: "heartbeat_tick", taskId: task.id, metadata: { need, consecutiveEmptyTicks: state.consecutiveEmptyTicks } } as any);
 
   if (need === "nothing" && state.consecutiveEmptyTicks > 3) {
+    // Cheap deterministic sweep before staying silent (audit fix #9): the
+    // checklist may be empty while the workspace has genuinely new work
+    // (recent files, open durable goals). Wake the LLM only on a hash diff.
+    try {
+      const { runDiscoverySweep, isDiscoveryWorthy } = await import("./discovery");
+      const sweep = await runDiscoverySweep();
+      const { updateHeartbeatState } = await import("./heartbeat-state");
+      if (isDiscoveryWorthy(sweep, (state as any).lastDiscoveryHash)) {
+        await updateHeartbeatState({ lastDiscoveryHash: sweep.hash, lastDiscoveryAt: Date.now() } as any);
+        console.log(`[heartbeat] Discovery diff — waking LLM: ${sweep.summary.slice(0, 160)}`);
+        // Fall through to the LLM run with discovery context attached.
+        const { executeTask } = await import("./task-executor");
+        const discTask = {
+          ...task,
+          instructions: `${task.instructions}\n\n[Heartbeat discovery sweep (deterministic, no model): ${sweep.summary}. Recent files: ${sweep.recentFiles.slice(0, 8).join(", ") || "none"}. Open durable goals: ${sweep.openGoals}. Inspect ONLY what is new; Lane B prep is authorized for clearly-wanted reversible work; otherwise HEARTBEAT_OK.]`,
+        };
+        const result = await executeTask(discTask);
+        await updateTaskRunTime(task.id, result.status === "success");
+        const { recordHeartbeatTick } = await import("./heartbeat-state");
+        await recordHeartbeatTick({ hadAction: result.status === "success" && !/heartbeat_ok/i.test((result.output || "").trim()), success: result.status === "success", actionDescription: `heartbeat(discovery): ${result.output.slice(0, 80)}`, taskId: task.id });
+        return;
+      }
+      await updateHeartbeatState({ lastDiscoveryHash: sweep.hash, lastDiscoveryAt: Date.now() } as any);
+    } catch (e) {
+      console.warn("[heartbeat] discovery sweep failed (non-fatal):", e);
+    }
     // Light silent tick — just update timestamp, no LLM call
     await recordHeartbeatTick({ hadAction: false, success: true });
     console.log(`[heartbeat] Silent tick — nothing actionable (empty ${state.consecutiveEmptyTicks})`);
@@ -63,7 +89,7 @@ async function executeHeartbeat(task: any): Promise<void> {
   }
 
   // Autonomous: check for due pending/deferred actions and workspace changes
-  let dueActions: Array<{ id: string; description: string }> = [];
+  let dueActions: Array<{ id: string; description: string; fileRefs?: string[] }> = [];
   try {
     dueActions = await consumeDueActions();
     if (dueActions.length > 0) {
@@ -85,6 +111,19 @@ async function executeHeartbeat(task: any): Promise<void> {
   try {
     const result = await executeTask(augmentedTask);
     await updateTaskRunTime(task.id, result.status === "success");
+    // No-loss dues (audit fix #6): an empty HEARTBEAT_OK or a failed tick
+    // must NOT swallow consumed dues — re-queue them for the next tick/chat.
+    const out = (result.output || "").trim().toLowerCase();
+    const isQuiet = out === "" || out === "(no output)" || out.startsWith("heartbeat_ok");
+    if ((isQuiet || result.status !== "success") && dueActions.length > 0) {
+      try {
+        const { requeueDueActions } = await import("./heartbeat-state");
+        await requeueDueActions(dueActions);
+        console.log(`[heartbeat] Re-queued ${dueActions.length} unconsumed due actions after ${isQuiet ? "quiet" : "failed"} tick`);
+      } catch (e) {
+        console.warn("[heartbeat] requeue failed:", e);
+      }
+    }
     const hadAction = dueActions.length > 0 || result.status === "success";
     await recordHeartbeatTick({ hadAction, success: result.status === "success", actionDescription: `heartbeat: ${result.output.slice(0, 80)}${dueActions.length? ` +${dueActions.length} due actions`:""}`, taskId: task.id });
     await logEvent({ threadId: "heartbeat", type: "heartbeat_action", taskId: task.id, status: result.status, latencyMs: Date.now() - start, metadata: { dueActionsConsumed: dueActions.length } } as any);

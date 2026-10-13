@@ -120,6 +120,13 @@ export async function buildMemoryContext(
         if (brief.suggestionsBlock) blocks.push(`## Custom suggestions for this user\n${brief.suggestionsBlock}`);
       }
     } catch {}
+    // Durable open goals (chat TodoWrite + headless plans + heartbeat Lane B
+    // prep) so the next turn resumes unfinished work instead of dropping it.
+    try {
+      const { buildGoalsBrief } = await import("@/lib/goals/store");
+      const goalsBlock = await buildGoalsBrief(5).catch(() => undefined);
+      if (goalsBlock) blocks.push(`## Goals — resume or close\n${goalsBlock}`);
+    } catch {}
     return blocks.join("\n\n");
   } catch {
     return "";

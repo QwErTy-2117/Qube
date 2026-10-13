@@ -147,9 +147,9 @@ export function renderLobeIcon(iconName: string, size: number = 24, className?: 
   return React.createElement(IconComp, { size, className });
 }
 
-export function detectModelIcon(modelId: string, providerId: string): string {
-  const lowerId = modelId.toLowerCase();
-  const lowerProv = providerId.toLowerCase();
+export function detectModelIcon(modelId: unknown, providerId: unknown): string {
+  const lowerId = String(modelId ?? "").toLowerCase();
+  const lowerProv = String(providerId ?? "").toLowerCase();
   if (lowerId.includes("deepseek")) return "DeepSeek";
   if (lowerId.includes("claude") || lowerId.includes("anthropic")) return "Claude";
   if (lowerId.includes("gpt") || lowerId.includes("openai") || lowerId.includes("o1")) return "OpenAI";

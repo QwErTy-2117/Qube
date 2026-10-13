@@ -31,7 +31,8 @@ export type SensitiveKind =
   | "destructive_command"
   | "outside_workspace"
   | "purchase"
-  | "share_private";
+  | "share_private"
+  | "computer_control";
 
 export interface SensitiveVerdict {
   sensitive: boolean;
@@ -49,8 +50,15 @@ const CONNECTOR_SEND_RE = /(send|post|publish|share|invite|reply|comment|schedul
 const EMAIL_TOOLS_RE = /(gmail|email|mail)/i;
 const CHAT_TOOLS_RE = /(slack|discord|teams|message|chat)/i;
 
+// Auto-except-externals: pure read verbs (get/list/search/fetch/read) never gate.
+const CONNECTOR_READ_RE = /(^_|^(get|list|search|fetch|read|lookup|find|check|view)_)/i;
+export function isReadOnlyConnectorTool(toolName: string): boolean {
+  return CONNECTOR_READ_RE.test(toolName) && !CONNECTOR_WRITE_RE.test(toolName);
+}
+
 /** Connector tool names are dynamic (Composio). Classify by name pattern. */
 export function isSensitiveConnectorTool(toolName: string): boolean {
+  if (isReadOnlyConnectorTool(toolName)) return false;
   if (!toolName) return false;
   const lower = toolName.toLowerCase();
   // Never gate the connection helper itself.
@@ -118,6 +126,27 @@ export function classifyLocalTool(
     const p = (args.path as string) || (args.filepath as string) || "this file";
     return { sensitive: true, kind: "delete_file", purpose: `Delete file "${String(p).slice(0, 160)}" — this cannot be undone` };
   }
+  // Computer Use: OS-level control always pauses except read-only lookups.
+  // list_apps / get_app_state / window reads / doctor / capabilities auto-allow.
+  if (toolName === "computer_list_apps" || toolName === "computer_get_app_state" ||
+      toolName === "computer_list_windows" || toolName === "computer_get_window" ||
+      toolName === "computer_get_window_state" || toolName === "computer_doctor" ||
+      toolName === "computer_capabilities") {
+    return { sensitive: false, purpose: "" };
+  }
+  if (toolName.startsWith("computer_")) {
+    const a = (args || {}) as Record<string, any>;
+    const app = typeof a.app === "string" && a.app ? ` in ${a.app.slice(0, 80)}` : "";
+    const detail =
+      (typeof a.text === "string" && a.text ? ` — "${a.text.slice(0, 80)}"` : "") ||
+      (typeof a.key === "string" && a.key ? ` — "${a.key.slice(0, 40)}"` : "") ||
+      (typeof a.value === "string" && a.value ? ` — "${a.value.slice(0, 80)}"` : "");
+    return {
+      sensitive: true,
+      kind: "computer_control",
+      purpose: `Control your computer${app}${detail} — moves the mouse, clicks, or types outside Qube`.slice(0, 220),
+    };
+  }
   if (toolName === "run_command") {
     const cmd = String((args.command as string) || "");
     // Destructive shell always pauses; other commands are covered by
@@ -135,13 +164,6 @@ export function classifyLocalTool(
     };
   }
   return { sensitive: false, purpose: "" };
-}
-
-/** Read-only connector verbs that never pause (Sentinel clean-request path). */
-export function isReadOnlyConnectorTool(toolName: string): boolean {
-  if (!toolName) return true;
-  if (isSensitiveConnectorTool(toolName)) return false;
-  return /(list|search|get|read|fetch|find|query|describe|show|view|lookup)/i.test(toolName) || true;
 }
 
 /**

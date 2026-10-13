@@ -47,7 +47,7 @@ export function getDefaultHeartbeatTask(): ScheduledTask {
     type: "heartbeat",
     name: "Heartbeat",
     instructions:
-      "Muse-style monitor: check workspace files (list_directory root) and connected apps (Gmail, GitHub, Calendar, Slack — READ-ONLY list/search/get) for fresh items the user should know next time they talk. Save each new finding once via update_heartbeat note with evidence + a draft reply/action (e.g. party emails -> notify + draft reply). Never repeat the same finding twice; never send/post/delete headless — draft only. If nothing new, stay quiet.",
+      "Muse-style monitor with three lanes. (1) Check workspace files (list_directory root) and connected apps (Gmail, GitHub, Calendar, Slack — READ-ONLY list/search/get) for fresh items the user should know next time they talk. (2) Lane B prep is AUTHORIZED: reversible in-workspace work the user will clearly want (compile a pending paper/deck/sheet, tidy a folder, build a comparison table) — DO it now under documents/presentations/spreadsheets/images/code, then save ONE update_heartbeat note with the file path + what to ask next chat. (3) Lane C (send/post/delete/purchase) is NEVER headless — draft + file only, ask in next chat. Save each new finding once via update_heartbeat note with evidence + draft/file. Never repeat the same finding twice; never send/post/delete headless. If nothing new, stay quiet.",
     schedule: { kind: "interval", intervalMinutes: DEFAULT_HEARTBEAT_INTERVAL },
     enabled: true,
     permissions: {

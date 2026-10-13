@@ -136,7 +136,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 function CategoryBadge({ category }: { category: string }) {
-  const color = CATEGORY_COLORS[category.toLowerCase()] ?? "bg-muted text-muted-foreground";
+  const color = CATEGORY_COLORS[String(category ?? "").toLowerCase()] ?? "bg-muted text-muted-foreground";
   return (
     <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider", color)}>
       <TagIcon className="size-2.5" />
@@ -667,9 +667,9 @@ export function renderLobeIcon(iconName: string, size: number = 24, className?: 
   return <IconComp size={size} className={className} />;
 }
 
-export function detectModelIcon(modelId: string, providerId: string): string {
-  const lowerId = modelId.toLowerCase();
-  const lowerProv = providerId.toLowerCase();
+export function detectModelIcon(modelId: unknown, providerId: unknown): string {
+  const lowerId = String(modelId ?? "").toLowerCase();
+  const lowerProv = String(providerId ?? "").toLowerCase();
   if (lowerId.includes("deepseek")) return "DeepSeek";
   if (lowerId.includes("claude") || lowerId.includes("anthropic")) return "Claude";
   if (lowerId.includes("gpt") || lowerId.includes("openai") || lowerId.includes("o1")) return "OpenAI";
@@ -758,34 +758,48 @@ async function fetchProviderModels(baseURL: string, apiKey: string, providerId?:
   if (body?.data && Array.isArray(body.data)) {
     const seen = new Set<string>();
     const models: FetchedModel[] = [];
-    for (const m of body.data) {
-      if (m.object === "model" || !m.object) {
-        if (seen.has(m.id)) continue;
-        seen.add(m.id);
-        // Prefer ground-truth capabilities when the server provides them
-        // (Ollama /api/show: ["completion","vision","thinking","tools"...]).
-        const caps: string[] = Array.isArray(m.capabilities)
-          ? m.capabilities.map((c: unknown) => String(c).toLowerCase())
-          : [];
-        const hasCaps = caps.length > 0;
-        const imageInput =
-          (hasCaps ? caps.includes("vision") : false) ||
-          (!hasCaps &&
-            (m.architecture?.modality === "text+image" ||
-              m.capabilities?.vision === true ||
-              m.capabilities?.image_input === true ||
-              detectModelImageSupport(m.id)));
-        const reasoning =
-          (hasCaps ? caps.includes("thinking") : false) ||
-          (!hasCaps &&
-            (m.capabilities?.reasoning?.supported === true ||
-              m.capabilities?.reasoning === true ||
-              m.reasoning?.supported === true ||
-              m.reasoning === true ||
-              m.architecture?.reasoning === true ||
-              detectModelThinkingSupport(m.id)));
-        models.push({ id: m.id, imageInput, reasoning });
-      }
+    for (const raw of body.data) {
+      // Gateways vary: entries can be strings ("gpt-4o") or objects with
+      // `id`, `name`, or `model` instead of `id`. Normalize defensively —
+      // previously `m.id` being undefined crashed with
+      // "undefined is not an object (evaluating 'e.toLowerCase')".
+      const m: any = raw;
+      const rawId: unknown =
+        typeof m === "string" ? m : m?.id ?? m?.name ?? m?.model;
+      const modelId = typeof rawId === "string" ? rawId.trim() : String(rawId ?? "").trim();
+      if (!modelId) continue;
+      const obj = typeof m === "object" && m !== null ? (m as any).object : undefined;
+      if (obj !== "model" && obj !== undefined) continue;
+      if (seen.has(modelId)) continue;
+      seen.add(modelId);
+      // Prefer ground-truth capabilities when the server provides them
+      // (Ollama /api/show: ["completion","vision","thinking","tools"...]).
+      const caps: string[] = Array.isArray(m?.capabilities)
+        ? m.capabilities.map((c: unknown) => String(c).toLowerCase())
+        : [];
+      const hasCaps = caps.length > 0;
+      const imageInput =
+        (hasCaps ? caps.includes("vision") : false) ||
+        (!hasCaps &&
+          (m?.architecture?.modality === "text+image" ||
+            m?.capabilities?.vision === true ||
+            m?.capabilities?.image_input === true ||
+            detectModelImageSupport(modelId)));
+      const reasoning =
+        (hasCaps ? caps.includes("thinking") : false) ||
+        (!hasCaps &&
+          (m?.capabilities?.reasoning?.supported === true ||
+            m?.capabilities?.reasoning === true ||
+            m?.reasoning?.supported === true ||
+            m?.reasoning === true ||
+            m?.architecture?.reasoning === true ||
+            detectModelThinkingSupport(modelId)));
+      models.push({ id: modelId, imageInput, reasoning });
+    }
+    if (models.length === 0) {
+      throw new Error(
+        `No usable models returned from ${url} — the endpoint returned ${body.data.length} entr${body.data.length === 1 ? "y" : "ies"} but none had a valid model id.`
+      );
     }
     return models;
   }
@@ -2382,9 +2396,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               ).values())
                 .filter((p) => !(p as any).isBuiltIn)
                 .filter((p) => p.id !== "chatgpt")
-                .filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.id.toLowerCase().includes(searchQuery.toLowerCase()))
+                .filter((p) => String(p.name ?? "").toLowerCase().includes(searchQuery.toLowerCase()) || String(p.id ?? "").toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((p) => {
-                  const detectedIcon = PROVIDER_ID_TO_ICON[p.id] || p.id.charAt(0).toUpperCase() + p.id.slice(1);
+                  const safeId = String(p.id ?? "");
+                  const detectedIcon = PROVIDER_ID_TO_ICON[safeId] || (safeId ? safeId.charAt(0).toUpperCase() + safeId.slice(1) : "OpenAI");
                   return (
                     <div
                       key={p.id}

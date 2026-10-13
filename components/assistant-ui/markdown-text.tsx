@@ -13,6 +13,8 @@ import { useState, type FC, useCallback } from "react";
 import remarkGfm from "remark-gfm";
 import { SyntaxHighlighter } from "./shiki-highlighter";
 import { TooltipIconButton } from "./tooltip-icon-button";
+import { GenerativeUIFrame } from "./tools/generative-ui-tool-ui";
+import { parseGenerativeUIFence } from "@/lib/generative-ui/sandbox";
 import { remarkFileRefs, MdFileCardNode, MdFileCardGroupNode, FILE_REF_RE } from "./md-file-ref";
 import { renderLatexShortcuts } from "./latex-shortcuts";
 
@@ -40,6 +42,13 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
 // order can otherwise hit the SyntaxHighlighter binding before its
 // initializer runs (SSR ReferenceError) in production chunk graphs.
 let cachedBaseComponents: any = null;
+// Raw text of a fenced block (children may be a string or string array).
+function fenceText(children: unknown): string {
+  if (typeof children === "string") return children;
+  if (Array.isArray(children))
+    return children.filter((c): c is string => typeof c === "string").join("");
+  return "";
+}
 function getBaseComponents() {
   if (!cachedBaseComponents) {
     cachedBaseComponents = memoizeMarkdownComponents({
@@ -100,8 +109,26 @@ function getBaseComponents() {
   pre: ({ className, ...props }) => (
     <pre className={cn("aui-md-pre mb-6", className)} {...props} />
   ),
-  code: function Code({ className, ...props }) {
+  code: function Code({ className, children, ...props }) {
     const isCodeBlock = useIsMarkdownCodeBlock();
+    // Inline generative UI: a ```genui fenced JSON block
+    // ({title, kind, html, css, js, height}) renders as a Qube-styled
+    // sandboxed visual exactly where the agent placed it in its reply.
+    // Invalid JSON falls through to a normal code block — never lost.
+    if (
+      isCodeBlock &&
+      typeof className === "string" &&
+      /(?:^|\s)language-genui(\s|$)/.test(className)
+    ) {
+      const parsed = parseGenerativeUIFence(fenceText(children));
+      if (parsed) {
+        return (
+          <div className="aui-genui my-3 overflow-hidden rounded-xl border border-border/60">
+            <GenerativeUIFrame args={parsed} />
+          </div>
+        );
+      }
+    }
     return (
       <code
         className={cn(
@@ -109,7 +136,9 @@ function getBaseComponents() {
           className,
         )}
         {...props}
-      />
+      >
+        {children}
+      </code>
     );
   },
     });

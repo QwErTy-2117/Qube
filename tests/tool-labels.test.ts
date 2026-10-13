@@ -70,6 +70,20 @@ const REGISTERED_TOOLS = [
   "computer_act",
   "open_path",
   "request_takeover",
+  "computer_list_apps",
+  "computer_get_app_state",
+  "computer_click",
+  "computer_secondary_action",
+  "computer_scroll",
+  "computer_drag",
+  "computer_type_text",
+  "computer_press_key",
+  "computer_set_value",
+  "computer_launch_app",
+  "computer_activate_window",
+  "computer_doctor",
+  "computer_capabilities",
+  "computer_run_sequence",
 ];
 
 const JARGON = [

@@ -1,5 +1,6 @@
-export function detectModelImageSupport(modelId: string): boolean {
-  const lower = modelId.toLowerCase();
+export function detectModelImageSupport(modelId: unknown): boolean {
+  const lower = String(modelId ?? "").toLowerCase();
+  if (!lower) return false;
   if (
     lower.includes("vision") ||
     lower.includes("vqa") ||

@@ -1,5 +1,6 @@
-export function detectModelThinkingSupport(modelId: string): boolean {
-  const lower = modelId.toLowerCase();
+export function detectModelThinkingSupport(modelId: unknown): boolean {
+  const lower = String(modelId ?? "").toLowerCase();
+  if (!lower) return false;
   if (
     lower.startsWith("o1") ||
     lower.startsWith("o3") ||

@@ -33,6 +33,14 @@ function extractText(m: Record<string, unknown>): string {
 
 export async function POST(req: Request) {
   console.log("[chat] POST /api/chat start (Pi harness)", { url: req.url });
+  // Explicit scheduler boot (audit fix #10): the tick must not depend on a
+  // lazy client task-list load. Idempotent — startScheduler guards re-entry.
+  // Isolation: ticks run sequentially (running flag) so a long heartbeat LLM
+  // run never overlaps the next tick or starves scheduled tasks mid-run.
+  try {
+    const { ensureSchedulerStarted } = await import("@/lib/scheduler/init");
+    ensureSchedulerStarted();
+  } catch {}
   try {
     const body = await req.json();
     const { messages, id, threadId, qubeThreadId, memoryEnabled, config, customSystemPrompt, temperature, instanceId, mcpServers, skills, allowedDirs, userName, userAbout } = body;
@@ -119,10 +127,10 @@ export async function POST(req: Request) {
     // harness injects them into this turn's prompt with a weave-in
     // directive, so after the reply streams they count as told. A failed
     // turn leaves them pending for the next turn.
-    let announcementIds: string[] = [];
+    let pendingSnapshots: Array<{ id: string; taskName: string; excerpt: string }> = [];
     try {
       const { getPendingAnnouncements } = await import("@/lib/scheduler/announcements");
-      announcementIds = (await getPendingAnnouncements(3).catch(() => [])).map((a: any) => a.id);
+      pendingSnapshots = (await getPendingAnnouncements(3).catch(() => [])).map((a: any) => ({ id: a.id, taskName: a.taskName, excerpt: a.excerpt }));
     } catch {}
 
     const rawStream = createUIMessageStream({
@@ -133,6 +141,17 @@ export async function POST(req: Request) {
         return `Error [${errMsg}]`;
       },
       execute: async ({ writer }) => {
+        // Accumulate visible text so delivery is VERIFIED: only announcements
+        // actually mentioned in the reply are marked delivered. A generic
+        // greeting no longer burns the news (audit fix #6).
+        let replyText = "";
+        const origWrite = writer.write.bind(writer);
+        (writer as any).write = (chunk: any) => {
+          try {
+            if (chunk?.type === "text-delta" && typeof chunk?.delta === "string") replyText += chunk.delta;
+          } catch {}
+          return origWrite(chunk);
+        };
         try {
           await runPiHarness(writer, {
             messages: uiMessages,
@@ -149,11 +168,26 @@ export async function POST(req: Request) {
             userAbout: typeof userAbout === "string" ? userAbout : undefined,
             memoryEnabled: typeof memoryEnabled === "boolean" ? memoryEnabled : undefined,
           });
-          // Turn replied with the announcements in context → told exactly once.
-          if (announcementIds.length > 0) {
+          // Turn replied — mark ONLY verified mentions delivered.
+          if (pendingSnapshots.length > 0) {
             try {
-              const { markAnnouncementsDelivered } = await import("@/lib/scheduler/announcements");
-              await markAnnouncementsDelivered(announcementIds);
+              const { markAnnouncementsDeliveredIfMentioned, announcementMentionedInReply } = await import("@/lib/scheduler/announcements");
+              const marked = await markAnnouncementsDeliveredIfMentioned(pendingSnapshots as any, replyText);
+              if (marked.length < pendingSnapshots.length) {
+                console.log(`[chat] Announcements verified ${marked.length}/${pendingSnapshots.length} mentioned — rest stay pending`);
+              }
+              // Verified mentions also count as notified in heartbeat state
+              // (same two-word rule — shared words alone never suppress).
+              try {
+                if (replyText.trim().length >= 10) {
+                  const { markNotified } = await import("@/lib/scheduler/heartbeat-state");
+                  for (const p of pendingSnapshots.slice(0, 3)) {
+                    if (marked.includes(p.id) || announcementMentionedInReply({ taskName: p.taskName, excerpt: p.excerpt }, replyText)) {
+                      await markNotified(String(p.taskName)).catch(() => {});
+                    }
+                  }
+                }
+              } catch {}
             } catch {}
           }
         } catch (e) {

@@ -16,8 +16,8 @@ export type TodoSnapshotItem = {
 
 /** Max extra silent rounds per turn. `QUBE_SILENT_CONTINUATIONS=0` disables. */
 export function maxSilentRounds(): number {
-  const n = parseInt(process.env.QUBE_SILENT_CONTINUATIONS || "3", 10);
-  if (!Number.isFinite(n) || n < 0) return 3;
+  const n = parseInt(process.env.QUBE_SILENT_CONTINUATIONS || "8", 10);
+  if (!Number.isFinite(n) || n < 0) return 8;
   return Math.floor(n);
 }
 
@@ -42,6 +42,17 @@ export function hasUnfinishedGoals(todos: unknown): boolean {
  * tool failure, the error is included so the model recovers instead of
  * repeating or abandoning the step.
  */
+export function buildIdleContinueNudge(attempt: number): string {
+  const pressure = [
+    "Act now: take the first concrete tool action toward the user's goal. Do not ask, do not summarize.",
+    "CRITICAL: You MUST call a tool this turn. Reads, searches, or file work all count — text alone fails.",
+    "FINAL: Call a tool NOW or this task is marked failed. Execute the next step immediately.",
+  ];
+  return `[System note — silent continuation, NOT a user message. Do not display it.]\n${pressure[Math.min(attempt, 2)]}`;
+}
+export function isPlanningOnlyTurn(toolCallCount: number): boolean {
+  return toolCallCount === 0;
+}
 export function buildContinuationNudge(incomplete: TodoSnapshotItem[], lastError?: string | null): string {
   const lines = incomplete
     .slice(0, 12)

@@ -80,18 +80,22 @@ export function buildPiTaskSystemPrompt(task: ScheduledTask, heartbeatState?: st
   const heartbeatContext = task.type === "heartbeat" && heartbeatState ? `\n\n## Heartbeat Context\n${heartbeatState}` : "";
   const heartbeatDiscipline =
     task.type === "heartbeat"
-      ? `\n\n## Heartbeat discipline (Muse-style monitor — narrow, quiet, never repeats)
+      ? `\n\n## Heartbeat discipline (Muse-style monitor — three lanes, never repeats)
 - This is a flexible periodic inspection, NOT an exact-timed automation. You monitor WORKSPACE FILES + CONNECTORS (Gmail, GitHub, Calendar, Slack, Drive when connected) for things the user should know next time they talk.
 - Steps every tick: (1) check pending/failed checklist first; (2) list_directory workspace root for new/changed files; (3) if connectors are connected, do READ-ONLY lookups (list/search/get — never send/post/delete) for fresh items (e.g. unread Gmail threads, new GitHub PR comments, today's calendar clashes).
-- When you find something actionable, SAVE it for the next chat via update_heartbeat note (one note per finding, with evidence + a draft reply/action). Example: "Gmail: 3 threads about Saturday's party (from Ana, Ben) — draft: 'Thanks all! I'll bring dessert — does 7pm still work?'". The next chat will surface it ONCE with your draft.
+- Three lanes — pick the least intrusive that gets the work pre-done:
+  - Lane A (monitor): read-only checks. Save each new finding once via update_heartbeat note with evidence + a draft reply/action.
+  - Lane B (prep — AUTHORIZED, reversible, in-workspace only): when you find work the user will clearly want done (a pending paper/deck/sheet to compile, a mess to tidy, a comparison table to build, a grocery list from a saved recipe), DO the reversible prep NOW with write_file/edit_file/run_command (non-destructive) under documents/, presentations/, spreadsheets/, images/, code/. Then save ONE update_heartbeat note with the file path + what to ask the user next chat (e.g. "Compiled paper — documents/thesis.pdf ready; ask if they want it sent"). Lane B never sends/posts/deletes/purchases externally.
+  - Lane C (reaching people / outside world): NEVER headless (no user to approve) — prepare the draft or file first (Lane B), then surface it for approval in the next chat.
 - NEVER repeat a suggestion twice: before noting, check the pending checklist / heartbeat state — if the same topic is already pending or was recently notified, skip it. No duplicate notes for the same emails/files.
-- NEVER send, post, delete, purchase, or share externally headless (no user to approve) — READ + DRAFT ONLY. Recurring work belongs in scheduled tasks — do NOT create schedules from here and do NOT infer old tasks from prior chats.
+- NEVER send, post, delete, purchase, or share externally headless (no user to approve) — READ + PREP ONLY. Recurring work belongs in scheduled tasks — do NOT create schedules from here and do NOT infer old tasks from prior chats.
 - If nothing needs attention, return exactly HEARTBEAT_OK with no tool calls (quiet tick, idempotent). Act once, never repeat a completed action.`
       : `\n\n## Scheduled-task discipline (exact timing, isolated)
 - This is an exact-timed automation with its own run history. Execute the instructions fully and autonomously.
 - Your instructions WERE written (or approved) by the user, so they ARE your authorization: if they say to email, post, create, or delete something, DO it with the connector tools — do not draft-and-wait, do not ask (there is no user here). Draft-only applies to the heartbeat monitor, never to you.
 - If a connector tool you need is MISSING from your tool list, that service is not connected. Say so plainly in your summary ("Gmail is not connected, so I saved the report to documents/... instead") — NEVER invent session-token, handshake, re-login, or "not active in this session" stories. Report only what tools actually returned.
-- Verify every action after tool calls; report verified state (succeeded/partial/failed). Never claim work without tool results.`;
+- Done criteria first: read the Done criteria / Only-report-if / Deliverable lines in your instructions (appended at creation). A run that finds "no change" under an only-report-if rule stays silent — that is success, not failure.
+- Verify before finishing: re-list every file you wrote (list_directory), re-fetch one edited URL, validate JSON you produced. Mark file deliverables with [file: path]. Report verified state (succeeded/partial/failed). Never claim work without tool results.`;
   return `You are Qube Pi background task "${task.name}" (${task.type}). You run via Pi harness without user supervision. ${formatCurrentTimeInstruction()}
 
 ## Your Task
@@ -102,11 +106,11 @@ ${task.instructions}
 - Shell: run_command (respects task permissions: runCommands=${task.permissions.runCommands}, destructive=${task.permissions.destructiveCommands})
 - Web: web_search, web_fetch (allowed=${task.permissions.webAccess})
 - Memory: read_memory (persistent memory across sessions)
-- Goals: TodoWrite is NOT available headless — track progress in your final summary instead.
+- Goals: TodoWrite(headless plan) — call it FIRST for work with 3+ steps, then flip items to completed the moment each finishes; pass the COMPLETE list each call, exactly one in_progress at a time. If your run ends with items unfinished you get another round to continue — keep working until everything is completed, then summarize.
 - Subagents: subagent(description, prompt, agentType) — isolated child (Explore/researcher/reviewer/general). Use for recon that would flood context; validate outputs.
-- Automations: schedule_task (create/list/update/delete/trigger), update_heartbeat (get/note/update) — manage future work from background runs.
+- Automations: schedule_task (create/list/update/delete/trigger), update_heartbeat (get/note/update) — manage future work from background runs. Heartbeat runs must NOT create schedules from here.
 - ask_user always returns available=false headless — never block on it; proceed with best judgment.
-- Connectors${connectorHint ? ` (connected: ${connectorHint})` : " (none connected — save file deliverables to the workspace instead of sending)"}: external service tools via Composio when connected (exact schemas at runtime).${task.type === "heartbeat" ? " Heartbeat runs are read + draft ONLY: sends need confirmation which cannot complete headless." : " Your instructions are the user's approval, so perform the sends/creates/deletes they request."}
+- Connectors${connectorHint ? ` (connected: ${connectorHint})` : " (none connected — save file deliverables to the workspace instead of sending)"}: external service tools via Composio when connected (exact schemas at runtime).${task.type === "heartbeat" ? " Heartbeat lanes: Lane A monitor (reads), Lane B reversible in-workspace prep (compile/build/draft files — AUTHORIZED), Lane C sends/creates/deletes externally NEVER headless (draft + file only, ask in next chat)." : " Your instructions are the user's approval, so perform the sends/creates/deletes they request."}
 - plus any custom MCP tools from Advanced → MCP Servers (if configured) — names vary, use exact declared schemas
 Background tasks run headless: prefer web_search/web_fetch over interactive browser automation.
 ${skillsSection ? `\n${skillsSection}\n` : ""}${heartbeatContext}${heartbeatDiscipline}
@@ -217,12 +221,67 @@ async function runPiTaskInternal(
     console.warn("[pi-task] Agent tools load failed:", e);
   }
 
+  // Headless plan (TodoWrite equivalent): in-memory snapshot that drives the
+  // continuation loop below. Same contract as chat TodoWrite — COMPLETE list
+  // each call, exactly one in_progress — but headless-only, never rendered.
+  // The loop continues while items are unfinished (bounded rounds).
+  // NOTE: non-nullable array — TS narrows `| null` to null across the tool
+  // closure below, which breaks the continuation filter types.
+  let headlessPlan: Array<{ content: string; status: string; activeForm?: string }> = [];
+  try {
+    const { tool } = await import("ai");
+    const { z } = await import("zod");
+    (piBaseTools as any).TodoWrite = tool({
+      description:
+        "Manage this background run's plan (headless). Pass the COMPLETE list each call. Call FIRST for work with 3+ steps, flip each item to completed the moment its sub-task finishes, exactly one in_progress at a time. Unfinished items earn another model round (bounded) — finished items end the run. Update immediately after each sub-task.",
+      inputSchema: z.object({
+        todos: z.array(z.object({
+          content: z.string(),
+          status: z.enum(["pending", "in_progress", "completed"]),
+          activeForm: z.string().optional(),
+        })).describe("The updated plan list. Replaces any previous list."),
+      }),
+      execute: async ({ todos }: { todos: Array<{ content: string; status: string; activeForm?: string }> }) => {
+        if (!Array.isArray(todos)) return "Error: `todos` must be an array.";
+        headlessPlan = todos;
+        const done = todos.filter((t) => t.status === "completed").length;
+        // Mirror into the durable goal store so chat can see background plans.
+        try {
+          const { mirrorHeadlessPlan } = await import("@/lib/goals/store");
+          await mirrorHeadlessPlan(task.id, task.name, todos).catch(() => {});
+        } catch {}
+        return `Plan updated (${done}/${todos.length} completed). Continue working until every item is completed, then summarize.`;
+      },
+    });
+  } catch (e) {
+    console.warn("[pi-task] Headless plan tool failed:", e);
+  }
+
+  // Computer Use (background-safe): read-only tools work headless; mutating
+  // computer_* tools refuse without an interactive user (see computer-tools gate).
+  try {
+    const { createComputerTools } = await import("./computer-tools");
+    const { isComputerUseDisabled } = await import("./computer-use-mcp");
+    if (!isComputerUseDisabled()) {
+      const computerTools = createComputerTools(threadId, { includeAskUser: false });
+      for (const [name, t] of Object.entries(computerTools)) {
+        (piBaseTools as any)[name] = t;
+      }
+      console.log(`[pi-task] Merging ${Object.keys(computerTools).length} computer-use tools for task ${task.id}`);
+    }
+  } catch (e) {
+    console.warn("[pi-task] Computer-use tools load failed:", e);
+  }
+
   // Connectors: Composio tools for background runs (isolated, non-fatal).
   // Identity: no client here, so loadConnectorTools() resolves the
   // CANONICAL id — the same namespace the user connected accounts under
   // from chat (see resolveComposioUserId). Gating: only the autonomous
   // heartbeat monitor is forced draft-only; a user-created SCHEDULED task
   // carries explicit approval in its own instructions, so its tools run.
+  // Draft stubs keep the REAL input schema (params intact) and block inside
+  // execute — never z.object({}).passthrough(), which destroys the params
+  // the model needs to draft properly.
   let connectorHint = "";
   try {
     const { loadConnectorTools } = await import("./connectors");
@@ -233,13 +292,13 @@ async function runPiTaskInternal(
       try {
         const { shouldGateConnectorTool } = await import("@/lib/permissions/sensitive");
         const { tool } = await import("ai");
-        const { z } = await import("zod");
         for (const [name, t] of Object.entries(conn.tools)) {
           if (shouldGateConnectorTool(task.type, name)) {
             gated++;
+            const realSchema = (t as any)?.inputSchema ?? (t as any)?.parameters;
             (piBaseTools as any)[name] = tool({
-              description: `HEADLESS DRAFT-ONLY stub for ${name}: the heartbeat monitor may only read — sends/creates/deletes cannot run without user approval. Return a draft instead.`,
-              inputSchema: z.object({}).passthrough(),
+              description: `HEADLESS DRAFT-ONLY for ${name}: the heartbeat monitor may only read — sends/creates/deletes cannot run without user approval. Fill the REAL parameters and return a draft instead (Lane B prep: save the draft content/file, then note it via update_heartbeat). Original: ${String((t as any)?.description || "").slice(0, 300)}`,
+              inputSchema: realSchema,
               execute: async (args: any) =>
                 JSON.stringify({
                   drafted: true,
@@ -379,35 +438,82 @@ async function runPiTaskInternal(
     if (signal.aborted) throw new Error("Pi task aborted before model call");
 
     const { streamText } = await import("ai");
-    const maxSteps = task.type === "heartbeat" ? 8 : 12;
+    const maxSteps = task.type === "heartbeat"
+      ? parseInt(process.env.PI_TASK_HEARTBEAT_STEPS || "12", 10)
+      : parseInt(process.env.PI_TASK_SCHEDULED_STEPS || "20", 10);
+    const maxRounds = parseInt(process.env.PI_TASK_MAX_ROUNDS || "3", 10);
+    const system = buildPiTaskSystemPrompt(task, heartbeatStateText, skillsSection || undefined, connectorHint || undefined);
 
-    const result = streamText({
-      model: createPiModelClient(bg.modelId),
-      system: buildPiTaskSystemPrompt(task, heartbeatStateText, skillsSection || undefined, connectorHint || undefined),
-      prompt: `Execute task: ${task.name}\nInstructions: ${task.instructions}`,
-      maxRetries: 0,
-      abortSignal: signal,
-      temperature: task.type === "heartbeat" ? 0.2 : 0.3,
-      tools: baseTools,
-      stopWhen: async ({ steps }: { steps: any[] }) => steps.length >= maxSteps,
-    });
+    // Multi-round loop: run, then continue while the headless plan has
+    // unfinished items (bounded). Each round's prompt carries prior progress
+    // + remaining items so work continues without re-discovering context.
+    let combinedOutput = "";
+    let totalToolCount = 0;
+    let totalSteps = 0;
+    let round = 0;
+    for (;;) {
+      if (signal.aborted) throw new Error("Pi task aborted before model call");
+      const roundPrompt = round === 0
+        ? `Execute task: ${task.name}\nInstructions: ${task.instructions}`
+        : `Continue task: ${task.name}\nOriginal instructions: ${task.instructions}\n\nPrior progress (round ${round}):\n${combinedOutput.slice(-2000)}\n\nUnfinished plan:\n${headlessPlan.filter((t) => t.status !== "completed").map((t, i) => `${i + 1}. ${t.content} (${t.status})`).join("\n")}\n\nKeep working NOW with tools — update TodoWrite the moment each item completes, verify, and summarize only when every item is completed.`;
+      const result = streamText({
+        model: createPiModelClient(bg.modelId),
+        system,
+        prompt: roundPrompt,
+        maxRetries: 0,
+        abortSignal: signal,
+        temperature: task.type === "heartbeat" ? 0.2 : 0.3,
+        tools: baseTools,
+        stopWhen: async ({ steps }: { steps: any[] }) => steps.length >= maxSteps,
+      });
 
-    const output = await result.text;
-    const steps = await result.steps;
-    const toolCount = (steps as any[]).reduce((sum: number, s: any) => sum + (s.toolCalls?.length ?? 0), 0);
+      const output = await result.text;
+      const steps = await result.steps;
+      const toolCount = (steps as any[]).reduce((sum: number, s: any) => sum + (s.toolCalls?.length ?? 0), 0);
+      totalToolCount += toolCount;
+      totalSteps += (steps as any[]).length;
+      combinedOutput = combinedOutput ? `${combinedOutput}\n\n${output}` : output;
+
+      const unfinished = headlessPlan.filter((t) => t.status !== "completed");
+      if (unfinished.length > 0 && round + 1 < maxRounds && !signal.aborted) {
+        round++;
+        console.log(`[pi-task] Task ${task.id} continuation round ${round}/${maxRounds - 1} — ${unfinished.length} plan item(s) unfinished`);
+        continue;
+      }
+      if (unfinished.length > 0) {
+        console.warn(`[pi-task] Task ${task.id} plan budget exhausted — ${unfinished.length} item(s) still unfinished`);
+      }
+      break;
+    }
+    const output = combinedOutput;
+    const toolCount = totalToolCount;
     const duration = Date.now() - startTime;
 
-    console.log(`[pi-task] Task ${task.id} completed via Pi: tools=${toolCount}, steps=${(steps as any[]).length}, output=${(output || "(no output)").slice(0, 100)}`);
+    console.log(`[pi-task] Task ${task.id} completed via Pi: tools=${toolCount}, steps=${totalSteps}, rounds=${round + 1}, output=${(output || "(no output)").slice(0, 100)}`);
 
     const { appendLog } = await import("@/lib/scheduler/task-log");
+    // Wire generated-file scan: verify [file:] markers actually exist.
+    let generatedNote = "";
+    try {
+      const generated = await scanGeneratedFiles();
+      if (generated.length > 0) {
+        generatedNote = ` files=[${generated.slice(0, 5).map((g) => g.relativePath).join(", ")}]`;
+      }
+    } catch {}
     await appendLog({
       timestamp: startTime,
       taskId: task.id,
       name: task.name,
       status: "success",
-      output: `[pi tools=${toolCount}] ${(output || "(no output)").slice(0, 480)}`,
+      output: `[pi tools=${toolCount} rounds=${round + 1}${generatedNote}] ${(output || "(no output)").slice(0, 480)}`,
       duration,
     });
+
+    // Sync headless plan completion into the durable goal store.
+    try {
+      const { syncHeadlessPlanDone } = await import("@/lib/goals/store");
+      await syncHeadlessPlanDone(task.id).catch(() => {});
+    } catch {}
 
     return { status: "success" as const, output: output || "(no output)", duration };
   } catch (error: any) {

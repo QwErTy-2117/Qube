@@ -5,9 +5,7 @@ import {
   ComposerAttachments,
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
-import {
-  MarkdownText,
-} from "@/components/assistant-ui/markdown-text";
+import { OpenUIText } from "@/components/assistant-ui/openui-text";
 import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
@@ -905,6 +903,8 @@ const MessageError: FC = () => {
 
 // Assistant text part that hides agent error notices (they surface via the
 // red error toast instead of inside the reply bubble).
+// Renders OpenUI generative UI when the reply carries an ```openui-lang
+// program, plain Markdown otherwise (see openui-text.tsx).
 const AssistantText: FC = () => {
   const text = useAuiState((s) => {
     try {
@@ -916,7 +916,7 @@ const AssistantText: FC = () => {
     }
   });
   if (typeof text === "string" && isAgentErrorText(text)) return null;
-  return <MarkdownText />;
+  return <OpenUIText />;
 };
 
 // Friendly group titles live in the shared module so every surface

@@ -86,17 +86,17 @@ describe("buildContinuationNudge", () => {
 });
 
 describe("maxSilentRounds", () => {
-  it("defaults to 3 and honors env override", () => {
+  it("defaults to 8 and honors env override", () => {
     const prev = process.env.QUBE_SILENT_CONTINUATIONS;
     try {
       delete process.env.QUBE_SILENT_CONTINUATIONS;
-      assert.equal(maxSilentRounds(), 3);
+      assert.equal(maxSilentRounds(), 8);
       process.env.QUBE_SILENT_CONTINUATIONS = "0";
       assert.equal(maxSilentRounds(), 0);
       process.env.QUBE_SILENT_CONTINUATIONS = "5";
       assert.equal(maxSilentRounds(), 5);
       process.env.QUBE_SILENT_CONTINUATIONS = "bogus";
-      assert.equal(maxSilentRounds(), 3);
+      assert.equal(maxSilentRounds(), 8);
     } finally {
       if (prev === undefined) delete process.env.QUBE_SILENT_CONTINUATIONS;
       else process.env.QUBE_SILENT_CONTINUATIONS = prev;

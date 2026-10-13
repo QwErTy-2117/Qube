@@ -71,8 +71,9 @@ export function PermissionBar({
     !rawPath && !commandArg && !/^(read_file|write_file|edit_file|delete_file|list_directory|run_command|present_file|open_path)$/.test(pending.toolName);
   const isDeleteOrDestructive =
     pending.toolName === "delete_file" ||
+    pending.toolName.startsWith("computer_") ||
     /delete|send|create|post|publish|purchase/i.test(pending.toolName) ||
-    /Delete file|Send email|Post a message|Make a purchase|Delete in/i.test(pending.description || "");
+    /Delete file|Send email|Post a message|Make a purchase|Delete in|Control your computer/i.test(pending.description || "");
 
   // Mirror backend scopeDirForPath: show containing directory + /* so
   // "Allow always" scope is obvious (e.g. /home/luca/.config/opencode/*).

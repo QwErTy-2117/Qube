@@ -23,6 +23,7 @@ import {
   getIncompleteTodos,
   hasUnfinishedGoals,
   buildContinuationNudge,
+  buildIdleContinueNudge,
   type TodoSnapshotItem,
 } from "./continuation";
 import type { McpServerConfig } from "./mcp-store";
@@ -441,6 +442,21 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     userAbout: config.userAbout,
   });
 
+  // OpenUI generative UI (https://www.openui.com/): append component library
+  // instructions so the model can emit ```openui-lang fenced visuals for
+  // tables / charts / forms / cards. Inline mode keeps plain Markdown the
+  // default — visuals only when they genuinely help. Disable with
+  // OPENUI_ENABLED=false. Server-only prompt build (lang-core, no React).
+  try {
+    if (process.env.OPENUI_ENABLED !== "false") {
+      const { getOpenUISystemPrompt } = await import("@/lib/openui/prompt");
+      const openuiInstructions = getOpenUISystemPrompt();
+      if (openuiInstructions) systemPrompt += `\n\n${openuiInstructions}`;
+    }
+  } catch (e: any) {
+    console.warn("[pi-harness] OpenUI prompt append failed (non-fatal):", e?.message || String(e));
+  }
+
   // VoiceMem recall (under the hood): relevant memories + past-chat index.
   // Non-fatal by design — an empty context simply means nothing recalled yet.
   // Skipped entirely when long-term memory is disabled in Advanced settings.
@@ -608,6 +624,21 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     console.error("[pi-harness] MCP load failed (non-fatal):", e.message);
   }
 
+  // Computer Use: OS-level control via open-codex-computer-use (`ocu`).
+  // Native wrapper tools (computer_* prefix, no MCP collision). Failures are
+  // isolated — a missing binary yields a helpful install hint per call.
+  try {
+    const { createComputerTools } = await import("./computer-tools");
+    const { isComputerUseDisabled } = await import("./computer-use-mcp");
+    if (!isComputerUseDisabled()) {
+      const computerTools = createComputerTools(config.threadId, { includeAskUser: true });
+      console.log(`[pi-harness] Merging ${Object.keys(computerTools).length} computer-use tools for thread ${config.threadId}`);
+      tools = { ...tools, ...computerTools };
+    }
+  } catch (e: any) {
+    console.warn("[pi-harness] Computer-use tools load failed (non-fatal):", e?.message || String(e));
+  }
+
   // NOTE: Do NOT patch tool schemas here. Pi built-in tools already carry Zod
   // schemas, and MCP tools from @ai-sdk/mcp carry JSON-Schema (via jsonSchema(),
   // exposed as dynamic tools) — both shapes are natively supported by AI SDK v6
@@ -656,6 +687,17 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
             }
           } else if (typeof out === "string" && /^error:/i.test(out.trim())) {
             lastToolError = `${toolName}: ${out.trim().slice(0, 400)}`;
+          } else if (typeof out === "string" && /"\s*error\s*"\s*:\s*true/.test(out.slice(0, 600))) {
+            // Pi tools return JSON-string errors ({"error":true,…}) rather
+            // than MCP isError objects — surface those for recovery too.
+            // Keep the human-readable message, not the whole JSON blob.
+            try {
+              const parsed = JSON.parse(out);
+              const msg = String(parsed.message || parsed.error || out).slice(0, 300);
+              lastToolError = `${toolName}: ${msg}`;
+            } catch {
+              lastToolError = `${toolName}: ${out.trim().slice(0, 400)}`;
+            }
           } else {
             // A clean result supersedes any earlier failure.
             lastToolError = null;
@@ -768,10 +810,10 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
           model,
           system: systemPrompt,
           messages: modelMessages as any,
-          maxRetries: 0,
+          maxRetries: 2,
           abortSignal: signal,
-          stopWhen: async ({ steps }: { steps: any[] }) => steps.length >= 15,
-          temperature: config.temperature !== undefined ? config.temperature : 0.7,
+          stopWhen: async ({ steps }: { steps: any[] }) => steps.length >= 40,
+          temperature: config.temperature !== undefined ? config.temperature : 0.3,
           ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
           tools: tools as any,
         });
@@ -884,6 +926,12 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
         console.warn(
           `[pi-harness] Silent continuation budget exhausted [${config.threadId}] — ${getIncompleteTodos(lastTodoSnapshot).length} goal(s) still unfinished`
         );
+      }
+      // after silent-goals continuation block, before break:
+      if (!sawError && !signal.aborted && toolCallCount === 0 && silentRounds < silentBudget) {
+        pendingNudge = [...pendingNudge, { role: "user", content: buildIdleContinueNudge(silentRounds) } as Record<string, unknown>];
+        silentRounds++;
+        continue;
       }
       break;
     }

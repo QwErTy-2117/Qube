@@ -90,7 +90,12 @@ export async function buildHeartbeatBrief(opts?: {
       if (state.lastAction) lines.push(`Last action: ${String(state.lastAction).slice(0, 160)} (${timeAgo(state.lastActionAt)})`);
       if (pending.length > 0) {
         lines.push(`Pending checklist (${pending.length}):`);
-        for (const p of pending) lines.push(`- ${escapePromptData(String(p.description).slice(0, 220))}`);
+        for (const p of pending) {
+          const files = Array.isArray((p as any).fileRefs) && (p as any).fileRefs.length > 0
+            ? ` [files: ${(p as any).fileRefs.slice(0, 3).join(", ")}]`
+            : "";
+          lines.push(`- ${escapePromptData(String(p.description).slice(0, 220))}${files}`);
+        }
       }
       if (failed.length > 0) {
         lines.push(`Needs attention (${failed.length}):`);
@@ -177,6 +182,15 @@ export async function recordHeartbeatFinding(opts: {
   kind?: "suggestion" | "draft";
 }): Promise<{ id: string; duplicate: boolean } | null> {
   try {
+    // Engine gate first: duplicates / rejected / fatigued topics are
+    // suppressed with a reason instead of re-recorded (audit fix #4).
+    try {
+      const { decideHeartbeatFinding } = await import("./heartbeat-decide");
+      const verdict = await decideHeartbeatFinding({
+        topic: opts.topic, detail: opts.detail, evidence: opts.evidence,
+      });
+      if (!verdict.proceed || verdict.duplicate) return { id: "suppressed", duplicate: true };
+    } catch {}
     const { loadProactiveState, recordSuggestion } = await import("./store");
     const state = await loadProactiveState();
     const fp = suggestionFingerprint(opts.topic, opts.detail);

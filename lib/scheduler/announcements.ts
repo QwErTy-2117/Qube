@@ -134,6 +134,48 @@ export async function getPendingAnnouncements(limit = 5): Promise<Announcement[]
     .slice(0, Math.max(1, limit));
 }
 
+/**
+ * Verified-mention check: did the reply actually tell the user about this
+ * announcement? Matches on task-name keywords or a distinctive excerpt
+ * snippet (case-insensitive). Generic greetings ("hi", "how can I help")
+ * never count — unmentioned items stay pending for the next turn.
+ */
+export function announcementMentionedInReply(
+  a: Pick<Announcement, "taskName" | "excerpt">,
+  replyText: string,
+): boolean {
+  const reply = (replyText || "").toLowerCase();
+  if (reply.trim().length < 10) return false;
+  const nameWords = String(a.taskName || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 4)
+    .slice(0, 6);
+  // Shared words ("digest", "report") must not verify on their own: require
+  // at least two name-word hits, or one hit when the name yields a single
+  // matchable word. Bias toward re-surfacing (false negative) over burning
+  // news the user never saw (false positive).
+  const hits = nameWords.filter((w) => reply.includes(w)).length;
+  if (hits >= Math.min(2, nameWords.length) && nameWords.length > 0) return true;
+  // Distinctive 32-char excerpt window (skip the "[pi tools=…]" prefix).
+  const clean = String(a.excerpt || "").replace(/^\[pi[^\]]*\]\s*/i, "").trim().toLowerCase();
+  for (let i = 0; i + 32 <= clean.length && i < 200; i += 32) {
+    const win = clean.slice(i, i + 32).trim();
+    if (win.length >= 20 && reply.includes(win)) return true;
+  }
+  return false;
+}
+
+/** Mark only the announcements actually mentioned in the reply. Returns ids marked. */
+export async function markAnnouncementsDeliveredIfMentioned(
+  pending: Announcement[],
+  replyText: string,
+): Promise<string[]> {
+  const mentioned = pending.filter((a) => announcementMentionedInReply(a, replyText)).map((a) => a.id);
+  if (mentioned.length > 0) await markAnnouncementsDelivered(mentioned);
+  return mentioned;
+}
+
 /** Mark announcements as told-to-user. Only call after a reply streamed. */
 export async function markAnnouncementsDelivered(ids: string[]): Promise<void> {
   if (ids.length === 0) return;

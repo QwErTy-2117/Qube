@@ -12,6 +12,8 @@ src-tauri/gen/
 .next.d.ts
 .playwright-mcp/
 .browser-profile/
+.camoufox/
+.camoufox-profile/
 .memory/
 /sandbox/
 /playground/

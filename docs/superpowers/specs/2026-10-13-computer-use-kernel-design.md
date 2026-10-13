@@ -153,3 +153,21 @@ prompt. Files are written only when kernel-scoped tools were used.
 - Gating policy: risk-classified (user choice).
 - Integration: wrap existing tools, no new tool surface (user choice).
 - Ordering: foundation first (user choice).
+
+## Deviations (as implemented)
+
+- The kernel wraps tool `execute`s BEFORE the harness's existing
+  TodoWrite/last-error observer (not replacing it), so `lastToolError` still
+  sees kernel results.
+- Live DOM probing (`probePage`) and visual observation are injectable
+  `KernelDeps`, not wired to CDP yet — they land in sub-project 2
+  (perception). Until then, verification is result-based plus injected probes.
+- Dialog auto-dismiss deferred: recovery returns hints only (no auto-clicks).
+- Desktop verification is result-based only (no screen-state probe yet).
+- Terminal/file tools are log + verify only: no permission changes, no repeat
+  blocks (re-running commands after edits is the normal loop).
+- `computer_*` keeps its existing always-ask behavior inside the tool; the
+  kernel marks it `interact/allow` and does not double-prompt.
+- Kill switch: `COMPUTER_USE_KERNEL=0`.
+- Wired into harness (interactive), task-runner and subagents (headless =
+  deny above `interact`).

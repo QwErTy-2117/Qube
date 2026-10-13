@@ -133,7 +133,17 @@ export async function streamDurableToWriter(
   text: string,
   requestId: string,
   writer: { write: (chunk: unknown) => void },
-  opts?: { context?: typeof BACKGROUND_CONTEXT; signal?: AbortSignal; modelName?: string; reasoningEffort?: string },
+  opts?: {
+    context?: typeof BACKGROUND_CONTEXT;
+    signal?: AbortSignal;
+    modelName?: string;
+    reasoningEffort?: string;
+    instanceId?: string;
+    /** Injectable capability loaders; defaults to MCP + connectors. */
+    capabilities?: import("@/lib/pi/durable-capabilities").TurnCapabilities;
+    /** Disable per-turn capability loading entirely (tests/headless). */
+    skipCapabilities?: boolean;
+  },
 ): Promise<void> {
   const context = opts?.context ?? BACKGROUND_CONTEXT;
   const { formatProviderError } = await import("@/lib/pi/harness");
@@ -142,6 +152,25 @@ export async function streamDurableToWriter(
     { modelName: opts?.modelName ?? null, reasoningEffort: opts?.reasoningEffort },
     context,
   );
+  // Load this turn's MCP + connector tools into the process registry
+  // before generation resolves the tool set. Non-fatal and cleaned up
+  // after the turn so stdio MCP clients never leak.
+  let capabilityCleanup: (() => Promise<void>) | undefined;
+  if (!opts?.skipCapabilities) {
+    try {
+      const { getDurableRegistry } = await import("@/lib/pi/durable");
+      const { installTurnCapabilities, defaultCapabilityLoaders } = await import("@/lib/pi/durable-capabilities");
+      const registry = await getDurableRegistry();
+      const loaders = opts?.capabilities ?? defaultCapabilityLoaders(threadId, opts?.instanceId);
+      const installed = await installTurnCapabilities(registry as never, loaders);
+      capabilityCleanup = installed.cleanup;
+      if (installed.errors.length > 0) {
+        console.warn(`[durable] Capability load warnings: ${installed.errors.map((e) => `${e.source}:${e.error}`).join(" | ").slice(0, 300)}`);
+      }
+    } catch (e: unknown) {
+      console.warn("[durable] Capability install failed (non-fatal):", e instanceof Error ? e.message : String(e));
+    }
+  }
   const cursor = createDurableStreamCursor();
   const view = await conv.viewState(context);
   const current = (view as unknown as { value?: unknown }).value ?? view;
@@ -186,6 +215,9 @@ export async function streamDurableToWriter(
       for (const chunk of closeDurableStreamCursor(cursor)) {
         try { writer.write(chunk); } catch {}
       }
+    }
+    if (capabilityCleanup) {
+      try { await capabilityCleanup(); } catch {}
     }
   }
 }

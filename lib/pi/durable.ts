@@ -11,9 +11,16 @@ import { buildSkillsExtension, materializeSkills } from "@/lib/pi/durable-skills
 import { resolveProviderModule } from "@/lib/pi/durable-models";
 
 let harness: Awaited<ReturnType<typeof Harness.open>> | null = null;
+let activeRegistry: Awaited<ReturnType<typeof buildDurableRegistry>> | null = null;
 
 export function durableDbPath(): string {
   return join(getDataDir(), "agent.sqlite");
+}
+
+/** The process-wide registry. Per-turn capabilities install into it. */
+export async function getDurableRegistry() {
+  if (!(harness && activeRegistry)) await getDurableHarness();
+  return activeRegistry!;
 }
 
 /** All pi-ai provider factories that can be registered without credentials. */
@@ -60,6 +67,7 @@ export async function getDurableHarness(context = BACKGROUND_CONTEXT) {
   const models = await buildSingletonModels();
   const registry = await buildDurableRegistry();
   registry.install(buildSkillsExtension(materializeSkills()));
+  activeRegistry = registry;
   harness = await Harness.open(storage, {
     models,
     registry,
@@ -76,6 +84,7 @@ export async function closeDurableHarness(context = BACKGROUND_CONTEXT) {
   if (!harness) return;
   await harness.close(context);
   harness = null;
+  activeRegistry = null;
 }
 
 export async function abortDurable(threadId: string, context = BACKGROUND_CONTEXT) {

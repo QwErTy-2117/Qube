@@ -4,6 +4,11 @@ import { listThreadSnapshotIds, readThreadSnapshot } from "@/lib/chat/thread-sna
 
 export async function GET() {
   try {
+    if (process.env.PI_DURABLE_ENABLED === "1") {
+      const { listDurableThreads } = await import("@/lib/pi/durable-conversations");
+      const threads = await listDurableThreads();
+      return NextResponse.json({ threads });
+    }
     const [sessions, snapIds] = await Promise.all([
       listSessions(),
       listThreadSnapshotIds(),

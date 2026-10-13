@@ -194,7 +194,9 @@ export function browserUseInstructions(pageBrowserAllowed: boolean): string {
         `When page tools cannot operate, use browser_pixel_act in the same browser window if available, otherwise request_takeover.`
       : ``) +
     ` Use web_search and web_fetch to look something up or read a page without the browser. ` +
-    `Use request_takeover when the user must provide protected input or human judgment.`
+    `Use request_takeover when the user must provide protected input or human judgment. ` +
+    `Tool results may carry a [kernel ...] trailer or _kernel block with the action verdict (verified/no_effect/failed), change signals, and recovery hints. ` +
+    `Respect repeat_failure blocks: never replay the blocked action — re-observe and switch methods.`
   );
 }
 

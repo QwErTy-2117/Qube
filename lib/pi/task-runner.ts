@@ -453,6 +453,10 @@ async function runPiTaskInternal(
     let round = 0;
     for (;;) {
       if (signal.aborted) throw new Error("Pi task aborted before model call");
+      try {
+        const { applyKernel, kernelEnabled } = await import("@/lib/computer-use/index");
+        if (kernelEnabled()) applyKernel(baseTools as Record<string, any>, { threadId, interactive: false });
+      } catch {}
       const roundPrompt = round === 0
         ? `Execute task: ${task.name}\nInstructions: ${task.instructions}`
         : `Continue task: ${task.name}\nOriginal instructions: ${task.instructions}\n\nPrior progress (round ${round}):\n${combinedOutput.slice(-2000)}\n\nUnfinished plan:\n${headlessPlan.filter((t) => t.status !== "completed").map((t, i) => `${i + 1}. ${t.content} (${t.status})`).join("\n")}\n\nKeep working NOW with tools — update TodoWrite the moment each item completes, verify, and summarize only when every item is completed.`;

@@ -645,6 +645,22 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     console.warn("[pi-harness] Computer-use tools load failed (non-fatal):", e?.message || String(e));
   }
 
+  // Computer-use kernel: uniform describe → repeat-guard → permission →
+  // execute → verify → recover → log pipeline for browser/computer tools.
+  // Wraps BEFORE the observer below so lastToolError sees kernel results.
+  try {
+    const { applyKernel, kernelEnabled, StateTracker } = await import("@/lib/computer-use/index");
+    if (kernelEnabled()) {
+      applyKernel(tools as Record<string, any>, { threadId: config.threadId, interactive: true });
+      try {
+        const resume = StateTracker.forThread(config.threadId).resumeContext();
+        if (resume) systemPrompt += `\n\n${resume}`;
+      } catch {}
+    }
+  } catch (e: any) {
+    console.warn("[pi-harness] Kernel wrap failed (non-fatal):", (e?.message || String(e)).slice(0, 200));
+  }
+
   // NOTE: Do NOT patch tool schemas here. Pi built-in tools already carry Zod
   // schemas, and MCP tools from @ai-sdk/mcp carry JSON-Schema (via jsonSchema(),
   // exposed as dynamic tools) — both shapes are natively supported by AI SDK v6

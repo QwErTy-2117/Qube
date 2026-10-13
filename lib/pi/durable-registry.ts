@@ -1,24 +1,5 @@
 import { Type } from "@earendil-works/pi-ai";
 import { createRegistry, defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { readFile } from "node:fs/promises";
-
-const readFileTool = defineTool({
-  name: "read_file",
-  description: "Read a workspace file",
-  parameters: Type.Object({ path: Type.String() }),
-  replay: "safe",
-  execute: async (args) => {
-    const text = await readFile(args.path, "utf-8").catch((e: Error) => `Error: ${e.message}`);
-    return { output: [{ type: "text", text: text.slice(0, 20000) }] as const };
-  },
-});
-
-const writeFileTool = defineTool({
-  name: "write_file",
-  description: "Write a workspace file (never auto-replayed after crash)",
-  parameters: Type.Object({ path: Type.String(), content: Type.String() }),
-  execute: async () => ({ output: [{ type: "text", text: "written (stub)" }] as const }),
-});
 
 const CATEGORY_VALUES = ["personal", "preference", "project", "technology", "decision", "pattern", "constraint", "goal", "general"] as const;
 
@@ -103,7 +84,8 @@ export const saveMemoryTool = defineTool({
 
 export async function buildDurableRegistry() {
   const registry = createRegistry();
-  registry.install(defineExtension({ name: "workspace", tools: [readFileTool, writeFileTool] }));
+  const { buildFilesExtension } = await import("@/lib/pi/durable-files");
+  registry.install(buildFilesExtension());
   registry.install(defineExtension({ name: "memory", tools: [readMemoryTool, saveMemoryTool] }));
   const { buildGoalsExtension } = await import("@/lib/pi/durable-goals");
   registry.install(buildGoalsExtension());

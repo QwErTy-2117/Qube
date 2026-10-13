@@ -82,8 +82,10 @@ export const saveMemoryTool = defineTool({
   },
 });
 
-export async function buildDurableRegistry() {
+export async function buildDurableRegistry(opts?: { userName?: string; userAbout?: string }) {
   const registry = createRegistry();
+  const { buildQubeExtension } = await import("@/lib/pi/durable-prompt");
+  registry.install(buildQubeExtension(opts));
   const { buildFilesExtension } = await import("@/lib/pi/durable-files");
   registry.install(buildFilesExtension());
   registry.install(defineExtension({ name: "memory", tools: [readMemoryTool, saveMemoryTool] }));

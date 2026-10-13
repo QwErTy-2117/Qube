@@ -53,6 +53,22 @@ export function buildIdleContinueNudge(attempt: number): string {
 export function isPlanningOnlyTurn(toolCallCount: number): boolean {
   return toolCallCount === 0;
 }
+
+/**
+ * Stall recovery rule for the harness. Only nudge for another round when
+ * the round produced NOTHING actionable — no tool calls and no visible
+ * text. A round that already answered in text (greetings, direct answers,
+ * Q&A) is a complete turn, so it must not be re-continued (re-running it
+ * streamed the same reply many times for a simple "hi").
+ */
+export function shouldIdleContinue(opts: {
+  toolCallCount: number;
+  producedText: boolean;
+  silentRounds: number;
+  budget: number;
+}): boolean {
+  return opts.toolCallCount === 0 && !opts.producedText && opts.silentRounds < opts.budget;
+}
 export function buildContinuationNudge(incomplete: TodoSnapshotItem[], lastError?: string | null): string {
   const lines = incomplete
     .slice(0, 12)

@@ -12,7 +12,28 @@ import {
   getIncompleteTodos,
   hasUnfinishedGoals,
   buildContinuationNudge,
+  shouldIdleContinue,
 } from "@/lib/pi/continuation";
+
+describe("shouldIdleContinue (stall recovery)", () => {
+  it("never re-continues a round that produced a text answer", () => {
+    // The 'hi' bug: a plain reply with no tools must NOT be re-run.
+    assert.equal(shouldIdleContinue({ toolCallCount: 0, producedText: true, silentRounds: 0, budget: 8 }), false);
+  });
+
+  it("does not continue when tools were called", () => {
+    assert.equal(shouldIdleContinue({ toolCallCount: 2, producedText: false, silentRounds: 0, budget: 8 }), false);
+  });
+
+  it("continues only on a genuine stall (no text, no tools)", () => {
+    assert.equal(shouldIdleContinue({ toolCallCount: 0, producedText: false, silentRounds: 0, budget: 8 }), true);
+  });
+
+  it("stops at the silent budget", () => {
+    assert.equal(shouldIdleContinue({ toolCallCount: 0, producedText: false, silentRounds: 8, budget: 8 }), false);
+    assert.equal(shouldIdleContinue({ toolCallCount: 0, producedText: false, silentRounds: 0, budget: 0 }), false);
+  });
+});
 
 describe("getIncompleteTodos", () => {
   it("returns pending and in_progress items only", () => {

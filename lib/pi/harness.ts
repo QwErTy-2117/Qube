@@ -24,6 +24,7 @@ import {
   hasUnfinishedGoals,
   buildContinuationNudge,
   buildIdleContinueNudge,
+  shouldIdleContinue,
   type TodoSnapshotItem,
 } from "./continuation";
 import type { McpServerConfig } from "./mcp-store";
@@ -837,6 +838,9 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
       const uiStream = result.toUIMessageStream({ originalMessages: activeUiMessages as any } as any) as ReadableStream<any>;
       reader = uiStream.getReader();
       let attemptOverflow = false;
+      // Did THIS round produce visible assistant text? If so the turn is a
+      // real answer and must not be re-run as an "idle" continuation.
+      let producedText = false;
 
       while (true) {
         // Check abort between chunks
@@ -855,6 +859,9 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
           chunkType === "dynamic-tool-call"
         ) {
           toolCallCount++;
+        }
+        if (chunkType === "text-delta" && typeof (value as any)?.delta === "string" && (value as any).delta.length > 0) {
+          producedText = true;
         }
 
         // Surface error chunks as visible text (preserve UI contract)
@@ -932,10 +939,16 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
           `[pi-harness] Silent continuation budget exhausted [${config.threadId}] — ${getIncompleteTodos(lastTodoSnapshot).length} goal(s) still unfinished`
         );
       }
-      // after silent-goals continuation block, before break:
-      if (!sawError && !signal.aborted && toolCallCount === 0 && silentRounds < silentBudget) {
+      // Stall recovery only: if the round produced NEITHER tool calls NOR
+      // visible text, the model ended with nothing actionable — nudge it
+      // once to act. A round that already spoke (greetings, direct answers,
+      // Q&A) IS the answer, so it must never be re-run: previously any
+      // tool-less turn was re-continued up to the silent budget, which
+      // streamed the same reply many times for a simple "hi".
+      if (!sawError && !signal.aborted && shouldIdleContinue({ toolCallCount, producedText, silentRounds, budget: silentBudget })) {
         pendingNudge = [...pendingNudge, { role: "user", content: buildIdleContinueNudge(silentRounds) } as Record<string, unknown>];
         silentRounds++;
+        console.log(`[pi-harness] Idle stall recovery ${silentRounds}/${silentBudget} [${config.threadId}] — no text or tools produced`);
         continue;
       }
       break;

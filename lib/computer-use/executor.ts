@@ -4,6 +4,7 @@ import { parseResult, verifyResult, type RawResult } from "./verify";
 import { planRecovery } from "./recovery";
 import { StateTracker } from "./state";
 import { logAction, kernelTrailer } from "./logger";
+import { observePage, resolveRefLabel, withConsoleNetworkSignals, type PageObservation } from "./observer";
 import type { ActionDescriptor, KernelSummary, PageFingerprint, RecoveryPlan, RiskLevel, Verdict } from "./types";
 
 export interface KernelDeps {
@@ -12,6 +13,35 @@ export interface KernelDeps {
   askApproval?: (purpose: string, tool: string, args: Record<string, unknown>) => Promise<boolean>;
   resolveLabel?: (ref: string) => Promise<string | null>;
   probePage?: () => Promise<PageFingerprint | null>;
+}
+
+async function defaultProbe(): Promise<PageFingerprint | null> {
+  try {
+    const mod = await import("@/lib/pi/computer-use");
+    const cdp = {
+      getPageTarget: (mod as any).getPageTarget as () => Promise<{ webSocketDebuggerUrl?: string } | null>,
+      cdpCall: (mod as any).cdpCall,
+      evalIsolated: (mod as any).evalIsolated,
+    };
+    if (typeof cdp.getPageTarget !== "function" || typeof cdp.cdpCall !== "function" || typeof cdp.evalIsolated !== "function") return null;
+    const obs: PageObservation | null = await observePage(cdp);
+    if (!obs) return null;
+    (defaultProbe as any)._lastObs = obs;
+    return obs;
+  } catch { return null; }
+}
+
+async function defaultResolveLabel(ref: string): Promise<string | null> {
+  try {
+    const mod = await import("@/lib/pi/computer-use");
+    const cdp = {
+      getPageTarget: (mod as any).getPageTarget as () => Promise<{ webSocketDebuggerUrl?: string } | null>,
+      cdpCall: (mod as any).cdpCall,
+      evalIsolated: (mod as any).evalIsolated,
+    };
+    if (typeof cdp.getPageTarget !== "function" || typeof cdp.evalIsolated !== "function") return null;
+    return await resolveRefLabel(cdp, ref);
+  } catch { return null; }
 }
 
 export function kernelEnabled(): boolean {
@@ -48,6 +78,8 @@ function attachKernel(out: unknown, k: KernelSummary): unknown {
 
 export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Record<string, any> {
   const state = StateTracker.forThread(deps.threadId);
+  const probePage = deps.probePage ?? defaultProbe;
+  const resolveLabel = deps.resolveLabel ?? defaultResolveLabel;
   for (const [name, def] of Object.entries(tools)) {
     const orig = (def as any)?.execute;
     if (typeof orig !== "function" || (def as any).__kernel) continue;
@@ -99,8 +131,8 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         return out;
       }
       // Pre-probe context (fail-open).
-      if (desc.domain === "browser" && desc.kind !== "observe" && deps.probePage) {
-        try { pre = await deps.probePage(); } catch { pre = null; }
+      if (desc.domain === "browser" && desc.kind !== "observe") {
+        try { pre = await probePage(); } catch { pre = null; }
       }
       if (!pre) pre = state.lastFingerprint;
       // Repeat guard (browser/desktop mutating only).
@@ -119,7 +151,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
           let label: string | null = null;
           const cached = state.refs.get(ref);
           if (cached) label = cached.label;
-          if (!label && deps.resolveLabel) { try { label = await deps.resolveLabel(ref); } catch { label = null; } }
+          if (!label) { try { label = await resolveLabel(ref); } catch { label = null; } }
           if (label) labels.push(label);
         }
         const typedRisk = desc.typed.length > 0;
@@ -177,13 +209,17 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
       // Post: index snapshots, verify.
       try {
         indexResult(state, name, out);
-        if (deps.probePage && desc.domain === "browser" && desc.kind !== "observe") {
+        if (desc.domain === "browser" && desc.kind !== "observe") {
           try {
-            const post = await deps.probePage();
+            const post = await probePage();
             if (post) state.lastFingerprint = post;
             const raw: RawResult = threw ? { ok: false, errorText: threw instanceof Error ? threw.message : String(threw) } : parseResult(out);
             const v = verifyResult(raw, pre, post, desc.kind);
             verdict = v.verdict; changed = v.changed; signals = v.signals;
+            try {
+              const lastObs = (defaultProbe as any)._lastObs as PageObservation | undefined;
+              if (lastObs && post && lastObs.at >= post.at - 2000) signals = withConsoleNetworkSignals(signals, lastObs);
+            } catch {}
           } catch { verdict = threw ? "failed" : "unknown"; }
         } else {
           const raw: RawResult = threw ? { ok: false, errorText: threw instanceof Error ? threw.message : String(threw) } : parseResult(out);

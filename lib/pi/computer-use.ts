@@ -275,7 +275,7 @@ export function withBrowserFallback<T extends { fallback?: PixelFallback; error?
 
 // ---------- CDP helpers (managed Chrome) ----------
 
-async function getPageTarget(): Promise<{ id: string; webSocketDebuggerUrl?: string; url?: string } | null> {
+export async function getPageTarget(): Promise<{ id: string; webSocketDebuggerUrl?: string; url?: string } | null> {
   try {
     const mod = await import("@/lib/browser/managed-chrome");
     const p = mod.getBrowserPort();
@@ -292,7 +292,7 @@ async function getPageTarget(): Promise<{ id: string; webSocketDebuggerUrl?: str
 }
 
 let _cdpId = 1;
-async function cdpCall(wsUrl: string, method: string, params: Record<string, unknown> = {}): Promise<any> {
+export async function cdpCall(wsUrl: string, method: string, params: Record<string, unknown> = {}): Promise<any> {
   const { default: WebSocket } = await import("ws");
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl, { handshakeTimeout: 8000 });
@@ -358,7 +358,7 @@ const SNAPSHOT_EXPR = `(() => {
   return { title: document.title, url: location.href, text, elements: els };
 })()`;
 
-async function evalIsolated(wsUrl: string, expression: string): Promise<any> {
+export async function evalIsolated(wsUrl: string, expression: string): Promise<any> {
   // Try an isolated world first (Rakazo parity: isolated script world so page
   // JS can't interfere), fall back to the default world when CDP rejects the
   // call (e.g. frameId requirements on some Chromium builds).

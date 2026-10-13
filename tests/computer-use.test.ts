@@ -218,6 +218,17 @@ describe("computer-use: error translation", () => {
       null,
     );
   });
+  it("translates missed-click verification failures into re-grounding guidance", () => {
+    const raw = JSON.stringify({
+      content: [{ type: "text", text: "click missed: element not visible at 100,200" }],
+      isError: true,
+    });
+    const out = translateOcuError(raw);
+    assert.ok(out);
+    const parsed = JSON.parse(out!);
+    assert.equal(parsed.error, true);
+    assert.ok(/re-ground|FRESH/i.test(parsed.hint));
+  });
 });
 
 describe("computer-use: prompts and labels match house style", () => {

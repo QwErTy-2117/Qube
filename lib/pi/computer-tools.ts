@@ -116,6 +116,14 @@ export function translateOcuError(out: string): string | null {
       hint: `ocu needs the EXACT running-app name from computer_list_apps (e.g. "gnome-text-editor", not "${notFound[1]}"). Copy it verbatim — do not shorten or reshape bundle ids by hand. Re-run computer_list_apps if unsure, then retry the sequence with the exact name.`,
     });
   }
+  // Screen-state verification failures: the click missed or nothing changed.
+  if (/element not (visible|found)|not clickable|click (missed|failed)|no change|same state/i.test(text)) {
+    return JSON.stringify({
+      error: true,
+      message: text.slice(0, 500),
+      hint: "Screen-state verification failed: the target moved or the click missed. Re-run computer_get_app_state for a FRESH tree + screenshot, re-ground the element's coordinates from the new screenshot (do not reuse old coordinates), then retry once via computer_run_sequence. If it fails again, switch methods (element_index ↔ coordinates ↔ keyboard shortcut).",
+    });
+  }
   return null;
 }
 
@@ -125,6 +133,28 @@ function enrichOcuOutput(ocuTool: string, out: string): string {
     if (translated) return translated;
   } catch {}
   return out;
+}
+
+/** Best-effort JSON parse for embedding ocu output in wrapper results. */
+function safeParse(s: string): unknown {
+  try { return JSON.parse(s); } catch { return String(s).slice(0, 2000); }
+}
+
+/** Cheap screen-change check: tree/window text drift between two states. */
+function stateChanged(before: string, after: string): boolean {
+  try {
+    const norm = (s: string) => String(s || "").replace(/\s+/g, " ").trim();
+    const a = norm(before);
+    const b = norm(after);
+    if (!a || !b) return true; // unparseable — don't claim "unchanged"
+    if (a === b) return false;
+    // Hash windows: identical length + tiny diff = likely unchanged.
+    let diff = 0;
+    const n = Math.min(a.length, b.length, 20000);
+    for (let i = 0; i < n; i += 7) if (a[i] !== b[i]) diff++;
+    if (Math.abs(a.length - b.length) < 50 && diff < 3) return false;
+    return true;
+  } catch { return true; }
 }
 
 async function runOcuCall(ocuTool: string, args: Record<string, unknown>): Promise<string> {
@@ -495,11 +525,12 @@ export function createComputerTools(threadId: string, opts?: ComputerToolsOption
 
     computer_click: tool({
       description:
-        "Click an OS app element by element_index from computer_get_app_state, or by screenshot coordinates when the tree has no target. Prefer computer_run_sequence for element actions (single calls cannot reuse another call's element_index state). Needs user approval in chat.",
+        "Click an OS app element by element_index from computer_get_app_state, or by screenshot coordinates when the tree has no target. Prefer computer_run_sequence for element actions (single calls cannot reuse another call's element_index state). Needs user approval in chat. When clicking by coordinates, pass verify:true to re-read app state after the click and confirm the expected window/element changed; on mismatch the result carries a retry hint with fresh grounding instructions.",
       inputSchema: z
         .object({
           app: z.string().describe("App name or bundle id"),
           element_index: z.string().optional().describe("Element index from get_app_state"),
+          verify: z.boolean().optional().describe("Re-read app state after clicking and verify a UI change (default false)"),
           x: z.number().optional(),
           y: z.number().optional(),
           button: z.string().optional(),
@@ -507,7 +538,30 @@ export function createComputerTools(threadId: string, opts?: ComputerToolsOption
         })
         .passthrough(),
       execute: async (args: any) =>
-        gate("computer_click", args ?? {}, () => runOcuCall("click", args ?? {})),
+        gate("computer_click", args ?? {}, async () => {
+          const { verify: _verify, ...forward } = args ?? {};
+          void _verify;
+          const res = await runOcuCall("click", forward);
+          // Screen-state verification: re-read app state and confirm the UI
+          // changed (window title / tree hash drift). Coordinate clicks that
+          // silently miss are the #1 desktop failure mode — verify catches it
+          // in the same turn instead of costing a model round-trip.
+          if ((args as any)?.verify === true && typeof forward?.app === "string" && forward.app) {
+            try {
+              const after = await runOcuCall("get_app_state", { app: forward.app });
+              const changed = stateChanged(res, after);
+              if (!changed) {
+                return JSON.stringify({
+                  warning: "click sent but screen state looks unchanged",
+                  click: safeParse(res),
+                  hint: "Re-ground from a FRESH computer_get_app_state screenshot (do not reuse old coordinates), then retry once via computer_run_sequence. If it fails again, switch methods (element_index ↔ coordinates ↔ keyboard).",
+                }).slice(0, 8000);
+              }
+              return JSON.stringify({ ok: true, verified: "screen-changed", click: safeParse(res) }).slice(0, 8000);
+            } catch {}
+          }
+          return res;
+        }),
     }),
 
     computer_secondary_action: tool({

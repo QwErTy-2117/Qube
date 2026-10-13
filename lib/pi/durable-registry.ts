@@ -94,8 +94,9 @@ export async function buildDurableRegistry(opts?: {
   const { buildFilesExtension } = await import("@/lib/pi/durable-files");
   registry.install(buildFilesExtension());
   registry.install(defineExtension({ name: "memory", tools: [readMemoryTool, saveMemoryTool] }));
-  const { buildGoalsExtension } = await import("@/lib/pi/durable-goals");
+  const { buildGoalsExtension, buildNotesExtension } = await import("@/lib/pi/durable-goals");
   registry.install(buildGoalsExtension());
+  registry.install(buildNotesExtension());
   const { buildWebExtension } = await import("@/lib/pi/durable-web");
   registry.install(buildWebExtension());
   const { buildShellExtension } = await import("@/lib/pi/durable-shell");

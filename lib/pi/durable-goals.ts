@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool, section } from "@earendil-works/pi-durable";
-import { Todos } from "@/lib/pi/durable-docs";
+import { Scratchpad, Todos } from "@/lib/pi/durable-docs";
 
 export type GoalItem = { content: string; status: string; activeForm?: string };
 
@@ -49,4 +49,52 @@ export function buildGoalsExtension() {  return defineExtension({
       }),
     ],
   });
+}
+
+const MAX_SCRATCH_CHARS = 20000;
+
+export const readScratchpadTool = defineTool({
+  name: "read_scratchpad",
+  description: "Read your per-thread scratchpad (notes for multi-step work). Cheap, outside context, survives restarts. Read it JIT when resuming work, not every turn.",
+  parameters: Type.Object({}),
+  replay: "safe",
+  execute: async (_args, api, context) => {
+    const snap = await api.snapshot(Scratchpad, api.conversationId, context);
+    const text = snap?.text ?? "";
+    return { output: [{ type: "text", text: text || "(scratchpad is empty)" }] as Array<{ type: "text"; text: string }> };
+  },
+});
+
+export const writeScratchpadTool = defineTool({
+  name: "write_scratchpad",
+  description: "Replace your per-thread scratchpad contents. Same content rewritten is harmless. (Overwrites are replay-safe; appends are not — see append_scratchpad.)",
+  parameters: Type.Object({ content: Type.String({ description: "Full new scratchpad content" }) }),
+  replay: "safe",
+  execute: async (args, api, context) => {
+    const content = String(args.content ?? "").slice(0, MAX_SCRATCH_CHARS);
+    await api.commit(async (tx) => {
+      const doc = await tx.doc(Scratchpad, api.conversationId);
+      doc.text = content;
+    }, context);
+    return { output: [{ type: "text", text: `Scratchpad saved (${content.length} chars).` }] as Array<{ type: "text"; text: string }> };
+  },
+});
+
+export const appendScratchpadTool = defineTool({
+  name: "append_scratchpad",
+  description: "Append a chunk to your per-thread scratchpad. (Never auto-replayed after a crash — a rerun would duplicate the chunk; the model is told it was interrupted instead.)",
+  parameters: Type.Object({ chunk: Type.String({ description: "Text to append" }) }),
+  execute: async (args, api, context) => {
+    const chunk = String(args.chunk ?? "").slice(0, MAX_SCRATCH_CHARS);
+    const total = await api.commit(async (tx) => {
+      const doc = await tx.doc(Scratchpad, api.conversationId);
+      doc.text = doc.text ? `${doc.text}\n${chunk}` : chunk;
+      return doc.text.length;
+    }, context);
+    return { output: [{ type: "text", text: `Appended (${total} chars total).` }] as Array<{ type: "text"; text: string }> };
+  },
+});
+
+export function buildNotesExtension() {
+  return defineExtension({ name: "notes", tools: [readScratchpadTool, writeScratchpadTool, appendScratchpadTool] });
 }

@@ -52,10 +52,25 @@ export function parseTranscriptLines(transcript: string): ParsedHistoryLine[] {
 export type MigrationResult = { migrated: string[]; skipped: string[] };
 
 /**
+ * Render imported blocks into a model-visible handoff note (most recent
+ * tail kept when over the cap). Used with `conversation.reset()`, so an
+ * imported chat continues with prior context the model can actually see —
+ * not just queryable data entries.
+ */
+export function buildHandoffNote(blocks: ParsedHistoryLine[], maxChars = 6000): string {
+  if (blocks.length === 0) return "";
+  const lines = blocks.map((b) => `${b.role === "user" ? "User" : "Assistant"}: ${b.text}`);
+  let text = lines.join("\n\n");
+  if (text.length > maxChars) text = `…${text.slice(text.length - maxChars)}`;
+  return `This conversation was imported from an earlier session. Continue from the prior context below.\n\n${text}`;
+}
+
+/**
  * Import Qube sessions into durable conversations. Idempotent: threads
  * whose conversation already holds entries are skipped. Titles land in
  * the thread-map; transcript blocks land as qube.history data entries
- * (content preserved and queryable; model-visible history is follow-up).
+ * (preserved and queryable) and the transcript is also made model-visible
+ * via a handoff reset so the imported chat continues coherently.
  */
 export async function migrateSessions(
   context = BACKGROUND_CONTEXT,
@@ -84,6 +99,16 @@ export async function migrateSessions(
         await tx.appendEntry(conv.id, { kind: "qube.history", data: { role: b.role, text: b.text.slice(0, 8000) } });
       }
     }, context);
+    // Make the imported context model-visible via a first-class handoff
+    // reset: the model sees the prior transcript and continues coherently.
+    const note = buildHandoffNote(blocks);
+    if (note) {
+      try {
+        await conv.reset(note, context);
+      } catch {
+        // History data entries are still preserved if reset is unavailable.
+      }
+    }
     await setThreadTitle(id, title, context);
     result.migrated.push(id);
     count++;

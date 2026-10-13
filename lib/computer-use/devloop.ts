@@ -29,12 +29,16 @@ export async function waitForHttp(url: string, timeoutMs = 30000): Promise<{ ok:
   return { ok: false, status: lastStatus, ms: Date.now() - t0 };
 }
 
+/** Test-only: replace the spawn implementation (avoids real shells in CI). */
+let spawnImpl: typeof spawn = spawn;
+export function setSpawnForTests(fn: typeof spawn): void { spawnImpl = fn; }
+
 /** Start a dev server once per (cwd, command); reuse the running one. */
 export function startDevServer(cwd: string, command: string, url: string): DevServer {
   const key = keyFor(cwd, command);
   const existing = servers.get(key);
-  if (existing && existing.proc.exitCode === null && !existing.proc.killed) return existing;
-  const proc = spawn(command, { cwd, shell: true, detached: false, windowsHide: true });
+  if (existing && existing.proc.exitCode === null && !(existing.proc as any).killed) return existing;
+  const proc = spawnImpl(command, { cwd, shell: true, detached: false, windowsHide: true });
   const srv: DevServer = { pid: proc.pid ?? -1, url, log: [], proc };
   const push = (chunk: unknown) => {
     const s = String(chunk ?? "");

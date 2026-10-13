@@ -32,16 +32,33 @@ describe("devloop waitForHttp", () => {
 });
 
 describe("devloop server registry", () => {
-  it("starts, reuses, logs, and stops", () => {
+  it("starts, reuses, logs, and stops", async () => {
     resetDevServersForTests();
-    const a = startDevServer("/tmp", "sleep 60", "http://localhost:9999/");
-    const b = startDevServer("/tmp", "sleep 60", "http://localhost:9999/");
-    assert.equal(a.pid, b.pid);
-    assert.equal(listDevServers().length, 1);
-    assert.equal(stopDevServer("/tmp", "sleep 60"), true);
-    try { process.kill(a.pid, "SIGKILL"); } catch {}
-    resetDevServersForTests();
-    assert.deepEqual(devServerLog("/tmp", "sleep 60"), []);
+    const { EventEmitter } = await import("node:events");
+    const { setSpawnForTests } = await import("../lib/computer-use/devloop");
+    const fake = () => {
+      const proc: any = new EventEmitter();
+      proc.pid = 4242;
+      proc.exitCode = null;
+      proc.killed = false;
+      proc.kill = () => { proc.killed = true; proc.exitCode = 0; return true; };
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      return proc;
+    };
+    setSpawnForTests(fake as never);
+    try {
+      const a = startDevServer("/tmp", "npm run dev", "http://localhost:9999/");
+      const b = startDevServer("/tmp", "npm run dev", "http://localhost:9999/");
+      assert.equal(a.pid, b.pid);
+      assert.equal(listDevServers().length, 1);
+      assert.equal(stopDevServer("/tmp", "npm run dev"), true);
+    } finally {
+      const { spawn } = await import("node:child_process");
+      setSpawnForTests(spawn);
+      resetDevServersForTests();
+    }
+    assert.deepEqual(devServerLog("/tmp", "npm run dev"), []);
   });
   it("catalogs dev_server tools as terminal", () => {
     assert.equal(describeAction("dev_server", { command: "npm run dev" }).domain, "terminal");

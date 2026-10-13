@@ -1,6 +1,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, type ConversationId } from "@earendil-works/pi-durable";
 import { getDurableHarness } from "@/lib/pi/durable";
+import { resolveModelRef, resolveThinkingLevel } from "@/lib/pi/durable-models";
 
 export const ThreadMap = defineDoc<{ ids: Record<string, string>; titles: Record<string, string> }>({
   kind: "app.thread-map",
@@ -46,4 +47,47 @@ export async function listDurableThreads(context = BACKGROUND_CONTEXT) {
       const qubeId = reverse.get(String(c.id))!;
       return { id: qubeId, title: mapped?.titles[qubeId] ?? "New Chat" };
     });
+}
+
+export type DurableAgentSync = {
+  modelName?: string | null;
+  reasoningEffort?: string;
+  cwd?: string | null;
+};
+
+/**
+ * Align a conversation's stored agent with Qube's current defaults.
+ * Configures model/thinkingLevel/cwd only when they differ, so steady
+ * state costs zero commits. Unknown model ids leave the stored agent
+ * untouched (generation then fails with a clear provider error).
+ */
+export async function syncConversationAgent(
+  threadId: string,
+  sync: DurableAgentSync,
+  context = BACKGROUND_CONTEXT,
+) {
+  const conv = await getOrCreateConversation(threadId, context);
+  const change: Record<string, unknown> = {};
+  if (sync.modelName) {
+    const ref = resolveModelRef(sync.modelName);
+    if (ref) {
+      const current = await conv.agent(context);
+      if (current.model?.provider !== ref.provider || current.model?.modelId !== ref.modelId) {
+        change.model = ref;
+      }
+    }
+  }
+  if (sync.reasoningEffort !== undefined) {
+    const level = resolveThinkingLevel(sync.reasoningEffort);
+    const current = await conv.agent(context);
+    if (current.thinkingLevel !== level) change.thinkingLevel = level;
+  }
+  if (sync.cwd !== undefined && sync.cwd !== null) {
+    const current = await conv.agent(context);
+    if (current.cwd !== sync.cwd) change.cwd = sync.cwd;
+  }
+  if (Object.keys(change).length > 0) {
+    await conv.configure(change as never, context);
+  }
+  return conv;
 }

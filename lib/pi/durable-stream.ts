@@ -1,6 +1,6 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { AssistantEntry } from "@earendil-works/pi-durable";
-import { getOrCreateConversation } from "@/lib/pi/durable-conversations";
+import { getOrCreateConversation, syncConversationAgent } from "@/lib/pi/durable-conversations";
 
 export function buildRequestId(threadId: string, turnId: string): string {
   return `${threadId}:${turnId}`;
@@ -133,11 +133,15 @@ export async function streamDurableToWriter(
   text: string,
   requestId: string,
   writer: { write: (chunk: unknown) => void },
-  opts?: { context?: typeof BACKGROUND_CONTEXT; signal?: AbortSignal; modelName?: string },
+  opts?: { context?: typeof BACKGROUND_CONTEXT; signal?: AbortSignal; modelName?: string; reasoningEffort?: string },
 ): Promise<void> {
   const context = opts?.context ?? BACKGROUND_CONTEXT;
   const { formatProviderError } = await import("@/lib/pi/harness");
-  const conv = await getOrCreateConversation(threadId, context);
+  const conv = await syncConversationAgent(
+    threadId,
+    { modelName: opts?.modelName ?? null, reasoningEffort: opts?.reasoningEffort },
+    context,
+  );
   const cursor = createDurableStreamCursor();
   const view = await conv.viewState(context);
   const current = (view as unknown as { value?: unknown }).value ?? view;

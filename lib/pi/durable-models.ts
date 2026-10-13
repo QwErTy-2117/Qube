@@ -89,6 +89,56 @@ export function resolveProviderModule(providerId: string): { module: string; fac
   return null;
 }
 
+/** Qube provider id → pi-ai ProviderId used in conversation ModelRefs. */
+const PI_AI_PROVIDER_IDS: Record<string, string> = {
+  openai: "openai",
+  anthropic: "anthropic",
+  google: "google",
+  mistral: "mistral",
+  deepseek: "deepseek",
+  xai: "xai",
+  groq: "groq",
+  together: "together",
+  openrouter: "openrouter",
+  fireworks: "fireworks",
+  cerebras: "cerebras",
+  huggingface: "huggingface",
+  moonshot: "moonshotai",
+  minimax: "minimax",
+  azure: "azure",
+  bedrock: "amazon-bedrock",
+  vertexai: "google-vertex",
+  nvidia: "nvidia",
+};
+
+export type DurableModelRef = { provider: string; modelId: string };
+
+/**
+ * Map a Qube "provider:model" id to a pi-ai ModelRef. Dedicated factories
+ * use their pi-ai provider id; OpenAI-compatible providers without one
+ * (ollama, lmstudio, chatgpt, custom, …) address the OpenAI provider with
+ * the unchanged model id. Returns null for unknown prefixes.
+ */
+export function resolveModelRef(qubeModelId: string): DurableModelRef | null {
+  const idx = qubeModelId.indexOf(":");
+  if (idx < 0) return null;
+  const qubeProvider = qubeModelId.slice(0, idx);
+  const modelId = qubeModelId.slice(idx + 1);
+  if (!modelId) return null;
+  const dedicated = PI_AI_PROVIDER_IDS[qubeProvider];
+  if (dedicated) return { provider: dedicated, modelId };
+  if (OPENAI_COMPATIBLE_FALLBACK.has(qubeProvider)) return { provider: "openai", modelId };
+  return null;
+}
+
+const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+/** Map a Qube reasoning effort to a pi-ai thinking level (defaults to off). */
+export function resolveThinkingLevel(effort: string | undefined): string {
+  if (effort && VALID_THINKING_LEVELS.has(effort)) return effort;
+  return "off";
+}
+
 export async function buildDurableModels(modelName: string, _request?: Request) {
   const found = providerStore.getProviderByModel(modelName);
   let providerId: string | undefined = found?.provider.id;

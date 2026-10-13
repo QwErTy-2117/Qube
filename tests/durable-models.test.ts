@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildDurableModels, resolveProviderModule } from "@/lib/pi/durable-models";
+import { buildDurableModels, resolveModelRef, resolveProviderModule, resolveThinkingLevel } from "@/lib/pi/durable-models";
 
 const DEDICATED = [
   "openai:gpt-4o-mini",
@@ -50,5 +50,23 @@ describe("durable models adapter", () => {
 
   it("throws for unknown model", async () => {
     await assert.rejects(() => buildDurableModels("nope:missing-1"));
+  });
+
+  it("resolves ModelRefs with pi-ai provider ids", () => {
+    assert.deepEqual(resolveModelRef("openai:gpt-4o-mini"), { provider: "openai", modelId: "gpt-4o-mini" });
+    assert.deepEqual(resolveModelRef("bedrock:anthropic.claude-haiku"), { provider: "amazon-bedrock", modelId: "anthropic.claude-haiku" });
+    assert.deepEqual(resolveModelRef("vertexai:gemini-2.5-flash"), { provider: "google-vertex", modelId: "gemini-2.5-flash" });
+    assert.deepEqual(resolveModelRef("moonshot:kimi-k2"), { provider: "moonshotai", modelId: "kimi-k2" });
+    assert.deepEqual(resolveModelRef("ollama:llama3.1"), { provider: "openai", modelId: "llama3.1" });
+    assert.deepEqual(resolveModelRef("chatgpt:gpt-5-mini"), { provider: "openai", modelId: "gpt-5-mini" });
+    assert.equal(resolveModelRef("nope:missing-1"), null);
+    assert.equal(resolveModelRef("nocolon"), null);
+  });
+
+  it("maps reasoning effort to thinking level", () => {
+    assert.equal(resolveThinkingLevel("high"), "high");
+    assert.equal(resolveThinkingLevel("off"), "off");
+    assert.equal(resolveThinkingLevel(undefined), "off");
+    assert.equal(resolveThinkingLevel("bogus"), "off");
   });
 });

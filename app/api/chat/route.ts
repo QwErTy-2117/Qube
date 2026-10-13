@@ -83,6 +83,7 @@ export async function POST(req: Request) {
           try {
             await streamDurableToWriter(currentThreadId, text, buildRequestId(currentThreadId, String(Date.now())), writer as never, {
               modelName,
+              reasoningEffort: typeof reasoningEffort === "string" ? reasoningEffort : undefined,
               signal: req.signal ?? undefined,
             });
           } catch (e) {

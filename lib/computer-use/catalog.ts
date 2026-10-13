@@ -72,6 +72,10 @@ export function describeAction(tool: string, args: Record<string, unknown>): Act
     }
     case "request_takeover":
       return { ...base(tool, "browser", "meta", false), targetText: String(a.reason ?? "").slice(0, 160), summary: summarize(tool, ["takeover"]) };
+    case "dev_server":
+      return { ...base(tool, "terminal", "exec", true), targetText: String(a.command ?? ""), summary: summarize(tool, [String(a.command ?? "").slice(0, 80)]) };
+    case "dev_server_log":
+      return { ...base(tool, "terminal", "observe", false), targetText: String(a.command ?? ""), summary: summarize(tool, ["log"]) };
     case "run_command":
       return { ...base(tool, "terminal", "exec", true), targetText: String(a.command ?? "").slice(0, 300), summary: summarize(tool, [String(a.command ?? "").slice(0, 80)]) };
     case "read_file":

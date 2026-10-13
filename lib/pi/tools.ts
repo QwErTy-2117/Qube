@@ -655,7 +655,67 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
                   const s = await stat(full);
                   size = s.size;
                 } catch {}
-                return {
+  extraTools.dev_server = tool({
+    description:
+      "Start (or reuse) a local dev server for the edit→run→observe→test loop: spawns the command in the workspace, waits until the URL responds, and navigates the managed browser there for UI testing. Reuses a running server for the same command. Use dev_server_log to read output, browser_snapshot/browser_act to test the UI, and request_takeover never applies to localhost. Stop with dev_server stop:true.",
+    inputSchema: z.object({
+      command: z.string().describe("Dev command, e.g. 'npm run dev -- -p 3010'"),
+      url: z.string().describe("URL to wait for, e.g. 'http://localhost:3010'"),
+      timeoutMs: z.number().optional().describe("Wait-for-HTTP timeout in ms (default 30000)"),
+      stop: z.boolean().optional().describe("Stop the server for this command instead of starting"),
+    }),
+    execute: async ({ command, url, timeoutMs, stop }: { command: string; url: string; timeoutMs?: number; stop?: boolean }) => {
+      return withPerm("dev_server", { command, url }, async () => {
+        const { startDevServer, stopDevServer, waitForHttp, devServerLog } = await import("@/lib/computer-use/devloop");
+        const cwd = getWorkspacePath();
+        if (stop === true) {
+          const stopped = stopDevServer(cwd, String(command || ""));
+          return JSON.stringify({ stopped });
+        }
+        if (!command || !url) return JSON.stringify({ error: "command and url are required" });
+        if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(String(url))) {
+          return JSON.stringify({ error: "dev_server only serves localhost URLs" });
+        }
+        const srv = startDevServer(cwd, String(command), String(url));
+        const wait = await waitForHttp(String(url), Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 120000));
+        // Open the app in the managed browser so UI testing follows in-turn.
+        let opened = "";
+        try {
+          const { browserNavigate, screenClaim } = await import("./computer-use");
+          try { screenClaim.claim(threadId); } catch {}
+          const nav = await browserNavigate(String(url));
+          opened = (nav as any).url || String(url);
+        } catch (e: any) { opened = `browser open failed: ${e?.message || String(e)}`; }
+        const tail = devServerLog(cwd, String(command), 15);
+        return JSON.stringify({
+          pid: srv.pid, url: String(url), ready: wait.ok, status: wait.status, ms: wait.ms,
+          browser: opened,
+          logTail: tail,
+          note: wait.ok
+            ? "Server ready and open in the managed browser. Test with browser_snapshot/browser_act; read dev_server_log for errors; iterate edit→run→observe."
+            : "Server did not respond in time — read dev_server_log for the crash/error, fix, and retry.",
+        }).slice(0, 6000);
+      });
+    },
+  });
+  extraTools.dev_server_log = tool({
+    description: "Read the tail of a dev server's captured stdout/stderr (started via dev_server). Use to find crashes, port conflicts, and compile errors during the test loop.",
+    inputSchema: z.object({
+      command: z.string().describe("The same command passed to dev_server"),
+      tail: z.number().optional().describe("Lines to return (default 60, max 200)"),
+    }),
+    execute: async ({ command, tail }: { command: string; tail?: number }) => {
+      try {
+        const { devServerLog } = await import("@/lib/computer-use/devloop");
+        const lines = devServerLog(getWorkspacePath(), String(command || ""), tail ?? 60);
+        return JSON.stringify({ command, lines }).slice(0, 12000);
+      } catch (e: any) {
+        return JSON.stringify({ error: e?.message || String(e) });
+      }
+    },
+  });
+
+  return {
                   name: e.name,
                   type: e.isDirectory() ? "directory" : e.isFile() ? "file" : "other",
                   size,

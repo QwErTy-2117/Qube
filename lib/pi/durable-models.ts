@@ -111,6 +111,15 @@ const PI_AI_PROVIDER_IDS: Record<string, string> = {
   nvidia: "nvidia",
 };
 
+const PI_AI_TO_QUBE: Record<string, string> = Object.fromEntries(
+  Object.entries(PI_AI_PROVIDER_IDS).map(([qube, pi]) => [pi, qube]),
+);
+
+/** Reverse lookup: pi-ai provider id → Qube provider id (dedicated ones). */
+export function qubeProviderForPiAi(piAiId: string): string | undefined {
+  return PI_AI_TO_QUBE[piAiId];
+}
+
 export type DurableModelRef = { provider: string; modelId: string };
 
 /**
@@ -147,7 +156,8 @@ export async function buildDurableModels(modelName: string, _request?: Request) 
     if (PROVIDER_MODULES[prefix] || OPENAI_COMPATIBLE_FALLBACK.has(prefix)) providerId = prefix;
     else throw new Error(`No provider for model "${modelName}"`);
   }
-  const models = createModels();
+  const { createQubeCredentialStore } = await import("@/lib/pi/durable-credentials");
+  const models = createModels({ credentials: createQubeCredentialStore() });
   const resolved = providerId ? resolveProviderModule(providerId) : null;
   if (resolved) {
     const mod = await import(resolved.module);

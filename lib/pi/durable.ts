@@ -45,7 +45,8 @@ const SINGLETON_PROVIDER_IDS = [
 ];
 
 async function buildSingletonModels() {
-  const models = createModels();
+  const { createQubeCredentialStore } = await import("@/lib/pi/durable-credentials");
+  const models = createModels({ credentials: createQubeCredentialStore() });
   for (const id of SINGLETON_PROVIDER_IDS) {
     const resolved = resolveProviderModule(id);
     if (!resolved) continue;

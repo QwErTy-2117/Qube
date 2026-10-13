@@ -22,4 +22,16 @@ describe("durable storage singleton", () => {
     assert.equal(root2.id, id1);
     await closeDurableHarness(BACKGROUND_CONTEXT);
   });
+
+  it("resolves workspace tools and skills sections on the root agent", async () => {
+    const h = await getDurableHarness(BACKGROUND_CONTEXT);
+    const root = await h.root(BACKGROUND_CONTEXT);
+    const agent = await root.agent(BACKGROUND_CONTEXT);
+    const extNames = agent.extensions.map((e) => e.name);
+    assert.ok(extNames.includes("workspace"), `extensions: ${extNames.join(",")}`);
+    assert.ok(extNames.includes("skills"), `extensions: ${extNames.join(",")}`);
+    const toolNames = agent.tools.map((t) => t.name);
+    assert.ok(toolNames.includes("read_file"), `tools: ${toolNames.join(",")}`);
+    await closeDurableHarness(BACKGROUND_CONTEXT);
+  });
 });

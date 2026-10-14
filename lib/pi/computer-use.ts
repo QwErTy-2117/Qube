@@ -595,6 +595,16 @@ async function healBrowserRef(
 
 /** browser_navigate via CDP Page.navigate. */
 export async function browserNavigate(url: string): Promise<{ url: string; title: string } & { fallback?: PixelFallback; error?: string }> {
+  // SSRF gate for agent-driven navigation (browser-local policy: localhost
+  // and LAN stay allowed for dev servers; metadata/file/javascript blocked).
+  // Deliberately NO pixel fallback: browser_pixel_act cannot navigate, and
+  // a blocked URL must stay blocked, not rerouted.
+  try {
+    const { validateAgentNavUrl } = await import("@/lib/agent/browser/ssrf");
+    const v = validateAgentNavUrl(String(url || ""));
+    if (!v.ok) return { url: String(url || ""), title: "", error: v.error };
+    url = v.url;
+  } catch {}
   const target = await getPageTarget();
   if (!target?.webSocketDebuggerUrl) {
     return withBrowserFallback({ url, title: "", fallback: "browser_pixel_act" as const, error: "Page browser is not attached. Use browser_pixel_act on the managed browser window instead." });

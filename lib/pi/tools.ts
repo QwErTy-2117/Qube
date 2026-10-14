@@ -386,6 +386,11 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
           if (/^https?:\/\//i.test(target)) {
             const nav = await browserNavigate(target);
+            // Surface navigation failures (e.g. blocked targets) instead of
+            // screenshotting whatever page happens to be open.
+            if ((nav as any).error) {
+              return JSON.stringify({ url: target, title: "", error: (nav as any).error, fallback: (nav as any).fallback }).slice(0, 2000);
+            }
             const obs = await browserScreenshot(`open_path ${target}`);
             pokeBrowserPanel();
             return JSON.stringify({ url: (nav as any).url || target, title: (nav as any).title || "", screen: obs.text }).slice(0, 6000);

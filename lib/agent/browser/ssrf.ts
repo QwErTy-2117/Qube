@@ -45,6 +45,59 @@ function isBlockedHostname(host: string): boolean {
   return false;
 }
 
+/**
+ * URL validation for AGENT-DRIVEN browser navigation (browser_navigate,
+ * open_path URLs, MCP navigate/open_tab/download).
+ *
+ * Different from validateBrowserUrl (panel proxy) and assertSafeWebUrl
+ * (server-side fetch): the managed browser runs locally on the user's own
+ * machine, so localhost / loopback / LAN targets are LEGITIMATE (dev
+ * servers, router/NAS admin). What stays blocked: non-http(s) schemes
+ * (file:// would exfiltrate local files through snapshots, javascript:
+ * and data: are code execution), credentials in URL, and cloud instance
+ * metadata (169.254.169.254 + metadata hostnames — the classic SSRF prize,
+ * reachable from any browser). No DNS lookups: purely syntactic, so there
+ * is nothing to race or cache-poison.
+ */
+const AGENT_NAV_BLOCKED_HOSTS = [
+  "metadata.google.internal",
+  "metadata.google.com",
+  "metadata.goog",
+  "instance-data",
+];
+
+export function validateAgentNavUrl(raw: string): { ok: true; url: string } | { ok: false; error: string } {
+  if (!raw || typeof raw !== "string") return { ok: false, error: "URL is required" };
+  let trimmed = raw.trim();
+  if (!trimmed) return { ok: false, error: "URL is empty" };
+  if (trimmed.length > 8192) return { ok: false, error: "URL too long (max 8192 chars)" };
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+    trimmed = `https://${trimmed}`;
+  }
+  let u: URL;
+  try {
+    u = new URL(trimmed);
+  } catch {
+    return { ok: false, error: `Invalid URL: ${raw.slice(0, 120)}` };
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return { ok: false, error: `Blocked scheme "${u.protocol}" — only http(s) allowed (no file/javascript/data access to local resources)` };
+  }
+  if (u.username || u.password) {
+    return { ok: false, error: "URLs with credentials are blocked" };
+  }
+  const host = u.hostname.toLowerCase().replace(/\.$/, "");
+  if (host === "169.254.169.254") {
+    return { ok: false, error: "Blocked cloud instance-metadata address" };
+  }
+  for (const blocked of AGENT_NAV_BLOCKED_HOSTS) {
+    if (host === blocked || host.endsWith(`.${blocked}`)) {
+      return { ok: false, error: `Blocked cloud metadata host: ${u.hostname}` };
+    }
+  }
+  return { ok: true, url: u.href };
+}
+
 export function validateBrowserUrl(raw: string): { ok: true; url: string } | { ok: false; error: string } {
   if (!raw || typeof raw !== "string") return { ok: false, error: "URL is required" };
   let trimmed = raw.trim();

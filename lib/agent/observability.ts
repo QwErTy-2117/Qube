@@ -116,16 +116,51 @@ export function getExecutionId(): string {
   return `exec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export function queryObservability(_threadId: string): any[] {
-  return [];
+function matchesType(e: any, type?: string | string[]): boolean {
+  if (!type) return true;
+  const want = Array.isArray(type) ? type : [type];
+  return want.includes(String(e?.type || ""));
 }
 
-export function getGlobalRecent(): any[] {
-  return [];
+/**
+ * Read back what was logged: per-thread action history for "what did the
+ * agent do" (computer_action entries carry tool/risk/verdict/signals).
+ * Previously stubs — now backed by the same JSONL files logEvent writes.
+ */
+export async function queryObservability(
+  threadId: string,
+  opts?: { type?: string | string[]; limit?: number },
+): Promise<any[]> {
+  const limit = Math.min(Math.max(Number(opts?.limit) || 50, 1), 500);
+  // Read a wider window than the limit so type filters still return results.
+  const events = await readRecentEvents(threadId, Math.max(limit, 200));
+  return events.filter((e) => matchesType(e, opts?.type)).slice(-limit);
 }
 
-export function getStats(): any {
-  return {};
+export async function getGlobalRecent(limit = 50): Promise<any[]> {
+  try {
+    const n = Math.min(Math.max(Number(limit) || 50, 1), 500);
+    const raw = await readFile(join(dir(), `_global.jsonl`), "utf-8");
+    return raw.trim().split("\n").slice(-n).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export async function getStats(threadId?: string): Promise<{ total: number; byType: Record<string, number>; errors: number }> {
+  try {
+    const events = threadId ? await readRecentEvents(threadId, 500) : await getGlobalRecent(500);
+    const byType: Record<string, number> = {};
+    let errors = 0;
+    for (const e of events) {
+      const t = String((e as any)?.type || "unknown");
+      byType[t] = (byType[t] || 0) + 1;
+      if ((e as any)?.status === "error") errors++;
+    }
+    return { total: events.length, byType, errors };
+  } catch {
+    return { total: 0, byType: {}, errors: 0 };
+  }
 }
 
 export async function readRecentEvents(threadId: string, limit = 50): Promise<any[]> {

@@ -69,6 +69,15 @@ export class StateTracker {
   }
 
   failuresFor(sig: string): number { return this.failures.get(sig) || 0; }
+  /** Distinct signatures with at least one failure — the planner uses this
+   * to tell flailing (many different failures) from stuck (one repeated). */
+  distinctFailureCount(): number {
+    let n = 0;
+    try {
+      for (const c of this.failures.values()) if (c > 0) n++;
+    } catch {}
+    return n;
+  }
   noteFailure(sig: string): void {
     this.failures.set(sig, this.failuresFor(sig) + 1);
     this.consecutiveFailures += 1;

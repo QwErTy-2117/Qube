@@ -33,3 +33,23 @@ describe("kernel policy", () => {
     assert.equal(p.autoSteps.length, 0);
   });
 });
+
+describe("planner: stuck vs flailing", () => {
+  it("stays quiet while progressing", async () => {
+    const { assessReplan } = await import("../lib/computer-use/planner");
+    assert.deepEqual(assessReplan({ consecutiveFailures: 0, distinctFailedSignatures: 0 }), { mode: "progressing", steer: null });
+    assert.deepEqual(assessReplan({ consecutiveFailures: 2, distinctFailedSignatures: 2 }), { mode: "progressing", steer: null });
+  });
+  it("steers stuck runs to switch methods", async () => {
+    const { assessReplan } = await import("../lib/computer-use/planner");
+    const a = assessReplan({ consecutiveFailures: 3, distinctFailedSignatures: 1 });
+    assert.equal(a.mode, "stuck");
+    assert.match(a.steer || "", /different approach/);
+  });
+  it("steers flailing runs to step back and replan", async () => {
+    const { assessReplan } = await import("../lib/computer-use/planner");
+    const a = assessReplan({ consecutiveFailures: 4, distinctFailedSignatures: 3 });
+    assert.equal(a.mode, "flailing");
+    assert.match(a.steer || "", /different route|report the blocker/);
+  });
+});

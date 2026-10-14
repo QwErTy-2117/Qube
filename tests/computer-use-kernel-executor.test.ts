@@ -267,4 +267,19 @@ describe("kernel executor", () => {
     assert.ok(StateTracker.forThread("t15").tabs.some((t) => t.id === "c"));
     StateTracker.resetForTests();
   });
+  it("steers flailing runs to replan instead of maneuver", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    const tools = { browser_act: strTool(async () => JSON.stringify({ error: "Stale ref vanished mid-render" })) };
+    const fp = { at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
+    const out = applyKernel(tools, { threadId: "t16", interactive: true, probePage: async () => fp });
+    let last = "";
+    for (const ref of ["e1", "e2", "e3"]) {
+      last = String(await (out.browser_act as any).execute({ actions: [{ kind: "click", ref }] }));
+    }
+    const p = JSON.parse(last);
+    assert.equal(p._kernel.verdict, "failed");
+    assert.ok((p._kernel.hints || []).join(" ").match(/STOP flailing/), `expected flail steer, got: ${(p._kernel.hints || []).join(" | ").slice(0, 200)}`);
+    StateTracker.resetForTests();
+  });
 });

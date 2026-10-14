@@ -2,6 +2,7 @@ import { describeAction } from "./catalog";
 import { classifyRisk, decidePermission } from "./permission";
 import { parseResult, verifyResult, type RawResult } from "./verify";
 import { planRecovery } from "./recovery";
+import { assessReplan } from "./planner";
 import { StateTracker } from "./state";
 import { logAction, kernelTrailer } from "./logger";
 import { observePage, describeRef, withConsoleNetworkSignals, summarizePageErrors, type PageObservation, type RefDescription } from "./observer";
@@ -317,7 +318,11 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
           } catch {}
         }
         if (state.consecutiveFailures >= 3) {
-          hints = [...hints, "STOP: 3+ consecutive failures — re-read the goal, re-observe the page with a fresh snapshot, update the plan, and try a different approach or ask the user."];
+          const assessment = assessReplan({
+            consecutiveFailures: state.consecutiveFailures,
+            distinctFailedSignatures: state.distinctFailureCount(),
+          });
+          if (assessment.steer) hints = [...hints, assessment.steer];
         }
       } else if (verdict === "verified") {
         state.noteSuccess(); state.clearFailures(sig);

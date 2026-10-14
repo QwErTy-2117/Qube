@@ -3,6 +3,7 @@ export { describeAction, isKernelTool } from "./catalog";
 export { classifyRisk, decidePermission } from "./permission";
 export { parseResult, verifyResult } from "./verify";
 export { planRecovery } from "./recovery";
+export { assessReplan, REPLAN_AFTER_CONSECUTIVE_FAILURES, FLAIL_DISTINCT_THRESHOLD, type RunMode, type ReplanAssessment } from "./planner";
 export { StateTracker } from "./state";
 export { logAction, sanitizeArgs } from "./logger";
 export { applyKernel, kernelEnabled, type KernelDeps } from "./executor";

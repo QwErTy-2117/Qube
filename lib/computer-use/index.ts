@@ -6,4 +6,4 @@ export { planRecovery } from "./recovery";
 export { StateTracker } from "./state";
 export { logAction, sanitizeArgs } from "./logger";
 export { applyKernel, kernelEnabled, type KernelDeps } from "./executor";
-export { observePage, resolveRefLabel, describeRef, hashText, withConsoleNetworkSignals, type PageObservation, type ConsoleEntry, type NetworkFailure, type ObserverCdp, type RefDescription } from "./observer";
+export { observePage, resolveRefLabel, describeRef, hashText, withConsoleNetworkSignals, summarizePageErrors, type PageObservation, type ConsoleEntry, type NetworkFailure, type ObserverCdp, type RefDescription } from "./observer";

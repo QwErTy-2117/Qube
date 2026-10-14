@@ -48,6 +48,8 @@ export interface KernelSummary {
   repeat?: boolean;
   /** Recovery auto-steps the kernel itself executed (not just suggested). */
   recovered?: string[];
+  /** Condensed page console/network errors captured with this action. */
+  pageErrors?: string[];
 }
 
 export interface KernelOptions {

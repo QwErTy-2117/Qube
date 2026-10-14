@@ -132,3 +132,28 @@ export function withConsoleNetworkSignals(signals: string[], obs: PageObservatio
   if (obs.networkFailures.length > 0 && !out.includes("network_errors")) out.push("network_errors");
   return out;
 }
+
+/**
+ * Condensed, model-facing rendering of the probe's captured page errors.
+ * Bounded (6 lines, each short) so it can ride along on _kernel without
+ * bloating the transcript — the model gets the actual failing URL, status,
+ * and message instead of a bare "network_errors" flag it cannot act on.
+ */
+export function summarizePageErrors(
+  obs: Pick<PageObservation, "consoleErrors" | "networkFailures"> | null | undefined,
+  maxEach = 3,
+): string[] {
+  try {
+    if (!obs) return [];
+    const out: string[] = [];
+    for (const e of (obs.consoleErrors || []).slice(-maxEach)) {
+      const where = e.url ? ` (${String(e.url).slice(0, 120)}${e.line ? `:${e.line}` : ""})` : "";
+      out.push(`console ${String(e.type || "error").slice(0, 20)}: ${String(e.text || "").slice(0, 160)}${where}`);
+    }
+    for (const n of (obs.networkFailures || []).slice(-maxEach)) {
+      const status = n.status ? `HTTP ${n.status} ` : "";
+      out.push(`network ${status}${String(n.errorText || "").slice(0, 100)} ${String(n.url || "").slice(0, 160)}`.trim());
+    }
+    return out.slice(0, maxEach * 2);
+  } catch { return []; }
+}

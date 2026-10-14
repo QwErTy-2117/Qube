@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { observePage, resolveRefLabel, describeRef, hashText, withConsoleNetworkSignals, type ObserverCdp } from "../lib/computer-use/observer";
+import { observePage, resolveRefLabel, describeRef, hashText, withConsoleNetworkSignals, summarizePageErrors, type ObserverCdp } from "../lib/computer-use/observer";
 
 function fakeCdp(values: Record<string, any>): ObserverCdp {
   return {
@@ -53,5 +53,17 @@ describe("observer", () => {
     assert.deepEqual(withConsoleNetworkSignals(["x"], obs), ["x", "console_errors"]);
     const obs2: any = { consoleErrors: [], networkFailures: [{ url: "u", errorText: "HTTP 500", status: 500 }] };
     assert.deepEqual(withConsoleNetworkSignals([], obs2), ["network_errors"]);
+  });
+  it("summarizes page errors compactly", () => {
+    assert.deepEqual(summarizePageErrors(null), []);
+    const lines = summarizePageErrors({
+      consoleErrors: [{ type: "error", text: "Uncaught TypeError: boom", url: "https://x.com/app.js", line: 42 }],
+      networkFailures: [{ url: "https://x.com/api", errorText: "HTTP 500", status: 500 }],
+    });
+    assert.equal(lines.length, 2);
+    assert.match(lines[0], /boom/);
+    assert.match(lines[0], /app\.js:42/);
+    assert.match(lines[1], /HTTP 500/);
+    assert.match(lines[1], /\/api/);
   });
 });

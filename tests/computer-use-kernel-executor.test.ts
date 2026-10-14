@@ -191,6 +191,30 @@ describe("kernel executor", () => {
     assert.equal(asked2, 1);
     StateTracker.resetForTests();
   });
+  it("attaches page console/network error details to _kernel", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    const errObs = {
+      at: 2, url: "https://x.com/app", title: "t", textHash: "h2", textLen: 9, dialog: false,
+      consoleErrors: [{ type: "error", text: "Uncaught TypeError: boom", url: "https://x.com/app.js", line: 7 }],
+      networkFailures: [{ url: "https://x.com/api", errorText: "HTTP 500", status: 500 }],
+    };
+    const pre = { at: 1, url: "https://x.com/app", title: "t", textHash: "h1", textLen: 5, dialog: false };
+    let n = 0;
+    const tools = { browser_act: strTool(async () => JSON.stringify({ ok: true, completed: 1 })) };
+    const out = applyKernel(tools, {
+      threadId: "t14", interactive: true,
+      probePage: async () => { n++; return n === 1 ? pre : errObs as any; },
+    });
+    const raw = String(await (out.browser_act as any).execute({ actions: [{ kind: "click", ref: "e1" }] }));
+    const p = JSON.parse(raw);
+    assert.ok((p._kernel.signals || []).includes("console_errors"));
+    assert.ok((p._kernel.signals || []).includes("network_errors"));
+    assert.equal(p._kernel.pageErrors.length, 2);
+    assert.match(p._kernel.pageErrors.join("\n"), /boom/);
+    assert.match(p._kernel.pageErrors.join("\n"), /HTTP 500/);
+    StateTracker.resetForTests();
+  });
   it("fails fast on disabled targets without executing", async () => {
     const { StateTracker } = await import("../lib/computer-use/state");
     StateTracker.resetForTests();

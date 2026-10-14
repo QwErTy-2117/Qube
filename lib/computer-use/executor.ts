@@ -4,7 +4,7 @@ import { parseResult, verifyResult, type RawResult } from "./verify";
 import { planRecovery } from "./recovery";
 import { StateTracker } from "./state";
 import { logAction, kernelTrailer } from "./logger";
-import { observePage, describeRef, withConsoleNetworkSignals, type PageObservation, type RefDescription } from "./observer";
+import { observePage, describeRef, withConsoleNetworkSignals, summarizePageErrors, type PageObservation, type RefDescription } from "./observer";
 import type { ActionDescriptor, KernelSummary, PageFingerprint, RecoveryPlan, RiskLevel, Verdict } from "./types";
 
 export interface KernelDeps {
@@ -112,6 +112,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
       let recovered: string[] = [];
       let blocked = false;
       let repeat = false;
+      let pageErrors: string[] = [];
       let pre: PageFingerprint | null = null;
       const log = (v: Verdict) => {
         void logAction({
@@ -264,8 +265,23 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
             const v = verifyResult(raw, pre, post, desc.kind);
             verdict = v.verdict; changed = v.changed; signals = v.signals;
             try {
-              const lastObs = (defaultProbe as any)._lastObs as PageObservation | undefined;
-              if (lastObs && post && lastObs.at >= post.at - 2000) signals = withConsoleNetworkSignals(signals, lastObs);
+              // Prefer error detail from this very probe; fall back to the
+              // default probe's last full observation when an injected probe
+              // only returns the base fingerprint shape.
+              const cand = post as unknown as Partial<PageObservation> | null;
+              let full: PageObservation | undefined;
+              if (cand && (Array.isArray(cand.consoleErrors) || Array.isArray(cand.networkFailures))) {
+                full = cand as PageObservation;
+              } else {
+                const lastObs = (defaultProbe as any)._lastObs as PageObservation | undefined;
+                if (lastObs && post && lastObs.at >= post.at - 2000) full = lastObs;
+              }
+              if (full) {
+                signals = withConsoleNetworkSignals(signals, full);
+                if (signals.includes("console_errors") || signals.includes("network_errors")) {
+                  pageErrors = summarizePageErrors(full);
+                }
+              }
             } catch {}
           } catch { verdict = threw ? "failed" : "unknown"; }
         } else {
@@ -321,7 +337,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         if (hints.length) terr.message = `${terr.message}\n[kernel hint: ${hints[0].slice(0, 300)}]`;
         throw terr;
       }
-      const k: KernelSummary = { id: state.nextId(), risk, verdict, changed, signals, hints, blocked, recovered, repeat: repeat || undefined };
+      const k: KernelSummary = { id: state.nextId(), risk, verdict, changed, signals, hints, blocked, recovered, repeat: repeat || undefined, pageErrors: pageErrors.length > 0 ? pageErrors : undefined };
       const meaningful = desc.kind !== "observe" || verdict !== "verified" || signals.length > 0 || hints.length > 0;
       if (!meaningful) return out;
       return attachKernel(out, k);

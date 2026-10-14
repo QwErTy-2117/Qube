@@ -52,6 +52,21 @@ describe("kernel executor", () => {
     const third = String(await (out.browser_act as any).execute(args));
     assert.match(third, /repeat_failure/);
   });
+  it("warns explicitly on the second identical failure before blocking", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    const tools = { browser_act: strTool(async () => JSON.stringify({ error: "Stale ref e1: gone" })) };
+    const out = applyKernel(tools, { threadId: "t9", interactive: true });
+    const args = { actions: [{ kind: "click", ref: "e1" }] };
+    const first = JSON.parse(String(await (out.browser_act as any).execute(args)));
+    assert.equal(first._kernel.repeat, undefined);
+    const second = JSON.parse(String(await (out.browser_act as any).execute(args)));
+    assert.equal(second._kernel.repeat, true);
+    assert.ok((second._kernel.hints || []).join(" ").includes("Final warning"));
+    const third = String(await (out.browser_act as any).execute(args));
+    assert.match(third, /repeat_failure/);
+    StateTracker.resetForTests();
+  });
   it("fails open when the probe throws", async () => {
     const tools = { browser_snapshot: strTool(async () => JSON.stringify({ url: "https://x.com/", tree: "" })) };
     const out = applyKernel(tools, { threadId: "t6", interactive: true, probePage: async () => { throw new Error("cdp dead"); } });

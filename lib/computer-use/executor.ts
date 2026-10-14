@@ -99,6 +99,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
       let hints: string[] = [];
       let recovered: string[] = [];
       let blocked = false;
+      let repeat = false;
       let pre: PageFingerprint | null = null;
       const log = (v: Verdict) => {
         void logAction({
@@ -232,6 +233,15 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         state.noteFailure(sig);
         const plan: RecoveryPlan = planRecovery({ verdict: verdict as "failed" | "no_effect", changed, signals }, { failures: state.failuresFor(sig) });
         hints = plan.hints;
+        // Graduated repeat signaling: the guard blocks the NEXT identical
+        // attempt once a signature has failed twice, so say so explicitly on
+        // the second failure instead of letting the block come as a surprise.
+        // (Terminal/file tools return earlier and never block by signature,
+        // so this only fires where the guard actually applies.)
+        if (desc.mutating && (desc.domain === "browser" || desc.domain === "desktop") && state.failuresFor(sig) >= 2) {
+          repeat = true;
+          hints = [...hints, "Final warning: this exact action has now failed twice on this page — the next identical attempt will be blocked. Switch methods now (ref ↔ coordinates ↔ keyboard) or re-observe first."];
+        }
         // Execute the safe, idempotent auto-steps (currently: resnapshot).
         // This refreshes the tracker's page state so retries, guards, and
         // resume context operate on reality instead of the pre-failure view.
@@ -266,7 +276,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         if (hints.length) terr.message = `${terr.message}\n[kernel hint: ${hints[0].slice(0, 300)}]`;
         throw terr;
       }
-      const k: KernelSummary = { id: state.nextId(), risk, verdict, changed, signals, hints, blocked, recovered };
+      const k: KernelSummary = { id: state.nextId(), risk, verdict, changed, signals, hints, blocked, recovered, repeat: repeat || undefined };
       const meaningful = desc.kind !== "observe" || verdict !== "verified" || signals.length > 0 || hints.length > 0;
       if (!meaningful) return out;
       return attachKernel(out, k);

@@ -4,7 +4,7 @@ import { parseResult, verifyResult, type RawResult } from "./verify";
 import { planRecovery } from "./recovery";
 import { StateTracker } from "./state";
 import { logAction, kernelTrailer } from "./logger";
-import { observePage, resolveRefLabel, withConsoleNetworkSignals, type PageObservation } from "./observer";
+import { observePage, describeRef, withConsoleNetworkSignals, type PageObservation, type RefDescription } from "./observer";
 import type { ActionDescriptor, KernelSummary, PageFingerprint, RecoveryPlan, RiskLevel, Verdict } from "./types";
 
 export interface KernelDeps {
@@ -12,6 +12,8 @@ export interface KernelDeps {
   interactive: boolean;
   askApproval?: (purpose: string, tool: string, args: Record<string, unknown>) => Promise<boolean>;
   resolveLabel?: (ref: string) => Promise<string | null>;
+  /** Richer ref description (label + disabled state). Falls back to resolveLabel when absent. */
+  describeRef?: (ref: string) => Promise<RefDescription | null>;
   probePage?: () => Promise<PageFingerprint | null>;
 }
 
@@ -31,7 +33,7 @@ async function defaultProbe(): Promise<PageFingerprint | null> {
   } catch { return null; }
 }
 
-async function defaultResolveLabel(ref: string): Promise<string | null> {
+async function defaultDescribeRef(ref: string): Promise<RefDescription | null> {
   try {
     const mod = await import("@/lib/pi/computer-use");
     const cdp = {
@@ -40,7 +42,7 @@ async function defaultResolveLabel(ref: string): Promise<string | null> {
       evalIsolated: (mod as any).evalIsolated,
     };
     if (typeof cdp.getPageTarget !== "function" || typeof cdp.evalIsolated !== "function") return null;
-    return await resolveRefLabel(cdp, ref);
+    return await describeRef(cdp, ref);
   } catch { return null; }
 }
 
@@ -79,7 +81,17 @@ function attachKernel(out: unknown, k: KernelSummary): unknown {
 export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Record<string, any> {
   const state = StateTracker.forThread(deps.threadId);
   const probePage = deps.probePage ?? defaultProbe;
-  const resolveLabel = deps.resolveLabel ?? defaultResolveLabel;
+  // Rich ref descriptions (label + disabled state) when the caller provides
+  // them; otherwise degrade to label-only resolution with no disabled info.
+  const describeOne = deps.describeRef ?? (async (ref: string): Promise<RefDescription | null> => {
+    if (deps.resolveLabel) {
+      try {
+        const label = await deps.resolveLabel(ref);
+        return label ? { label, disabled: false, visible: true } : null;
+      } catch { return null; }
+    }
+    return defaultDescribeRef(ref);
+  });
   for (const [name, def] of Object.entries(tools)) {
     const orig = (def as any)?.execute;
     if (typeof orig !== "function" || (def as any).__kernel) continue;
@@ -158,19 +170,19 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         // classify (or wave through) an action on another page; fall back to
         // a live resolution, and to unknown-target handling if that fails.
         const pageUrl = pre?.url || "";
-        const labels = (
-          await Promise.all(
-            desc.refs.map(async (ref): Promise<string | null> => {
-              try {
-                const cached = state.refs.get(ref);
-                if (cached && (!pageUrl || cached.url === pageUrl)) return cached.label;
-                return await resolveLabel(ref);
-              } catch {
-                return null;
-              }
-            }),
-          )
-        ).filter((l): l is string => !!l);
+        const described = await Promise.all(
+          desc.refs.map(async (ref): Promise<{ ref: string; label: string | null; disabled: boolean }> => {
+            try {
+              const cached = state.refs.get(ref);
+              if (cached && (!pageUrl || cached.url === pageUrl)) return { ref, label: cached.label, disabled: false };
+              const d = await describeOne(ref);
+              return { ref, label: d?.label ?? null, disabled: !!d?.disabled };
+            } catch {
+              return { ref, label: null, disabled: false };
+            }
+          }),
+        );
+        const labels = described.map((d) => d.label).filter((l): l is string => !!l);
         const typedRisk = desc.typed.length > 0;
         let r: RiskLevel = "interact";
         let purpose = desc.summary;
@@ -187,6 +199,24 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
             : `${desc.summary} on ${hostOf(pre?.url)} — ${r}`;
         }
         risk = r;
+        // Fail fast on disabled targets: the live DOM description reports
+        // disabled/aria-disabled, so a click/fill here is doomed — skip the
+        // CDP round-trip AND skip pointless approval prompts, and report a
+        // `disabled` failure with prerequisites guidance instead. Counts
+        // toward the repeat guard like any other failure.
+        const disabledTargets = described.filter((d) => d.disabled && d.label).map((d) => `${d.ref} (${d.label})`);
+        if (disabledTargets.length > 0 && desc.mutating) {
+          verdict = "failed";
+          signals = ["disabled"];
+          state.noteFailure(sig);
+          const plan: RecoveryPlan = planRecovery({ verdict: "failed", changed: false, signals }, { failures: state.failuresFor(sig) });
+          hints = plan.hints;
+          const msg = `Target is disabled and cannot receive this action: ${disabledTargets.join("; ").slice(0, 200)}.`;
+          state.record({ id: state.nextId(), tool: name, summary: desc.summary, risk, verdict, signals, at: Date.now() });
+          log(verdict); state.persist(deps.threadId);
+          const k: KernelSummary = { id: state.nextId(), risk, verdict, signals, hints };
+          return attachKernel(JSON.stringify({ ok: false, error: msg }).slice(0, 2000), k);
+        }
         const dec = decidePermission(risk, deps.interactive);
         decision = dec;
         if (dec === "deny") {

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { observePage, resolveRefLabel, hashText, withConsoleNetworkSignals, type ObserverCdp } from "../lib/computer-use/observer";
+import { observePage, resolveRefLabel, describeRef, hashText, withConsoleNetworkSignals, type ObserverCdp } from "../lib/computer-use/observer";
 
 function fakeCdp(values: Record<string, any>): ObserverCdp {
   return {
@@ -14,7 +14,7 @@ function fakeCdp(values: Record<string, any>): ObserverCdp {
     },
     evalIsolated: async (_ws, expr) => {
       if (String(expr).includes("__qubeObserversInstalled")) return true;
-      if (String(expr).includes("data-qube-ref")) return values.ref ?? null;
+      if (String(expr).includes("data-qube-ref")) return values.desc ?? null;
       return values.eval;
     },
   };
@@ -38,9 +38,15 @@ describe("observer", () => {
     assert.equal(await observePage(cdp), null);
   });
   it("resolves ref labels", async () => {
-    const cdp = fakeCdp({ ref: 'button "Buy now"' });
+    const cdp = fakeCdp({ desc: { label: 'button "Buy now"', disabled: false, visible: true } });
     assert.equal(await resolveRefLabel(cdp, "e3"), 'button "Buy now"');
     assert.equal(await resolveRefLabel(cdp, "nope"), null);
+  });
+  it("describes disabled state", async () => {
+    const cdp = fakeCdp({ desc: { label: 'button "Pay"', disabled: true, visible: true } });
+    assert.deepEqual(await describeRef(cdp, "e2"), { label: 'button "Pay"', disabled: true, visible: true });
+    const missing = fakeCdp({});
+    assert.equal(await describeRef(missing, "e9"), null);
   });
   it("adds console/network signals", () => {
     const obs: any = { consoleErrors: [{ type: "error", text: "x" }], networkFailures: [] };

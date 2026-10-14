@@ -97,16 +97,32 @@ export async function observePage(cdp: ObserverCdp, timeoutMs = 8000): Promise<P
   } catch { return null; }
 }
 
-export async function resolveRefLabel(cdp: ObserverCdp, ref: string): Promise<string | null> {
+export interface RefDescription {
+  label: string | null;
+  disabled: boolean;
+  visible: boolean;
+}
+
+export async function describeRef(cdp: ObserverCdp, ref: string): Promise<RefDescription | null> {
   try {
     if (!/^e\d+$/.test(ref)) return null;
     const target = await cdp.getPageTarget();
     const wsUrl = target?.webSocketDebuggerUrl;
     if (!wsUrl) return null;
-    const expr = `(() => { const el = document.querySelector('[data-qube-ref="${ref}"]'); if (!el) return null; const role = el.getAttribute("role") || el.tagName.toLowerCase(); const name = (el.getAttribute("aria-label") || el.innerText || (el as any).value || el.getAttribute("placeholder") || el.getAttribute("name") || el.id || role || "").toString().replace(/\\s+/g, " ").trim().slice(0, 120); return role + ' "' + name + '"'; })()`;
+    const expr = `(() => { const el = document.querySelector('[data-qube-ref="${ref}"]'); if (!el) return null; const role = el.getAttribute("role") || el.tagName.toLowerCase(); const name = (el.getAttribute("aria-label") || el.innerText || el.value || el.getAttribute("placeholder") || el.getAttribute("name") || el.id || role || "").toString().replace(/\\s+/g, " ").trim().slice(0, 120); let rect = null; try { rect = el.getBoundingClientRect(); } catch {} const visible = !!(rect && (rect.width > 0 || rect.height > 0)); let disabled = false; try { disabled = !!el.disabled || String(el.getAttribute("aria-disabled") || "").toLowerCase() === "true"; } catch {} return { label: role + ' "' + name + '"', disabled, visible }; })()`;
     const v = await cdp.evalIsolated(wsUrl, expr).catch(() => null);
-    return typeof v === "string" && v ? v : null;
+    if (!v || typeof v !== "object") return null;
+    return {
+      label: typeof (v as any).label === "string" && (v as any).label ? (v as any).label : null,
+      disabled: !!(v as any).disabled,
+      visible: (v as any).visible !== false,
+    };
   } catch { return null; }
+}
+
+export async function resolveRefLabel(cdp: ObserverCdp, ref: string): Promise<string | null> {
+  const d = await describeRef(cdp, ref);
+  return d?.label ?? null;
 }
 
 export function withConsoleNetworkSignals(signals: string[], obs: PageObservation | null): string[] {

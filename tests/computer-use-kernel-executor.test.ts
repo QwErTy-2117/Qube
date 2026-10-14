@@ -191,4 +191,26 @@ describe("kernel executor", () => {
     assert.equal(asked2, 1);
     StateTracker.resetForTests();
   });
+  it("fails fast on disabled targets without executing", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    let executed = 0;
+    let approved = 0;
+    const tools = { browser_act: strTool(async () => { executed++; return JSON.stringify({ ok: true }); }) };
+    const out = applyKernel(tools, {
+      threadId: "t13", interactive: true,
+      probePage: async () => ({ at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false }),
+      describeRef: async (ref) => ({ label: 'button "Pay"', disabled: ref === "e2", visible: true }),
+      askApproval: async () => { approved++; return true; },
+    });
+    const raw = String(await (out.browser_act as any).execute({ actions: [{ kind: "click", ref: "e2" }] }));
+    const p = JSON.parse(raw);
+    // Doomed action never ran and never prompted — reported as disabled.
+    assert.equal(executed, 0);
+    assert.equal(approved, 0);
+    assert.equal(p._kernel.verdict, "failed");
+    assert.ok(p._kernel.signals.includes("disabled"));
+    assert.ok((p._kernel.hints || []).join(" ").match(/prereq|required|disabled/i));
+    StateTracker.resetForTests();
+  });
 });

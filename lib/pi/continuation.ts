@@ -152,7 +152,10 @@ export function extractToolError(toolName: string, out: unknown): string | null 
       if (parsed.ok === false || parsed.error === true) {
         return `${toolName}: ${String(parsed.message || parsed.error || t).slice(0, 300)}`;
       }
-      if (typeof parsed.error === "string" && parsed.error.trim() && /not permitted|denied/i.test(parsed.error)) {
+      // Any other non-empty string error marks failure — tools only set a
+      // top-level string `error` when the call did not succeed (explicit
+      // ok:true wins, so honest success payloads stay clean).
+      if (typeof parsed.error === "string" && parsed.error.trim() && parsed.ok !== true) {
         return `${toolName}: ${parsed.error.trim().slice(0, 300)}`;
       }
       return null;
@@ -172,7 +175,8 @@ export function buildRecoveryNudge(lastError: string): string {
     `Your turn ended right after a tool call failed with: ${lastError.slice(0, 400)}\n` +
     `Do not stop here: recover in this same turn — re-observe current state (fresh snapshot/screenshot), ` +
     `switch to a different method (ref ↔ coordinates ↔ keyboard, or navigate directly), and retry once. ` +
-    `If you already tried twice, or the blocker needs the user (login, CAPTCHA, payment, permission denied), ` +
+    `If you already tried twice, if the blocker needs the user (login, CAPTCHA, payment, permission denied), ` +
+    `or if the error says the target is Blocked (policy block — retrying the same URL/action cannot succeed), ` +
     `stop and report the blocker concisely instead. Never repeat the exact failed call.`
   );
 }

@@ -166,6 +166,12 @@ describe("extractToolError", () => {
     const denied = extractToolError("browser_act", JSON.stringify({ error: "Operation not permitted", tool: "browser_act", message: "did not approve" }));
     assert.match(denied || "", /not permitted/i);
   });
+  it("treats any string error without explicit ok:true as failure", () => {
+    const blocked = extractToolError("browser_navigate", JSON.stringify({ url: "http://169.254.169.254/", title: "", error: "Blocked cloud instance-metadata address" }));
+    assert.match(blocked || "", /Blocked cloud/);
+    assert.equal(extractToolError("t", JSON.stringify({ ok: true, error: "" })), null);
+    assert.equal(extractToolError("t", JSON.stringify({ ok: true, note: "fine" })), null);
+  });
   it("returns null for clean results", () => {
     assert.equal(extractToolError("t", JSON.stringify({ ok: true, url: "https://x.com/" })), null);
     assert.equal(extractToolError("t", JSON.stringify({ command: "ls", exitCode: 0 })), null);

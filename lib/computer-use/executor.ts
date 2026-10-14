@@ -148,14 +148,23 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
       }
       // Permission for browser non-observe.
       if (desc.domain === "browser" && desc.kind !== "observe") {
-        const labels: string[] = [];
-        for (const ref of desc.refs) {
-          let label: string | null = null;
-          const cached = state.refs.get(ref);
-          if (cached) label = cached.label;
-          if (!label) { try { label = await resolveLabel(ref); } catch { label = null; } }
-          if (label) labels.push(label);
-        }
+        // Latency: ref resolutions are independent CDP round-trips — resolve
+        // them concurrently instead of one-by-one (a 5-ref act paid 5 serial
+        // trips before). Cached labels resolve synchronously first, so the
+        // common warm path costs nothing extra. Fail-open per ref, as before.
+        const labels = (
+          await Promise.all(
+            desc.refs.map(async (ref): Promise<string | null> => {
+              try {
+                const cached = state.refs.get(ref);
+                if (cached) return cached.label;
+                return await resolveLabel(ref);
+              } catch {
+                return null;
+              }
+            }),
+          )
+        ).filter((l): l is string => !!l);
         const typedRisk = desc.typed.length > 0;
         let r: RiskLevel = "interact";
         let purpose = desc.summary;

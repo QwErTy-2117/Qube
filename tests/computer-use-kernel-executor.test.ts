@@ -67,6 +67,37 @@ describe("kernel executor", () => {
     assert.match(third, /repeat_failure/);
     StateTracker.resetForTests();
   });
+  it("resolves ref labels concurrently, not one by one", async () => {
+    const tools = { browser_act: strTool(async () => JSON.stringify({ ok: true })) };
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let calls = 0;
+    const labels: Record<string, string> = { e1: 'link "A"', e2: 'button "Place order"', e3: 'link "C"' };
+    const out = applyKernel(tools, {
+      threadId: "t10", interactive: true,
+      askApproval: async () => false,
+      resolveLabel: async (ref) => {
+        calls++;
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        try {
+          await new Promise((r) => setTimeout(r, 25));
+          return labels[ref] ?? null;
+        } finally {
+          inFlight--;
+        }
+      },
+    });
+    const raw = String(await (out.browser_act as any).execute({ actions: [
+      { kind: "click", ref: "e1" },
+      { kind: "click", ref: "e2" },
+      { kind: "click", ref: "e3" },
+    ] }));
+    assert.equal(calls, 3);
+    assert.equal(maxInFlight, 3);
+    // Highest-risk label ("Place order" → financial) drove the decision.
+    assert.match(raw, /not permitted/i);
+  });
   it("fails open when the probe throws", async () => {
     const tools = { browser_snapshot: strTool(async () => JSON.stringify({ url: "https://x.com/", tree: "" })) };
     const out = applyKernel(tools, { threadId: "t6", interactive: true, probePage: async () => { throw new Error("cdp dead"); } });

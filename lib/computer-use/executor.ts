@@ -236,9 +236,11 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         }
       } else if (verdict === "verified") {
         state.noteSuccess(); state.clearFailures(sig);
-        // Milestone checkpoint: a verified navigation is proof an important
-        // step succeeded — resume context reuses it instead of redoing it.
-        if (desc.kind === "navigate" && desc.domain === "browser") {
+        // Milestone checkpoint: any verified action that landed a new page
+        // (navigate tool OR a link click / submit that changed the URL) is
+        // proof an important step succeeded — resume context reuses it
+        // instead of redoing it.
+        if (desc.domain === "browser" && signals.includes("url_changed")) {
           const url = state.lastFingerprint?.url || desc.urls[0] || "";
           if (url) state.checkpoint(`Reached ${url}`, url, verdict);
         }

@@ -26,6 +26,8 @@ export interface PageFingerprint {
   dialog: boolean;
   /** Focused element description ("role \"name\"") for key-press targeting. Optional: older fingerprints lack it. */
   focus?: string | null;
+  /** Hash of form control values (passwords masked) — typing/fill detection. Optional. */
+  formHash?: string | null;
 }
 
 export interface Verification {

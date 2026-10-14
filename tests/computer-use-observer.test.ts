@@ -33,6 +33,12 @@ describe("observer", () => {
     assert.equal(obs!.textHash, hashText("hello world"));
     assert.equal(obs!.textLen, 11);
     assert.equal(obs!.focus, 'button "Go"');
+    assert.equal(obs!.formHash, null);
+  });
+  it("passes through the form hash", async () => {
+    const cdp = fakeCdp({ eval: { title: "T", url: "https://x.com/", text: "hi", dialog: false, formHash: "abc123", consoleErrors: [], networkFailures: [] } });
+    const obs = await observePage(cdp);
+    assert.equal(obs!.formHash, "abc123");
   });
   it("leaves focus null when nothing is focused", async () => {
     const cdp = fakeCdp({ eval: { title: "T", url: "https://x.com/", text: "hi", dialog: false, consoleErrors: [], networkFailures: [] } });

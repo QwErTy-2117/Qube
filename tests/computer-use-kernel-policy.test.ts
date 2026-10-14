@@ -22,6 +22,17 @@ describe("kernel policy", () => {
     assert.equal(v.verdict, "failed");
     assert.ok(v.signals.includes("stale_ref"));
   });
+  it("detects form-value and focus changes as real effects", () => {
+    const base = { at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
+    const filled = { ...base, formHash: "f2" };
+    const v = verifyResult({ ok: true, errorText: "" }, { ...base, formHash: "f1" }, filled, "input");
+    assert.equal(v.verdict, "verified");
+    assert.ok(v.signals.includes("form_changed"));
+    const moved = { ...base, focus: 'button "Go"' };
+    const v2 = verifyResult({ ok: true, errorText: "" }, base, moved, "interact");
+    assert.equal(v2.verdict, "verified");
+    assert.ok(v2.signals.includes("focus_changed"));
+  });
   it("detects no-effect click", () => {
     const fp = { at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
     const v = verifyResult({ ok: true, errorText: "" }, fp, fp, "interact");

@@ -183,7 +183,7 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
       }
       if (u.pathname === "/b") {
         res.writeHead(200, { "Content-Type": "text/html" }).end(
-          `<!doctype html><html><head><title>Page B</title></head><body><h1>Page B</h1><div id="state">BEFORE</div><button id="flip">Flip text</button><script>document.getElementById("flip").onclick=function(){document.getElementById("state").textContent="AFTER";};</script></body></html>`,
+          `<!doctype html><html><head><title>Page B</title></head><body><h1>Page B</h1><div id="state">BEFORE</div><button id="flip">Flip text</button><input id="nick" name="nick" aria-label="Nickname" type="text"><script>document.getElementById("flip").onclick=function(){document.getElementById("state").textContent="AFTER";};</script></body></html>`,
         );
         return;
       }
@@ -311,6 +311,15 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
         `kernel roster missing /b: ${JSON.stringify(StateTracker.forThread("kernel-e2e").tabs)}`,
       );
       assert.match(StateTracker.forThread("kernel-e2e").resumeContext(), /Open tabs/);
+
+      // 4b. Fill a text field: innerText does not change, but the form hash
+      // does — the fill must verify via form_changed, not misreport no_effect.
+      const snapFill = JSON.parse(await run("browser_snapshot", {}));
+      const nickRef = refFor(snapFill.tree, "Nickname");
+      const fillRaw = await run("browser_act", { actions: [{ kind: "fill", ref: nickRef, text: "qube" }] });
+      const fill = JSON.parse(fillRaw);
+      assert.equal(fill._kernel.verdict, "verified", `fill not verified: ${fillRaw.slice(0, 500)}`);
+      assert.ok((fill._kernel.signals || []).includes("form_changed"), `no form_changed signal: ${fillRaw.slice(0, 400)}`);
 
       // 5. Bogus ref twice → failed with recovery hint; third identical → blocked.
       const bad = { actions: [{ kind: "click", ref: "e999" }] };

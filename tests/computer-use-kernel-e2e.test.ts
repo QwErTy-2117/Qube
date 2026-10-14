@@ -183,7 +183,7 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
       }
       if (u.pathname === "/b") {
         res.writeHead(200, { "Content-Type": "text/html" }).end(
-          `<!doctype html><html><head><title>Page B</title></head><body><h1>Page B</h1><div id="state">BEFORE</div><button id="flip">Flip text</button><input id="nick" name="nick" aria-label="Nickname" type="text"><script>document.getElementById("flip").onclick=function(){document.getElementById("state").textContent="AFTER";};</script></body></html>`,
+          `<!doctype html><html><head><title>Page B</title></head><body style="min-height:200vh"><h1>Page B</h1><div id="state">BEFORE</div><button id="flip">Flip text</button><input id="nick" name="nick" aria-label="Nickname" type="text"><script>document.getElementById("flip").onclick=function(){document.getElementById("state").textContent="AFTER";};</script></body></html>`,
         );
         return;
       }
@@ -245,6 +245,10 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
         tabs: {
           description: "t", inputSchema: {},
           execute: async () => client.tool("tabs", {}),
+        },
+        press_key: {
+          description: "t", inputSchema: {},
+          execute: async (args: any) => client.tool("press_key", args),
         },
         browser_act: {
           description: "t", inputSchema: {},
@@ -320,6 +324,13 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
       const fill = JSON.parse(fillRaw);
       assert.equal(fill._kernel.verdict, "verified", `fill not verified: ${fillRaw.slice(0, 500)}`);
       assert.ok((fill._kernel.signals || []).includes("form_changed"), `no form_changed signal: ${fillRaw.slice(0, 400)}`);
+
+      // 4c. Scroll the tall page: scrollY moves, nothing else does — the
+      // scroll must verify via the scrolled signal, not misreport no_effect.
+      // press_key returns plain text, so the kernel appends a trailer.
+      const scrollRaw = await run("press_key", { key: "PageDown" });
+      assert.match(scrollRaw, /verdict:verified/, `scroll not verified: ${scrollRaw.slice(0, 500)}`);
+      assert.match(scrollRaw, /scrolled/, `no scrolled signal: ${scrollRaw.slice(0, 400)}`);
 
       // 5. Bogus ref twice → failed with recovery hint; third identical → blocked.
       const bad = { actions: [{ kind: "click", ref: "e999" }] };

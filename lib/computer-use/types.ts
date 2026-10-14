@@ -28,6 +28,8 @@ export interface PageFingerprint {
   focus?: string | null;
   /** Hash of form control values (passwords masked) — typing/fill detection. Optional. */
   formHash?: string | null;
+  /** Vertical scroll offset (px) — scroll verification. Optional. */
+  scrollY?: number | null;
 }
 
 export interface Verification {

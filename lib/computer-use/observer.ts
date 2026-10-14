@@ -53,7 +53,8 @@ const EXPR = `(() => {
       for (let i = 0; i < joined.length; i++) { h = ((h << 5) + h + joined.charCodeAt(i)) | 0; }
       formHash = (h >>> 0).toString(16);
     } catch {}
-    return { title: document.title || "", url: location.href || "", text: text.slice(0, 4000), dialog, focus, formHash, consoleErrors: errs, networkFailures: nets };
+    let scrollY = null; try { scrollY = Math.round(window.scrollY || 0); } catch {}
+    return { title: document.title || "", url: location.href || "", text: text.slice(0, 4000), dialog, focus, formHash, scrollY, consoleErrors: errs, networkFailures: nets };
   } catch (e) { return { error: String((e && e.message) || e) }; }
 })()`;
 
@@ -116,6 +117,7 @@ export async function observePage(cdp: ObserverCdp, timeoutMs = 8000): Promise<P
     const text = String((v as any).text || "");
     const focus = typeof (v as any).focus === "string" && (v as any).focus ? String((v as any).focus).slice(0, 160) : null;
     const formHash = typeof (v as any).formHash === "string" && (v as any).formHash ? String((v as any).formHash) : null;
+    const scrollY = typeof (v as any).scrollY === "number" && Number.isFinite((v as any).scrollY) ? Math.round((v as any).scrollY) : null;
     return {
       at: Date.now(),
       url: String((v as any).url || ""),
@@ -125,6 +127,7 @@ export async function observePage(cdp: ObserverCdp, timeoutMs = 8000): Promise<P
       dialog: !!(v as any).dialog,
       focus,
       formHash,
+      scrollY,
       consoleErrors: Array.isArray((v as any).consoleErrors) ? (v as any).consoleErrors : [],
       networkFailures: Array.isArray((v as any).networkFailures) ? (v as any).networkFailures : [],
     };

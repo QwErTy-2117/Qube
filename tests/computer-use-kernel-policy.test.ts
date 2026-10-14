@@ -33,6 +33,12 @@ describe("kernel policy", () => {
     assert.equal(v2.verdict, "verified");
     assert.ok(v2.signals.includes("focus_changed"));
   });
+  it("detects scrolls as real effects", () => {
+    const base = { at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
+    const v = verifyResult({ ok: true, errorText: "" }, { ...base, scrollY: 0 }, { ...base, scrollY: 400 }, "interact");
+    assert.equal(v.verdict, "verified");
+    assert.ok(v.signals.includes("scrolled"));
+  });
   it("detects no-effect click", () => {
     const fp = { at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
     const v = verifyResult({ ok: true, errorText: "" }, fp, fp, "interact");

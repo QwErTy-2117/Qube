@@ -63,11 +63,13 @@ export function verifyResult(raw: RawResult, pre: PageFingerprint | null, post: 
   const textChanged = pre.textHash !== post.textHash;
   const focusChanged = (pre.focus || null) !== (post.focus || null);
   const formChanged = (pre.formHash ?? null) !== (post.formHash ?? null);
+  const scrolled = (pre.scrollY ?? null) !== (post.scrollY ?? null);
   if (urlChanged) signals.push("url_changed");
   if (textChanged) signals.push("text_changed");
   if (focusChanged) signals.push("focus_changed");
   if (formChanged) signals.push("form_changed");
-  const changed = urlChanged || textChanged || focusChanged || formChanged || signals.includes("new_dialog");
+  if (scrolled) signals.push("scrolled");
+  const changed = urlChanged || textChanged || focusChanged || formChanged || scrolled || signals.includes("new_dialog");
   if (signals.includes("captcha") || signals.includes("auth_wall")) return { verdict: "failed", changed, signals };
   if (changed) return { verdict: "verified", changed: true, signals };
   return { verdict: "no_effect", changed: false, signals };

@@ -227,6 +227,7 @@ export const BrowserToolUI: ToolCallMessagePartComponent = ({ args, result, tool
   };
   return (
     <div
+      data-slot="browser-tool"
       onClick={openPanel}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {

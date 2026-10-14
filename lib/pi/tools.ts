@@ -289,11 +289,22 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
       const { browserScreenshot, screenClaim } = await import("./computer-use");
       try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
       const obs = await browserScreenshot("browser observed");
+      pokeBrowserPanel();
       if (obs.error && !obs.imageBase64) return JSON.stringify({ error: obs.error, text: obs.text });
       return JSON.stringify({ text: obs.text, frameId: obs.frameId, unchanged: !!obs.unchanged, imageChars: obs.imageBase64?.length || 0 });
     } catch (e: any) {
       return JSON.stringify({ error: e?.message || String(e) });
     }
+  }
+  /** Nudge the side-panel screencast to repaint now: agent CDP sessions
+   * never touch the panel pipe, so without this the live view only caught
+   * up on the next idle snapshot or on user input. Fire-and-forget. */
+  function pokeBrowserPanel(): void {
+    try {
+      void import("@/lib/browser/screencast").then((m) => {
+        try { m.pokeFrames(); } catch {}
+      }).catch(() => {});
+    } catch {}
   }
   async function runBrowserPixelAct(actions: unknown, observe?: boolean, settle_ms?: number): Promise<string> {
     return withPerm("browser_pixel_act", { actions }, async () => {
@@ -301,6 +312,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
         const { browserPixelAct, screenClaim } = await import("./computer-use");
         try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
         const res = await browserPixelAct(actions as any, { observe, settleMs: settle_ms });
+        pokeBrowserPanel();
         // Keep base64 out of the transcript text — the model gets the real
         // bytes via toModelOutput. Report the byte count instead.
         const { imageBase64, ...rest } = res as any;
@@ -375,6 +387,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           if (/^https?:\/\//i.test(target)) {
             const nav = await browserNavigate(target);
             const obs = await browserScreenshot(`open_path ${target}`);
+            pokeBrowserPanel();
             return JSON.stringify({ url: (nav as any).url || target, title: (nav as any).title || "", screen: obs.text }).slice(0, 6000);
           }
           const resolved = resolveAgentPath(target, "read");
@@ -412,6 +425,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
       try {
         const { browserNavigate } = await import("./computer-use");
         const res = await browserNavigate(String(url || ""));
+        pokeBrowserPanel();
         return JSON.stringify(res).slice(0, 4000);
       } catch (e: any) {
         return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act" });
@@ -443,6 +457,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
       try {
         const { browserAct } = await import("./computer-use");
         const res = await browserAct(actions as any);
+        pokeBrowserPanel();
         return JSON.stringify(res).slice(0, 6000);
       } catch (e: any) {
         return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act", uncertain: true });

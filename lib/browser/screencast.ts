@@ -33,8 +33,10 @@ let lastPipeError: string | null = null;
 let seenTargetIds = new Set<string>();
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
-/** Snapshot cadence when the screencast goes quiet (static pages). */
-const SNAPSHOT_IDLE_MS = 4000;
+/** Snapshot cadence when the screencast goes quiet (static pages). Kept short
+ * so agent-driven changes appear without any user interaction; only runs
+ * while the panel is watched. */
+const SNAPSHOT_IDLE_MS = 2500;
 /** Consecutive dead snapshots before forcing a reattach. */
 const DEAD_SNAPSHOT_LIMIT = 3;
 /** Broadcast the current URL this often even without frames. */
@@ -200,6 +202,21 @@ function captureOnce(): void {
 /** Immediate refresh after user input (instant feedback). */
 function poke(): void {
   captureOnce();
+}
+
+/**
+ * Agent-action refresh: browser tools (navigate/act/pixel-act/screenshot)
+ * run on separate CDP sessions and never touch the panel pipe, so without
+ * this the side view only updated on the next idle snapshot or on user
+ * input — page changes from agent actions looked frozen. Call
+ * fire-and-forget after any agent-driven page change; it degrades to a
+ * no-op when nobody is watching.
+ */
+export function pokeFrames(): void {
+  try {
+    if (listeners.size === 0) return;
+    poke();
+  } catch {}
 }
 
 function startHeartbeat(): void {

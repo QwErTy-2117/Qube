@@ -24,7 +24,9 @@ import {
   hasUnfinishedGoals,
   buildContinuationNudge,
   buildIdleContinueNudge,
+  buildRecoveryNudge,
   shouldIdleContinue,
+  shouldRecoverContinue,
   type TodoSnapshotItem,
 } from "./continuation";
 import type { McpServerConfig } from "./mcp-store";
@@ -954,6 +956,32 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
         console.warn(
           `[pi-harness] Silent continuation budget exhausted [${config.threadId}] — ${getIncompleteTodos(lastTodoSnapshot).length} goal(s) still unfinished`
         );
+      }
+      // Failure recovery: the turn ran tools and ended right after one
+      // FAILED, with no TodoWrite plan to trigger the goal path above
+      // (typical for demos / ad-hoc browser runs — the model narrates the
+      // failure and quits). Nudge once per failure: lastToolError is
+      // consumed here, so a NEW failure is required to nudge again.
+      if (!sawError && !signal.aborted && !hasUnfinishedGoals(lastTodoSnapshot) && shouldRecoverContinue({ toolCallCount, lastError: lastToolError, silentRounds, budget: silentBudget })) {
+        const err = String(lastToolError);
+        lastToolError = null;
+        let roundMessages: Array<Record<string, unknown>> = [];
+        try {
+          const response = await result?.response;
+          if (response && Array.isArray((response as any).messages)) {
+            roundMessages = (response as any).messages as Array<Record<string, unknown>>;
+          }
+        } catch {}
+        pendingNudge = [
+          ...pendingNudge,
+          ...roundMessages,
+          { role: "user", content: buildRecoveryNudge(err) } as Record<string, unknown>,
+        ];
+        silentRounds++;
+        console.log(
+          `[pi-harness] Failure recovery continuation ${silentRounds}/${silentBudget} [${config.threadId}] — ${err.slice(0, 120)}`
+        );
+        continue;
       }
       // Stall recovery only: if the round produced NEITHER tool calls NOR
       // visible text, the model ended with nothing actionable — nudge it

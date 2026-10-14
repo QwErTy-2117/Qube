@@ -12,7 +12,9 @@ import {
   getIncompleteTodos,
   hasUnfinishedGoals,
   buildContinuationNudge,
+  buildRecoveryNudge,
   shouldIdleContinue,
+  shouldRecoverContinue,
 } from "@/lib/pi/continuation";
 
 describe("shouldIdleContinue (stall recovery)", () => {
@@ -103,6 +105,26 @@ describe("buildContinuationNudge", () => {
     assert.doesNotMatch(withoutErr, /Last tool call failed/);
     const emptyErr = buildContinuationNudge([{ content: "Add to cart", status: "pending" }], "   ");
     assert.doesNotMatch(emptyErr, /Last tool call failed/);
+  });
+});
+
+describe("shouldRecoverContinue (failure recovery)", () => {
+  it("continues when tools ran and the last one failed", () => {
+    assert.equal(shouldRecoverContinue({ toolCallCount: 3, lastError: "browser_act: Stale ref e4", silentRounds: 0, budget: 8 }), true);
+  });
+
+  it("does not continue without tool calls, without an error, or at budget", () => {
+    assert.equal(shouldRecoverContinue({ toolCallCount: 0, lastError: "browser_act: boom", silentRounds: 0, budget: 8 }), false);
+    assert.equal(shouldRecoverContinue({ toolCallCount: 2, lastError: null, silentRounds: 0, budget: 8 }), false);
+    assert.equal(shouldRecoverContinue({ toolCallCount: 2, lastError: "   ", silentRounds: 0, budget: 8 }), false);
+    assert.equal(shouldRecoverContinue({ toolCallCount: 2, lastError: "browser_act: boom", silentRounds: 8, budget: 8 }), false);
+  });
+
+  it("builds a silent recovery nudge naming the error", () => {
+    const nudge = buildRecoveryNudge("browser_act: Stale ref e4: page re-rendered");
+    assert.match(nudge, /silent continuation/i);
+    assert.match(nudge, /Stale ref e4/);
+    assert.match(nudge, /Never repeat the exact failed call/);
   });
 });
 

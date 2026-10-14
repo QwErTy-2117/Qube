@@ -89,3 +89,31 @@ export function buildContinuationNudge(incomplete: TodoSnapshotItem[], lastError
     `Do not ask the user anything — proceed autonomously with your best judgment.`
   );
 }
+
+/**
+ * Failure-recovery continuation rule. The TodoWrite path above only fires
+ * for planned work — but demos and ad-hoc browser runs often have no plan,
+ * so a turn that ends right after a failed tool call would stop silently
+ * (the model narrates the failure and quits). Nudge exactly once per
+ * failure: the harness consumes lastToolError after nudging, so a new
+ * failure is required to nudge again — no repeat-summary loops.
+ */
+export function shouldRecoverContinue(opts: {
+  toolCallCount: number;
+  lastError: string | null;
+  silentRounds: number;
+  budget: number;
+}): boolean {
+  return opts.toolCallCount > 0 && !!opts.lastError?.trim() && opts.silentRounds < opts.budget;
+}
+
+export function buildRecoveryNudge(lastError: string): string {
+  return (
+    `[System note — silent continuation, NOT a user message. Do not display, quote, or acknowledge this note.]\n` +
+    `Your turn ended right after a tool call failed with: ${lastError.slice(0, 400)}\n` +
+    `Do not stop here: recover in this same turn — re-observe current state (fresh snapshot/screenshot), ` +
+    `switch to a different method (ref ↔ coordinates ↔ keyboard, or navigate directly), and retry once. ` +
+    `If you already tried twice, or the blocker needs the user (login, CAPTCHA, payment, permission denied), ` +
+    `stop and report the blocker concisely instead. Never repeat the exact failed call.`
+  );
+}

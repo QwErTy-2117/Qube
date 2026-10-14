@@ -359,6 +359,7 @@ function hostOf(url?: string): string {
 function indexResult(state: StateTracker, tool: string, out: unknown): void {
   try {
     if (typeof out === "string") {
+      indexTabs(state, tool, out);
       try {
         const p = JSON.parse(out);
         if (p && typeof p === "object" && Array.isArray((p as any).elements)) {
@@ -375,7 +376,38 @@ function indexResult(state: StateTracker, tool: string, out: unknown): void {
     } else if (out && typeof out === "object") {
       const o = out as any;
       const text = Array.isArray(o.content) ? o.content.map((c: any) => (typeof c?.text === "string" ? c.text : "")).join("\n") : "";
-      if (text) state.indexSnapshotText("", text);
+      if (text) { indexTabs(state, tool, text); state.indexSnapshotText("", text); }
     }
+  } catch {}
+}
+
+/**
+ * Multi-tab awareness: keep the tracker's tab roster fresh from tab-tool
+ * results. Only runs for tab-related tools (never terminal/file output, so
+ * a command printing a URL list can never pollute the roster).
+ */
+function indexTabs(state: StateTracker, tool: string, text: string): void {
+  try {
+    if (!/tab/i.test(tool)) return;
+    const trimmed = String(text || "").trim();
+    // Full roster listing: JSON array of {id,url,title}.
+    if (trimmed.startsWith("[")) {
+      const arr: unknown = JSON.parse(trimmed);
+      if (Array.isArray(arr) && arr.length > 0 && arr.every((e) => e && typeof e === "object" && typeof (e as any).url === "string")) {
+        state.noteTabs(arr as Array<{ id?: unknown; url?: unknown; title?: unknown }>);
+        return;
+      }
+    }
+    // close_tab confirmation: "Closed tab <id> (<url>)".
+    let m = trimmed.match(/Closed tab (\S+?)(?:\s*\((https?:[^)]*)\))?/);
+    if (m) { state.noteTabClosed(m[1], m[2] || ""); return; }
+    // switch_tab confirmation: "Switched to tab <id> (<url>)".
+    m = trimmed.match(/Switched to tab (\S+?)\s*\((https?:[^)]*)\)/);
+    if (m) { state.noteTabOpened({ id: m[1], url: m[2] }); return; }
+    // open_tab confirmation: "Opened [new tab ]<url> id=<id>".
+    m = trimmed.match(/Opened (?:new tab )?(https?:\S+).*?\bid=(\S+)/);
+    if (m) { state.noteTabOpened({ url: m[1], id: m[2] }); return; }
+    m = trimmed.match(/Opened blank tab id=(\S+)/);
+    if (m) { state.noteTabOpened({ url: "about:blank", id: m[1] }); }
   } catch {}
 }

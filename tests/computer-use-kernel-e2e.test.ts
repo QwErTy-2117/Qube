@@ -242,6 +242,10 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
             return JSON.stringify({ url: m ? m[1] : "", tree: text });
           },
         },
+        tabs: {
+          description: "t", inputSchema: {},
+          execute: async () => client.tool("tabs", {}),
+        },
         browser_act: {
           description: "t", inputSchema: {},
           execute: async (args: any) => {
@@ -295,6 +299,18 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
       const flip = JSON.parse(flipRaw);
       assert.equal(flip._kernel.verdict, "verified", `flip not verified: ${flipRaw.slice(0, 500)}`);
       assert.ok((flip._kernel.signals || []).includes("text_changed"), `no text_changed signal: ${flipRaw.slice(0, 400)}`);
+
+      // 4b. Tab roster: bare "tabs" (real MCP naming) lists the live tabs and
+      // the kernel indexes them for multi-tab awareness.
+      const tabsRaw = await run("tabs", {});
+      const roster = JSON.parse(tabsRaw);
+      assert.ok(Array.isArray(roster) && roster.length > 0, `empty roster: ${tabsRaw.slice(0, 300)}`);
+      assert.ok(roster.some((t: any) => String(t.url || "").includes("/b")), `roster missing /b: ${tabsRaw.slice(0, 300)}`);
+      assert.ok(
+        StateTracker.forThread("kernel-e2e").tabs.some((t) => t.url.includes("/b")),
+        `kernel roster missing /b: ${JSON.stringify(StateTracker.forThread("kernel-e2e").tabs)}`,
+      );
+      assert.match(StateTracker.forThread("kernel-e2e").resumeContext(), /Open tabs/);
 
       // 5. Bogus ref twice → failed with recovery hint; third identical → blocked.
       const bad = { actions: [{ kind: "click", ref: "e999" }] };

@@ -4,6 +4,21 @@ import { BROWSER_MCP_TOOL_PREFIX } from "@/lib/pi/browser-mcp";
 const OBSERVE_SUFFIX = new Set(["snapshot", "screenshot", "tabs", "page_info", "ping", "wait_load", "move_mouse", "user_tabs"]);
 const NAVIGATE_SUFFIX = new Set(["navigate", "open_tab"]);
 
+/**
+ * Exact tool set of the built-in auto-mcp browser server (server.mjs).
+ * MCP tools merge under their ORIGINAL names (see lib/pi/mcp.ts — no
+ * prefixing), so the agent's browser calls arrive as bare "navigate",
+ * "act", "tabs", … The legacy "obu_" prefix is still accepted for compat.
+ * Unknown bare names stay "other" so unrelated servers are never wrapped.
+ */
+const AUTO_MCP_TOOLS = new Set([
+  ...OBSERVE_SUFFIX,
+  ...NAVIGATE_SUFFIX,
+  "click", "type", "press_key", "act", "run_action_plan", "cdp",
+  "dismiss_dialogs", "close_tab", "switch_tab", "download", "upload",
+  "name_session", "turn_ended", "finalize_tabs",
+]);
+
 function base(tool: string, domain: ActionDescriptor["domain"], kind: ActionDescriptor["kind"], mutating: boolean): ActionDescriptor {
   return { tool, domain, kind, mutating, refs: [], points: [], typed: [], keys: [], urls: [], targetText: "", summary: tool };
 }
@@ -88,7 +103,25 @@ export function describeAction(tool: string, args: Record<string, unknown>): Act
     default: break;
   }
   if (tool.startsWith(BROWSER_MCP_TOOL_PREFIX)) {
-    const suffix = tool.slice(BROWSER_MCP_TOOL_PREFIX.length);
+    return describeMcpTool(tool, tool.slice(BROWSER_MCP_TOOL_PREFIX.length), a);
+  }
+  if (AUTO_MCP_TOOLS.has(tool)) {
+    return describeMcpTool(tool, tool, a);
+  }
+  if (tool.startsWith("computer_")) {
+    if (tool === "computer_clipboard_read") {
+      const d = base(tool, "desktop", "observe", false);
+      d.summary = summarize(tool, ["clipboard"]);
+      return d;
+    }
+    const d = base(tool, "desktop", "interact", true);
+    d.summary = summarize(tool, [String(a.app ?? a.text ?? a.key ?? "").slice(0, 60)]);
+    return d;
+  }
+  return base(tool, "other", "meta", false);
+}
+
+function describeMcpTool(tool: string, suffix: string, a: Record<string, any>): ActionDescriptor {
     const d = base(tool, "browser", "interact", true);
     if (OBSERVE_SUFFIX.has(suffix)) { d.kind = "observe"; d.mutating = false; }
     else if (NAVIGATE_SUFFIX.has(suffix)) {
@@ -131,15 +164,3 @@ export function describeAction(tool: string, args: Record<string, unknown>): Act
     d.summary = summarize(tool, d.refs.concat(d.urls).concat(d.typed.map((t) => `"${t.slice(0, 40)}"`)));
     return d;
   }
-  if (tool.startsWith("computer_")) {
-    if (tool === "computer_clipboard_read") {
-      const d = base(tool, "desktop", "observe", false);
-      d.summary = summarize(tool, ["clipboard"]);
-      return d;
-    }
-    const d = base(tool, "desktop", "interact", true);
-    d.summary = summarize(tool, [String(a.app ?? a.text ?? a.key ?? "").slice(0, 60)]);
-    return d;
-  }
-  return base(tool, "other", "meta", false);
-}

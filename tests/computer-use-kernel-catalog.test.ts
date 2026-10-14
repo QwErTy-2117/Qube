@@ -29,4 +29,22 @@ describe("kernel catalog", () => {
     assert.equal(d.kind, "exec");
     assert.equal(d.targetText, "npm test");
   });
+  it("classifies bare auto-mcp names like the obu_ ones", () => {
+    assert.equal(describeAction("navigate", { url: "https://x.com/" }).kind, "navigate");
+    const a = describeAction("act", { actions: [{ kind: "click", ref: "e1" }] });
+    assert.equal(a.kind, "interact");
+    assert.deepEqual(a.refs, ["e1"]);
+    assert.equal(describeAction("tabs", {}).kind, "observe");
+    assert.equal(describeAction("snapshot", {}).kind, "observe");
+    assert.deepEqual(describeAction("click", { x: 1, y: 2 }).points, [{ x: 1, y: 2 }]);
+    assert.equal(describeAction("type", { text: "hi" }).kind, "input");
+    assert.equal(describeAction("close_tab", {}).mutating, true);
+    assert.equal(describeAction("switch_tab", {}).mutating, false);
+    assert.equal(describeAction("obu_act", { actions: [{ kind: "click", ref: "e1" }] }).kind, "interact");
+  });
+  it("leaves unknown bare names alone", () => {
+    assert.equal(describeAction("frobnicate", {}).domain, "other");
+    assert.equal(isKernelTool("frobnicate"), false);
+    assert.equal(isKernelTool("act"), true);
+  });
 });

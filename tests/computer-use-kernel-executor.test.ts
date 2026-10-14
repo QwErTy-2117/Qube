@@ -237,4 +237,34 @@ describe("kernel executor", () => {
     assert.ok((p._kernel.hints || []).join(" ").match(/prereq|required|disabled/i));
     StateTracker.resetForTests();
   });
+  it("tracks the tab roster from tab-tool results", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    const tools = {
+      tabs: strTool(async () => JSON.stringify([
+        { id: "a", url: "https://a.com/", title: "A" },
+        { id: "b", url: "https://b.com/x", title: "B" },
+      ])),
+      close_tab: strTool(async () => "Closed tab a (https://a.com/)"),
+    };
+    const out = applyKernel(tools, { threadId: "t15", interactive: true });
+    await (out.tabs as any).execute({});
+    assert.equal(StateTracker.forThread("t15").tabs.length, 2);
+    assert.match(StateTracker.forThread("t15").resumeContext(), /Open tabs \(2\)/);
+    await (out.close_tab as any).execute({ tab_id: 1 });
+    const rest = StateTracker.forThread("t15").tabs;
+    assert.equal(rest.length, 1);
+    assert.equal(rest[0].id, "b");
+    // Roster ignores garbage and survives persist/restore.
+    const st = StateTracker.forThread("t15");
+    st.noteTabs([{ url: "" }, null, { id: "c", url: "https://c.com/" } as any]);
+    assert.equal(st.tabs.length, 1);
+    st.noteTabOpened({ id: "c", url: "https://c.com/", title: "C" });
+    st.noteTabOpened({ id: "c", url: "https://c.com/", title: "C" });
+    assert.equal(st.tabs.filter((t) => t.id === "c").length, 1);
+    st.persist("t15");
+    StateTracker.resetForTests();
+    assert.ok(StateTracker.forThread("t15").tabs.some((t) => t.id === "c"));
+    StateTracker.resetForTests();
+  });
 });

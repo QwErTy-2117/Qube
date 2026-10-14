@@ -82,6 +82,17 @@ export function defaultCapabilityLoaders(threadId: string, instanceId?: string):
     mcp: async () => {
       const { loadMcpTools, closeMcpClients } = await import("@/lib/pi/mcp");
       const { tools, clients } = await loadMcpTools({ threadId });
+      // The durable guard hook only covers delete_file / run_command /
+      // computer_* / connectors — MCP tools (including the built-in browser
+      // surface) would otherwise run with no repeat-guard, no risk gating,
+      // no verification, and no audit log. Wrap them in the same kernel
+      // pipeline as every other path (headless: risky actions are denied).
+      // Connectors are deliberately excluded: the guard owns them, and a
+      // repeat-block on a retried send could break legitimate flows.
+      try {
+        const { applyKernel, kernelEnabled } = await import("@/lib/computer-use/index");
+        if (kernelEnabled()) applyKernel(tools as Record<string, any>, { threadId, interactive: false });
+      } catch {}
       return { tools, cleanup: () => closeMcpClients(clients) };
     },
   };

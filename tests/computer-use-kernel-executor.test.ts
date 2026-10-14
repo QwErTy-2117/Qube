@@ -303,4 +303,42 @@ describe("kernel executor", () => {
     assert.ok((second._kernel.hints || []).join(" ").match(/already restarted/i));
     StateTracker.resetForTests();
   });
+  it("classifies key presses by the focused element", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    const fp = (focus: string | null) => ({ at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false, focus });
+    // Enter on a focused purchase button is financial even with no refs.
+    let executed = 0;
+    const out = applyKernel(
+      { press_key: strTool(async () => { executed++; return JSON.stringify({ ok: true }); }) },
+      { threadId: "t18", interactive: false, probePage: async () => fp('button "Place order"') },
+    );
+    const denied = String(await (out.press_key as any).execute({ key: "Enter" }));
+    assert.match(denied, /headless|not permitted/i);
+    assert.equal(executed, 0);
+    // Typing into a focused password field is credential-gated.
+    let asked = 0;
+    let ran = 0;
+    const out2 = applyKernel(
+      { type: strTool(async () => { ran++; return JSON.stringify({ ok: true }); }) },
+      {
+        threadId: "t19", interactive: true,
+        probePage: async () => fp('textbox "Password"'),
+        askApproval: async () => { asked++; return false; },
+      },
+    );
+    const credDenied = String(await (out2.type as any).execute({ text: "s3cret" }));
+    assert.match(credDenied, /not permitted/i);
+    assert.equal(asked, 1);
+    assert.equal(ran, 0);
+    // Non-activating keys ignore focus and run freely.
+    let tabbed = 0;
+    const out3 = applyKernel(
+      { press_key: strTool(async () => { tabbed++; return JSON.stringify({ ok: true }); }) },
+      { threadId: "t20", interactive: true, probePage: async () => fp('button "Place order"') },
+    );
+    await (out3.press_key as any).execute({ key: "Tab" });
+    assert.equal(tabbed, 1);
+    StateTracker.resetForTests();
+  });
 });

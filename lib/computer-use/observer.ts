@@ -21,9 +21,18 @@ const EXPR = `(() => {
   try {
     const text = (document.body ? document.body.innerText : "") || "";
     const dialog = !!document.querySelector('dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]');
+    let focus = null;
+    try {
+      const el = document.activeElement;
+      if (el && el !== document.body && el !== document.documentElement) {
+        const role = el.getAttribute("role") || el.tagName.toLowerCase();
+        const name = (el.getAttribute("aria-label") || el.innerText || el.value || el.getAttribute("placeholder") || el.getAttribute("name") || el.id || role || "").toString().replace(/\\s+/g, " ").trim().slice(0, 120);
+        if (name && name !== role) focus = role + ' "' + name + '"';
+      }
+    } catch {}
     const errs = (window.__qubeConsoleErrors || []).slice(-8).map((e) => ({ type: String(e.type || "error").slice(0,20), text: String(e.text || "").slice(0,300), url: String(e.url || "").slice(0,300), line: Number(e.line || 0) || 0 }));
     const nets = (window.__qubeNetFailures || []).slice(-8).map((n) => ({ url: String(n.url || "").slice(0,300), errorText: String(n.errorText || "").slice(0,200), status: Number(n.status || 0) || 0 }));
-    return { title: document.title || "", url: location.href || "", text: text.slice(0, 4000), dialog, consoleErrors: errs, networkFailures: nets };
+    return { title: document.title || "", url: location.href || "", text: text.slice(0, 4000), dialog, focus, consoleErrors: errs, networkFailures: nets };
   } catch (e) { return { error: String((e && e.message) || e) }; }
 })()`;
 
@@ -84,6 +93,7 @@ export async function observePage(cdp: ObserverCdp, timeoutMs = 8000): Promise<P
       .catch(() => null);
     if (!v || typeof v !== "object" || (v as any).error) return null;
     const text = String((v as any).text || "");
+    const focus = typeof (v as any).focus === "string" && (v as any).focus ? String((v as any).focus).slice(0, 160) : null;
     return {
       at: Date.now(),
       url: String((v as any).url || ""),
@@ -91,6 +101,7 @@ export async function observePage(cdp: ObserverCdp, timeoutMs = 8000): Promise<P
       textHash: hashText(text),
       textLen: text.length,
       dialog: !!(v as any).dialog,
+      focus,
       consoleErrors: Array.isArray((v as any).consoleErrors) ? (v as any).consoleErrors : [],
       networkFailures: Array.isArray((v as any).networkFailures) ? (v as any).networkFailures : [],
     };

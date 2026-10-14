@@ -24,6 +24,8 @@ export interface PageFingerprint {
   textHash: string;
   textLen: number;
   dialog: boolean;
+  /** Focused element description ("role \"name\"") for key-press targeting. Optional: older fingerprints lack it. */
+  focus?: string | null;
 }
 
 export interface Verification {

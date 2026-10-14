@@ -214,12 +214,23 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
           if (riskRank(c.risk) > riskRank(r)) { r = c.risk; purpose = `Click/fill "${label}" on ${hostOf(pre?.url)} — ${c.risk}`; }
         }
         if (labels.length === 0) {
+          // No ref targets: fall back to the focused element for key presses
+          // that activate it (Enter/Space) and for ref-free typing (the
+          // field label is what makes credential entry classifiable).
+          const focusLabel = typeof pre?.focus === "string" && pre.focus ? pre.focus : "";
+          const activating = desc.keys.some((k) => /^(enter|space|spacebar| )$/i.test(String(k).trim()));
           const typedHay = desc.typed.join(" ").slice(0, 200);
-          const c = classifyRisk({ label: typedHay || desc.targetText, url: pre?.url, typed: typedRisk, coordinateBlind: desc.points.length > 0 || desc.keys.length > 0 });
-          r = c.risk;
-          purpose = desc.points.length > 0
-            ? `Coordinate action at ${desc.points.map((p) => `${p.x},${p.y}`).join("; ")} on ${hostOf(pre?.url)} — ${r}`
-            : `${desc.summary} on ${hostOf(pre?.url)} — ${r}`;
+          if (focusLabel && (activating || (typedRisk && desc.refs.length === 0))) {
+            const c = classifyRisk({ label: focusLabel, url: pre?.url, typed: typedRisk });
+            r = c.risk;
+            purpose = `${desc.keys.length > 0 ? `Press "${desc.keys.join(",")}"` : "Type"} on focused ${focusLabel} on ${hostOf(pre?.url)} — ${r}`;
+          } else {
+            const c = classifyRisk({ label: typedHay || desc.targetText, url: pre?.url, typed: typedRisk, coordinateBlind: desc.points.length > 0 || desc.keys.length > 0 });
+            r = c.risk;
+            purpose = desc.points.length > 0
+              ? `Coordinate action at ${desc.points.map((p) => `${p.x},${p.y}`).join("; ")} on ${hostOf(pre?.url)} — ${r}`
+              : `${desc.summary} on ${hostOf(pre?.url)} — ${r}`;
+          }
         }
         risk = r;
         // Fail fast on disabled targets: the live DOM description reports

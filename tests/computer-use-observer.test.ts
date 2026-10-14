@@ -26,12 +26,18 @@ describe("observer", () => {
     assert.notEqual(hashText("hello"), hashText("world"));
   });
   it("builds a fingerprint from eval", async () => {
-    const cdp = fakeCdp({ eval: { title: "T", url: "https://x.com/", text: "hello world", dialog: false, consoleErrors: [], networkFailures: [] } });
+    const cdp = fakeCdp({ eval: { title: "T", url: "https://x.com/", text: "hello world", dialog: false, focus: 'button "Go"', consoleErrors: [], networkFailures: [] } });
     const obs = await observePage(cdp);
     assert.ok(obs);
     assert.equal(obs!.url, "https://x.com/");
     assert.equal(obs!.textHash, hashText("hello world"));
     assert.equal(obs!.textLen, 11);
+    assert.equal(obs!.focus, 'button "Go"');
+  });
+  it("leaves focus null when nothing is focused", async () => {
+    const cdp = fakeCdp({ eval: { title: "T", url: "https://x.com/", text: "hi", dialog: false, consoleErrors: [], networkFailures: [] } });
+    const obs = await observePage(cdp);
+    assert.equal(obs!.focus, null);
   });
   it("returns null when no target", async () => {
     const cdp: ObserverCdp = { getPageTarget: async () => null, cdpCall: async () => null, evalIsolated: async () => null };

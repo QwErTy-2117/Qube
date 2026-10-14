@@ -32,7 +32,7 @@ async function kernelTool(threadId: string, name: string): Promise<(args: unknow
       kernel.applyKernel(raw, { threadId, interactive: false });
     }
     const picked: Record<string, { execute: (args: unknown) => Promise<string> }> = {};
-    for (const n of ["browser_navigate", "browser_snapshot", "browser_act", "browser_screenshot", "browser_pixel_act", "open_path", "dev_server", "dev_server_log"]) {
+    for (const n of ["browser_navigate", "browser_snapshot", "browser_act", "browser_screenshot", "browser_pixel_act", "open_path", "dev_server", "dev_server_log", "request_takeover", "computer_clipboard_read", "computer_clipboard_write"]) {
       const def = raw[n];
       if (def && typeof def.execute === "function") picked[n] = { execute: (args: unknown) => def.execute(args) as Promise<string> };
     }
@@ -126,6 +126,22 @@ export function buildBrowserExtension() {
           tail: Type.Optional(Type.Number({ description: "Lines to return (default 60, max 200)" })),
         }),
         { replay: "safe" },
+      ),
+      browserTool(
+        "request_takeover",
+        "Ask the user to take control for protected input or human judgment (site login, captcha, 2FA, payment). On background runs there is no interactive user, so this reports that and tells you to proceed autonomously or report the blocker.",
+        Type.Object({ reason: StrOpt("Why human input is needed") }),
+      ),
+      browserTool(
+        "computer_clipboard_read",
+        "Read the OS clipboard text (up to 4000 chars). Read-only.",
+        Type.Object({}),
+        { replay: "safe" },
+      ),
+      browserTool(
+        "computer_clipboard_write",
+        "Write text to the OS clipboard (up to 100k chars). Requires approval; background runs are refused.",
+        Type.Object({ text: StrOpt("Text to put on the clipboard") }),
       ),
     ],
   });

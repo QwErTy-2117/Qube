@@ -151,4 +151,44 @@ describe("kernel executor", () => {
     assert.equal(StateTracker.forThread("t8").lastFingerprint?.textHash, "h2");
     StateTracker.resetForTests();
   });
+  it("ignores cached labels from a different page", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    // Seed cache: e1 was "Place order" on page A.
+    StateTracker.forThread("t11").noteRefs("https://a.com/", [{ ref: "e1", role: "button", name: "Place order" }]);
+    const fpB = { at: 1, url: "https://b.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
+    let asked = 0;
+    let resolved = 0;
+    const out = applyKernel(
+      { browser_act: strTool(async () => JSON.stringify({ ok: true })) },
+      {
+        threadId: "t11", interactive: true,
+        probePage: async () => fpB,
+        resolveLabel: async () => { resolved++; return null; },
+        askApproval: async () => { asked++; return true; },
+      },
+    );
+    const raw = String(await (out.browser_act as any).execute({ actions: [{ kind: "click", ref: "e1" }] }));
+    JSON.parse(raw);
+    // Stale "Place order" must NOT trigger approval on page B; live DOM
+    // resolution was attempted instead.
+    assert.equal(asked, 0);
+    assert.equal(resolved, 1);
+    // Control: same-page cache still gates without live resolution.
+    StateTracker.forThread("t12").noteRefs("https://b.com/", [{ ref: "e1", role: "button", name: "Place order" }]);
+    let asked2 = 0;
+    const out2 = applyKernel(
+      { browser_act: strTool(async () => JSON.stringify({ ok: true })) },
+      {
+        threadId: "t12", interactive: true,
+        probePage: async () => fpB,
+        resolveLabel: async () => { throw new Error("should use cache"); },
+        askApproval: async () => { asked2++; return false; },
+      },
+    );
+    const raw2 = String(await (out2.browser_act as any).execute({ actions: [{ kind: "click", ref: "e1" }] }));
+    assert.match(raw2, /not permitted/i);
+    assert.equal(asked2, 1);
+    StateTracker.resetForTests();
+  });
 });

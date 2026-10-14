@@ -152,12 +152,18 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         // them concurrently instead of one-by-one (a 5-ref act paid 5 serial
         // trips before). Cached labels resolve synchronously first, so the
         // common warm path costs nothing extra. Fail-open per ref, as before.
+        // Correctness: a cached label is only valid on the page it was seen
+        // on — refs are re-enumerated per snapshot, so e1 on page B is a
+        // different element than e1 on page A. A stale cache entry must never
+        // classify (or wave through) an action on another page; fall back to
+        // a live resolution, and to unknown-target handling if that fails.
+        const pageUrl = pre?.url || "";
         const labels = (
           await Promise.all(
             desc.refs.map(async (ref): Promise<string | null> => {
               try {
                 const cached = state.refs.get(ref);
-                if (cached) return cached.label;
+                if (cached && (!pageUrl || cached.url === pageUrl)) return cached.label;
                 return await resolveLabel(ref);
               } catch {
                 return null;

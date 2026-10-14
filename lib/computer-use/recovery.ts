@@ -17,8 +17,8 @@ export function planRecovery(v: Verification, opts?: { failures?: number }): Rec
     return { autoSteps: ["resnapshot"], hints };
   }
   if (s.includes("crash")) {
-    hints.push("Browser connection lost — it will be restarted once with tabs restored. Re-navigate to the page and re-snapshot; do NOT replay the failed action blindly.");
-    return { autoSteps: [], hints };
+    hints.push("Browser connection lost — restarting it once with tabs restored, then re-navigate to the page and re-snapshot; do NOT replay the failed action blindly.");
+    return { autoSteps: ["restart_browser"], hints };
   }
   if (s.includes("new_dialog")) {
     hints.push("A dialog appeared — snapshot/screenshot to read it, then dismiss or answer it deliberately based on the task. Never auto-confirm destructive dialogs.");

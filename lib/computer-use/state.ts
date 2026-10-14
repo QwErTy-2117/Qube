@@ -35,6 +35,8 @@ export class StateTracker {
   checkpoints: Checkpoint[] = [];
   /** Open-tab roster (most-recently-touched first) for multi-tab awareness. */
   tabs: TabEntry[] = [];
+  /** Last auto browser restart (ms epoch) — guards against restart loops. */
+  lastBrowserRestartAt = 0;
   private failures = new Map<string, number>();
   consecutiveFailures = 0;
   private idSeq = 0;

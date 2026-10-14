@@ -282,4 +282,25 @@ describe("kernel executor", () => {
     assert.ok((p._kernel.hints || []).join(" ").match(/STOP flailing/), `expected flail steer, got: ${(p._kernel.hints || []).join(" | ").slice(0, 200)}`);
     StateTracker.resetForTests();
   });
+  it("restarts the browser once per crash, then refuses to loop", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    const tools = { browser_navigate: strTool(async () => JSON.stringify({ error: "Session closed: target closed" })) };
+    const fp = { at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
+    let restarts = 0;
+    const out = applyKernel(tools, {
+      threadId: "t17", interactive: true,
+      probePage: async () => fp,
+      restartBrowser: async () => { restarts++; return true; },
+    });
+    const first = JSON.parse(String(await (out.browser_navigate as any).execute({ url: "https://x.com/" })));
+    assert.equal(first._kernel.verdict, "failed");
+    assert.ok((first._kernel.signals || []).includes("crash"));
+    assert.deepEqual(first._kernel.recovered, ["restart_browser"]);
+    assert.equal(restarts, 1);
+    const second = JSON.parse(String(await (out.browser_navigate as any).execute({ url: "https://x.com/" })));
+    assert.equal(restarts, 1);
+    assert.ok((second._kernel.hints || []).join(" ").match(/already restarted/i));
+    StateTracker.resetForTests();
+  });
 });

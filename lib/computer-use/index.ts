@@ -6,5 +6,5 @@ export { planRecovery } from "./recovery";
 export { assessReplan, REPLAN_AFTER_CONSECUTIVE_FAILURES, FLAIL_DISTINCT_THRESHOLD, type RunMode, type ReplanAssessment } from "./planner";
 export { StateTracker } from "./state";
 export { logAction, sanitizeArgs } from "./logger";
-export { applyKernel, kernelEnabled, type KernelDeps } from "./executor";
+export { applyKernel, kernelEnabled, BROWSER_RESTART_COOLDOWN_MS, type KernelDeps } from "./executor";
 export { observePage, resolveRefLabel, describeRef, hashText, withConsoleNetworkSignals, summarizePageErrors, type PageObservation, type ConsoleEntry, type NetworkFailure, type ObserverCdp, type RefDescription } from "./observer";

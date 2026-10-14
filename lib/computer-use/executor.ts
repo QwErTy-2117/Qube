@@ -16,6 +16,8 @@ export interface KernelDeps {
   /** Richer ref description (label + disabled state). Falls back to resolveLabel when absent. */
   describeRef?: (ref: string) => Promise<RefDescription | null>;
   probePage?: () => Promise<PageFingerprint | null>;
+  /** Restart the managed browser (used once per crash, guarded). Defaults to the real restart. */
+  restartBrowser?: () => Promise<boolean>;
 }
 
 async function defaultProbe(): Promise<PageFingerprint | null> {
@@ -45,6 +47,24 @@ async function defaultDescribeRef(ref: string): Promise<RefDescription | null> {
     if (typeof cdp.getPageTarget !== "function" || typeof cdp.evalIsolated !== "function") return null;
     return await describeRef(cdp, ref);
   } catch { return null; }
+}
+
+/** Restart cadence guard: at most one automatic restart per minute per
+ * thread, so a persistently dead browser becomes a reported blocker
+ * instead of a restart loop. */
+export const BROWSER_RESTART_COOLDOWN_MS = 60_000;
+
+async function defaultRestartBrowser(): Promise<boolean> {
+  try {
+    const mc = await import("@/lib/browser/managed-chrome");
+    if (typeof (mc as any).restartManagedChrome !== "function") return false;
+    await (mc as any).restartManagedChrome();
+    try {
+      const tabs = await import("@/lib/browser/tabs");
+      if (typeof (tabs as any).restoreBrowserTabs === "function") await (tabs as any).restoreBrowserTabs();
+    } catch {}
+    return true;
+  } catch { return false; }
 }
 
 export function kernelEnabled(): boolean {
@@ -82,6 +102,7 @@ function attachKernel(out: unknown, k: KernelSummary): unknown {
 export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Record<string, any> {
   const state = StateTracker.forThread(deps.threadId);
   const probePage = deps.probePage ?? defaultProbe;
+  const restartBrowser = deps.restartBrowser ?? defaultRestartBrowser;
   // Rich ref descriptions (label + disabled state) when the caller provides
   // them; otherwise degrade to label-only resolution with no disabled info.
   const describeOne = deps.describeRef ?? (async (ref: string): Promise<RefDescription | null> => {
@@ -316,6 +337,23 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
               recovered.push("resnapshot");
             }
           } catch {}
+        }
+        if (plan.autoSteps.includes("restart_browser") && desc.domain === "browser") {
+          // Crash recovery actually restarts (the old hint only promised it).
+          // Cooldown-guarded: a browser that dies again within the minute is
+          // a blocker to report, not a loop to spin.
+          const sinceRestart = Date.now() - (state.lastBrowserRestartAt || 0);
+          if (sinceRestart > BROWSER_RESTART_COOLDOWN_MS) {
+            try {
+              if (await restartBrowser()) {
+                state.lastBrowserRestartAt = Date.now();
+                state.persist(deps.threadId);
+                recovered.push("restart_browser");
+              }
+            } catch {}
+          } else {
+            hints = [...hints, "Browser was already restarted moments ago and is still failing — do not restart again; re-check the endpoint and report the blocker."];
+          }
         }
         if (state.consecutiveFailures >= 3) {
           const assessment = assessReplan({

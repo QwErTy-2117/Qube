@@ -33,7 +33,7 @@ export interface Verification {
 }
 
 export interface RecoveryPlan {
-  autoSteps: Array<"resnapshot">;
+  autoSteps: Array<"resnapshot" | "restart_browser">;
   hints: string[];
 }
 

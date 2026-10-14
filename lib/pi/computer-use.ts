@@ -601,7 +601,10 @@ export async function browserNavigate(url: string): Promise<{ url: string; title
   }
   try {
     await cdpCall(target.webSocketDebuggerUrl, "Page.navigate", { url });
-    await new Promise((r) => setTimeout(r, 900));
+    // Settle event-driven (short commit floor + DOM quiet) instead of a
+    // fixed sleep: fast pages resolve sooner, slow ones stay bounded.
+    await new Promise((r) => setTimeout(r, 300));
+    await waitBrowserQuiet(target.webSocketDebuggerUrl, 2500, 400);
     const v = await evalIsolated(target.webSocketDebuggerUrl, "({title: document.title, url: location.href})").catch(() => null);
     return { url: v?.url || url, title: v?.title || "" };
   } catch (e) {

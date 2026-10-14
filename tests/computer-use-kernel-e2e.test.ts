@@ -323,6 +323,23 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
       const f3 = JSON.parse(await run("browser_act", bad));
       assert.equal(f3.blocked, "repeat_failure", `third repeat should block: ${JSON.stringify(f3).slice(0, 300)}`);
 
+      // 6. In-process path (lib/pi/computer-use.ts, used by the browser_*
+      // tools): point it at this ephemeral Chrome and drive the same flow
+      // through the real navigate/snapshot/act, covering the event-driven
+      // post-navigate settle live.
+      process.env.BROWSER_CDP_PORT = String(cdpPort);
+      const cu = await import("../lib/pi/computer-use");
+      const nav2 = await cu.browserNavigate(`${base}/a`);
+      assert.ok(!nav2.error, `in-process navigate failed: ${nav2.error}`);
+      assert.ok((nav2.url || "").includes("/a"), `wrong landing: ${nav2.url}`);
+      const snap3 = await cu.browserSnapshot();
+      assert.ok(!(snap3 as any).error, `in-process snapshot failed`);
+      const link = (snap3.elements || []).find((e: any) => String(e.name || "").includes("Go to page B"));
+      assert.ok(link, "in-process snapshot missing the link ref");
+      const act2 = await cu.browserAct([{ kind: "click", ref: (link as any).ref }]);
+      assert.equal(act2.ok, true, `in-process act failed: ${(act2 as any).error}`);
+      assert.ok((act2.url || "").includes("/b"), `in-process click did not land on /b: ${act2.url}`);
+
       StateTracker.resetForTests();
     } finally {
       try { mcp.kill("SIGTERM"); } catch {}

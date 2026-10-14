@@ -86,4 +86,23 @@ describe("kernel executor", () => {
     assert.equal(w.domain, "desktop");
     assert.equal(w.mutating, true);
   });
+  it("executes resnapshot recovery on stale refs and refreshes state", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    const tools = { browser_act: strTool(async () => JSON.stringify({ error: "Stale ref e1: page re-rendered" })) };
+    const fp = { at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
+    const fresh = { ...fp, at: 2, textHash: "h2" };
+    let probes = 0;
+    const out = applyKernel(tools, {
+      threadId: "t8", interactive: true,
+      probePage: async () => { probes++; return probes <= 2 ? fp : fresh; },
+    });
+    const raw = String(await (out.browser_act as any).execute({ actions: [{ kind: "click", ref: "e1" }] }));
+    const p = JSON.parse(raw);
+    assert.equal(p._kernel.verdict, "failed");
+    assert.deepEqual(p._kernel.recovered, ["resnapshot"]);
+    assert.equal(probes, 3);
+    assert.equal(StateTracker.forThread("t8").lastFingerprint?.textHash, "h2");
+    StateTracker.resetForTests();
+  });
 });

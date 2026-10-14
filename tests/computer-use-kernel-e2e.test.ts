@@ -295,6 +295,7 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
       const f1 = JSON.parse(await run("browser_act", bad));
       assert.equal(f1._kernel.verdict, "failed", `bogus ref should fail: ${JSON.stringify(f1).slice(0, 300)}`);
       assert.ok((f1._kernel.hints || []).length > 0, "failed action should carry a recovery hint");
+      assert.ok((f1._kernel.recovered || []).includes("resnapshot"), `kernel should have executed resnapshot recovery: ${JSON.stringify(f1._kernel).slice(0, 300)}`);
       await run("browser_act", bad);
       const f3 = JSON.parse(await run("browser_act", bad));
       assert.equal(f3.blocked, "repeat_failure", `third repeat should block: ${JSON.stringify(f3).slice(0, 300)}`);

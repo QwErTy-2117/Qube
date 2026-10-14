@@ -46,6 +46,8 @@ export interface KernelSummary {
   hints?: string[];
   blocked?: boolean;
   repeat?: boolean;
+  /** Recovery auto-steps the kernel itself executed (not just suggested). */
+  recovered?: string[];
 }
 
 export interface KernelOptions {

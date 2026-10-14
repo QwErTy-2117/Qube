@@ -97,6 +97,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
       let signals: string[] = [];
       let changed = false;
       let hints: string[] = [];
+      let recovered: string[] = [];
       let blocked = false;
       let pre: PageFingerprint | null = null;
       const log = (v: Verdict) => {
@@ -231,6 +232,19 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         state.noteFailure(sig);
         const plan: RecoveryPlan = planRecovery({ verdict: verdict as "failed" | "no_effect", changed, signals }, { failures: state.failuresFor(sig) });
         hints = plan.hints;
+        // Execute the safe, idempotent auto-steps (currently: resnapshot).
+        // This refreshes the tracker's page state so retries, guards, and
+        // resume context operate on reality instead of the pre-failure view.
+        // Anything else stays a hint for the model — never auto-acted.
+        if (plan.autoSteps.includes("resnapshot") && desc.domain === "browser" && probePage) {
+          try {
+            const fresh = await probePage();
+            if (fresh) {
+              state.lastFingerprint = fresh;
+              recovered.push("resnapshot");
+            }
+          } catch {}
+        }
         if (state.consecutiveFailures >= 3) {
           hints = [...hints, "STOP: 3+ consecutive failures — re-read the goal, re-observe the page with a fresh snapshot, update the plan, and try a different approach or ask the user."];
         }
@@ -252,7 +266,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         if (hints.length) terr.message = `${terr.message}\n[kernel hint: ${hints[0].slice(0, 300)}]`;
         throw terr;
       }
-      const k: KernelSummary = { id: state.nextId(), risk, verdict, changed, signals, hints, blocked };
+      const k: KernelSummary = { id: state.nextId(), risk, verdict, changed, signals, hints, blocked, recovered };
       const meaningful = desc.kind !== "observe" || verdict !== "verified" || signals.length > 0 || hints.length > 0;
       if (!meaningful) return out;
       return attachKernel(out, k);

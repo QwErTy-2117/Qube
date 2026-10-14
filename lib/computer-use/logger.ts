@@ -48,6 +48,7 @@ export function kernelTrailer(k: KernelSummary): string {
   if (k.changed !== undefined) parts.push(k.changed ? "changed" : "unchanged");
   if (k.signals?.length) parts.push(`signals:${k.signals.join(",")}`);
   if (k.hints?.length) parts.push(`hint:${k.hints[0].slice(0, 200)}`);
+  if (k.recovered?.length) parts.push(`recovered:${k.recovered.join(",")}`);
   if (k.blocked) parts.push("blocked:repeat_failure");
   return `[kernel ${parts.join(" | ")}]`;
 }

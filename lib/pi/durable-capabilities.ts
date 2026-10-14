@@ -71,8 +71,11 @@ export async function installTurnCapabilities(
   };
 }
 
-/** Default loaders backed by Qube's real MCP + connector subsystems. */
-export function defaultCapabilityLoaders(threadId: string, instanceId?: string): TurnCapabilities {
+/** Default loaders backed by Qube's real MCP + connector subsystems. Pass
+ * `interactive: true` for foreground (user-chat) turns so kernel-gated
+ * tools can ask approval instead of denying; background turns omit it and
+ * stay headless-safe. */
+export function defaultCapabilityLoaders(threadId: string, instanceId?: string, opts?: { interactive?: boolean }): TurnCapabilities {
   return {
     connectors: async () => {
       const { loadConnectorTools } = await import("@/lib/pi/connectors");
@@ -91,7 +94,8 @@ export function defaultCapabilityLoaders(threadId: string, instanceId?: string):
       // repeat-block on a retried send could break legitimate flows.
       try {
         const { applyKernel, kernelEnabled } = await import("@/lib/computer-use/index");
-        if (kernelEnabled()) applyKernel(tools as Record<string, any>, { threadId, interactive: false });
+        const interactive = opts?.interactive ?? false;
+        if (kernelEnabled()) applyKernel(tools as Record<string, any>, { threadId, interactive });
       } catch {}
       return { tools, cleanup: () => closeMcpClients(clients) };
     },

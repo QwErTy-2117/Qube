@@ -81,12 +81,15 @@ export async function POST(req: Request) {
         originalMessages: (messages ?? []) as any[],
         execute: async ({ writer }) => {
           try {
-            await streamDurableToWriter(currentThreadId, text, buildRequestId(currentThreadId, String(Date.now())), writer as never, {
-              modelName,
-              reasoningEffort: typeof reasoningEffort === "string" ? reasoningEffort : undefined,
-              instanceId: typeof instanceId === "string" ? instanceId : undefined,
-              signal: req.signal ?? undefined,
-            });
+          await streamDurableToWriter(currentThreadId, text, buildRequestId(currentThreadId, String(Date.now())), writer as never, {
+            modelName,
+            reasoningEffort: typeof reasoningEffort === "string" ? reasoningEffort : undefined,
+            instanceId: typeof instanceId === "string" ? instanceId : undefined,
+            signal: req.signal ?? undefined,
+            // Foreground user chat: kernel-gated tools may raise the approval
+            // card instead of denying outright.
+            interactive: true,
+          });
           } catch (e) {
             const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
             if (!/abort/i.test(msg)) {

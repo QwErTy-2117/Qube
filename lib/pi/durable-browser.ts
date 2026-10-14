@@ -17,26 +17,86 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 
 type KernelMod = typeof import("@/lib/computer-use/index");
 
-let kernelToolsCache: { threadId: string; tools: Record<string, { execute: (args: unknown) => Promise<string> }> } | null = null;
+/**
+ * Per-turn context for the durable browser extension. The registry (and
+ * this extension) is process-global, but turns carry their own thread and
+ * foreground-ness: streamDurableToWriter records them per turn, and tool
+ * executes resolve their chat thread via resolveBrowserThread below.
+ * Unknown threads default to headless-safe (deny above interact).
+ */
+const turnContexts = new Map<string, { interactive: boolean }>();
+export function setBrowserTurnContext(threadId: string, ctx: { interactive: boolean }): void {
+  try {
+    turnContexts.set(String(threadId), { interactive: !!ctx.interactive });
+    while (turnContexts.size > 100) {
+      const oldest = turnContexts.keys().next().value as string | undefined;
+      if (!oldest) break;
+      turnContexts.delete(oldest);
+    }
+  } catch {}
+}
 
-async function kernelTool(threadId: string, name: string): Promise<(args: unknown) => Promise<string>> {
-  if (!kernelToolsCache || kernelToolsCache.threadId !== threadId) {
+const conversationThreads = new Map<string, string>();
+
+/**
+ * Resolve the chat thread + interactivity for a durable tool call. The
+ * tool api carries conversationId (durable conversation) while the kernel
+ * and permission UI work in chat-thread terms — map via the ThreadMap
+ * ledger (cached; re-read on miss). Without a conversationId there is no
+ * thread to map to, so fall back to the per-call taskId, headless.
+ */
+export async function resolveBrowserThread(api: unknown): Promise<{ threadId: string; interactive: boolean }> {
+  const fallback = String((api as any)?.taskId || "durable");
+  const conversationId = (api as any)?.conversationId;
+  if (typeof conversationId !== "string" || !conversationId) return { threadId: fallback, interactive: false };
+  const hit = conversationThreads.get(conversationId);
+  if (hit) {
+    const ctx = turnContexts.get(hit);
+    return { threadId: hit, interactive: ctx?.interactive ?? false };
+  }
+  try {
+    const { getDurableHarness } = await import("@/lib/pi/durable");
+    const { ThreadMap } = await import("@/lib/pi/durable-conversations");
+    const { BACKGROUND_CONTEXT } = await import("@earendil-works/chord/context");
+    const h = await getDurableHarness(BACKGROUND_CONTEXT);
+    const snap = await h.snapshot(ThreadMap, BACKGROUND_CONTEXT);
+    const ids = (snap as any)?.ids as Record<string, string> | undefined;
+    if (ids) {
+      for (const [threadId, convId] of Object.entries(ids)) {
+        if (typeof convId === "string" && convId) conversationThreads.set(convId, threadId);
+      }
+    }
+    const threadId = conversationThreads.get(conversationId);
+    if (threadId) {
+      const ctx = turnContexts.get(threadId);
+      return { threadId, interactive: ctx?.interactive ?? false };
+    }
+  } catch {}
+  return { threadId: fallback, interactive: false };
+}
+
+let kernelToolsCache: { key: string; tools: Record<string, { execute: (args: unknown) => Promise<string> }> } | null = null;
+
+async function kernelTool(api: unknown, name: string): Promise<(args: unknown) => Promise<string>> {
+  const { threadId, interactive } = await resolveBrowserThread(api);
+  const key = `${threadId} ${interactive ? "fg" : "bg"}`;
+  if (!kernelToolsCache || kernelToolsCache.key !== key) {
     const kernel: KernelMod = await import("@/lib/computer-use/index");
     const { createPiTools } = await import("@/lib/pi/tools");
     const { createComputerTools } = await import("@/lib/pi/computer-tools");
     const raw: Record<string, any> = {
-      ...createPiTools(threadId, { includeAskUser: false, includeSubagents: false, includeTodos: false }),
-      ...createComputerTools(threadId, { includeAskUser: false }),
+      ...createPiTools(threadId, { includeAskUser: interactive, includeSubagents: false, includeTodos: false }),
+      ...createComputerTools(threadId, { includeAskUser: interactive }),
     };
     if (kernel.kernelEnabled()) {
-      kernel.applyKernel(raw, { threadId, interactive: false });
+      kernel.applyKernel(raw, { threadId, interactive });
     }
     const picked: Record<string, { execute: (args: unknown) => Promise<string> }> = {};
     for (const n of ["browser_navigate", "browser_snapshot", "browser_act", "browser_screenshot", "browser_pixel_act", "open_path", "dev_server", "dev_server_log", "request_takeover", "computer_clipboard_read", "computer_clipboard_write"]) {
       const def = raw[n];
       if (def && typeof def.execute === "function") picked[n] = { execute: (args: unknown) => def.execute(args) as Promise<string> };
     }
-    kernelToolsCache = { threadId, tools: picked };
+    kernelToolsCache = { key, tools: picked };
   }
   const t = kernelToolsCache.tools[name];
   if (!t) throw new Error(`browser tool ${name} unavailable`);
@@ -51,8 +111,7 @@ function browserTool(name: string, description: string, parameters: unknown, opt
     ...(opts?.replay === "safe" ? { replay: "safe" as const } : {}),
     execute: async (args, api) => {
       try {
-        const threadId = String((api as { taskId?: unknown }).taskId || "durable");
-        const run = await kernelTool(threadId, name);
+        const run = await kernelTool(api, name);
         const out = await run(args);
         const text = typeof out === "string" ? out : JSON.stringify(out);
         return { output: [{ type: "text", text: text.slice(0, 20000) }] as Array<{ type: "text"; text: string }> };
@@ -147,7 +206,9 @@ export function buildBrowserExtension() {
   });
 }
 
-/** Test-only: drop the cached kernel tools so tests get fresh threads. */
+/** Test-only: drop cached kernel tools and turn/thread mappings. */
 export function resetDurableBrowserForTests(): void {
   kernelToolsCache = null;
+  turnContexts.clear();
+  conversationThreads.clear();
 }

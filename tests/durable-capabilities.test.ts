@@ -35,10 +35,11 @@ describe("durable MCP capabilities go through the kernel", () => {
     assert.ok(mcp);
     const { tools, cleanup } = await mcp();
     try {
-      // No browser needed: "Buy now" typed text classifies as financial, and
-      // headless runs deny above interact before any CDP call happens.
+      // No browser needed and no side effects possible: ref e999 resolves
+      // nowhere (live browser or not), so the typed "Buy now" drives the
+      // financial classification and headless runs deny before any CDP call.
       const out = (await (tools.act as any).execute(
-        { actions: [{ kind: "type", ref: "e1", text: "Buy now" }] },
+        { actions: [{ kind: "type", ref: "e999", text: "Buy now" }] },
         {},
       )) as unknown;
       const parsed = typeof out === "string" ? JSON.parse(out) : out;

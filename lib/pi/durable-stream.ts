@@ -143,6 +143,13 @@ export async function streamDurableToWriter(
     capabilities?: import("@/lib/pi/durable-capabilities").TurnCapabilities;
     /** Disable per-turn capability loading entirely (tests/headless). */
     skipCapabilities?: boolean;
+    /**
+     * Foreground (user-chat) turn: kernel-gated tools may ask approval via
+     * the existing permission card instead of denying. Omit (or false) for
+     * background turns, which stay headless-safe. Callers: app/api/chat
+     * passes true; anything headless leaves it unset.
+     */
+    interactive?: boolean;
   },
 ): Promise<void> {
   const context = opts?.context ?? BACKGROUND_CONTEXT;
@@ -152,6 +159,13 @@ export async function streamDurableToWriter(
     { modelName: opts?.modelName ?? null, reasoningEffort: opts?.reasoningEffort },
     context,
   );
+  // Record this turn's foreground-ness for the durable browser extension
+  // (process-global registry): tool executes resolve their chat thread via
+  // the ThreadMap and read interactivity from here. Best-effort, never fatal.
+  try {
+    const { setBrowserTurnContext } = await import("@/lib/pi/durable-browser");
+    setBrowserTurnContext(threadId, { interactive: opts?.interactive ?? false });
+  } catch {}
   // Load this turn's MCP + connector tools into the process registry
   // before generation resolves the tool set. Non-fatal and cleaned up
   // after the turn so stdio MCP clients never leak.
@@ -161,7 +175,7 @@ export async function streamDurableToWriter(
       const { getDurableRegistry } = await import("@/lib/pi/durable");
       const { installTurnCapabilities, defaultCapabilityLoaders } = await import("@/lib/pi/durable-capabilities");
       const registry = await getDurableRegistry();
-      const loaders = opts?.capabilities ?? defaultCapabilityLoaders(threadId, opts?.instanceId);
+      const loaders = opts?.capabilities ?? defaultCapabilityLoaders(threadId, opts?.instanceId, { interactive: opts?.interactive ?? false });
       const installed = await installTurnCapabilities(registry as never, loaders);
       capabilityCleanup = installed.cleanup;
       if (installed.errors.length > 0) {

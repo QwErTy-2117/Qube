@@ -13,11 +13,19 @@ export interface ActionRecord {
   at: number;
 }
 
+export interface Checkpoint {
+  label: string;
+  at: number;
+  url: string;
+  verdict: string;
+}
+
 export class StateTracker {
   private static instances = new Map<string, StateTracker>();
   history: ActionRecord[] = [];
   refs = new Map<string, { label: string; url: string }>();
   lastFingerprint: PageFingerprint | null = null;
+  checkpoints: Checkpoint[] = [];
   private failures = new Map<string, number>();
   consecutiveFailures = 0;
   private idSeq = 0;
@@ -64,6 +72,16 @@ export class StateTracker {
     if (this.history.length > 50) this.history.splice(0, this.history.length - 50);
   }
 
+  /** Milestone marker for an important step that verifiably succeeded
+   * (e.g. a navigation landing). Surfaced in resume context so the next
+   * run knows what already worked instead of redoing it. */
+  checkpoint(label: string, url = "", verdict = "verified"): void {
+    try {
+      this.checkpoints.push({ label: String(label).slice(0, 160), at: Date.now(), url: String(url).slice(0, 300), verdict });
+      if (this.checkpoints.length > 20) this.checkpoints.splice(0, this.checkpoints.length - 20);
+    } catch {}
+  }
+
   private file(threadId: string): string {
     const safe = String(threadId || "global").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "global";
     return join(getDataDir(), ".memory", "computer-use", `${safe}.json`);
@@ -72,8 +90,9 @@ export class StateTracker {
   restore(threadId: string): void {
     try {
       const raw = readFileSync(this.file(threadId), "utf-8");
-      const p = JSON.parse(raw) as { history?: ActionRecord[]; lastUrl?: string; at?: number };
+      const p = JSON.parse(raw) as { history?: ActionRecord[]; lastUrl?: string; at?: number; checkpoints?: Checkpoint[] };
       if (Array.isArray(p.history)) this.history = p.history.slice(-50);
+      if (Array.isArray(p.checkpoints)) this.checkpoints = p.checkpoints.slice(-20);
       if (p.lastUrl) this.lastFingerprint = { at: p.at || 0, url: p.lastUrl, title: "", textHash: "", textLen: 0, dialog: false };
     } catch {}
   }
@@ -87,6 +106,7 @@ export class StateTracker {
         at: Date.now(),
         lastUrl: this.lastFingerprint?.url || "",
         history: this.history.slice(-50).map((h) => ({ ...h, summary: h.summary.slice(0, 160) })),
+        checkpoints: this.checkpoints.slice(-20),
         lastVerdict: last?.verdict,
       };
       writeFileSync(f, JSON.stringify(payload).slice(0, 20000));
@@ -94,12 +114,17 @@ export class StateTracker {
   }
 
   resumeContext(): string {
-    if (this.history.length === 0) return "";
+    if (this.history.length === 0 && this.checkpoints.length === 0) return "";
     const last = this.history[this.history.length - 1];
     const fails = this.history.filter((h) => h.verdict === "failed" || h.verdict === "no_effect").slice(-3)
       .map((h) => h.summary).join("; ");
-    let s = `Prior browser/computer session: last page ${this.lastFingerprint?.url || "unknown"} (${last.verdict}: ${last.summary}).`;
+    let s = this.history.length > 0
+      ? `Prior browser/computer session: last page ${this.lastFingerprint?.url || "unknown"} (${last.verdict}: ${last.summary}).`
+      : `Prior browser/computer session.`;
+    if (this.checkpoints.length > 0) {
+      s += ` Confirmed checkpoints: ${this.checkpoints.slice(-5).map((c) => c.label).join("; ")}.`;
+    }
     if (fails) s += ` Recent failures (do not blindly repeat): ${fails}.`;
-    return s.slice(0, 500);
+    return s.slice(0, 600);
   }
 }

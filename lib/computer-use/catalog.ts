@@ -132,6 +132,11 @@ export function describeAction(tool: string, args: Record<string, unknown>): Act
     return d;
   }
   if (tool.startsWith("computer_")) {
+    if (tool === "computer_clipboard_read") {
+      const d = base(tool, "desktop", "observe", false);
+      d.summary = summarize(tool, ["clipboard"]);
+      return d;
+    }
     const d = base(tool, "desktop", "interact", true);
     d.summary = summarize(tool, [String(a.app ?? a.text ?? a.key ?? "").slice(0, 60)]);
     return d;

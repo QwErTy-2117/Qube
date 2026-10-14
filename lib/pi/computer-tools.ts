@@ -37,6 +37,132 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+export type ClipboardCmd = { cmd: string; args: string[]; useStdin: boolean };
+
+/**
+ * Native clipboard commands per OS (ocu has no clipboard tool, so Qube
+ * drives the platform clipboard directly). Reads run without approval;
+ * writes go through the approval gate like all other computer_* mutations.
+ * Pure selector — unit-tested without touching a real clipboard.
+ */
+export function clipboardCommands(platform: string): {
+  read: ClipboardCmd[];
+  write: ClipboardCmd[];
+  installHint: string;
+} {
+  if (platform === "darwin") {
+    return {
+      read: [{ cmd: "pbpaste", args: [], useStdin: false }],
+      write: [{ cmd: "pbcopy", args: [], useStdin: true }],
+      installHint: "pbcopy/pbpaste ship with macOS — no install needed.",
+    };
+  }
+  if (platform === "win32") {
+    return {
+      read: [{ cmd: "powershell", args: ["-noprofile", "-command", "Get-Clipboard"], useStdin: false }],
+      write: [{ cmd: "powershell", args: ["-noprofile", "-command", "$input | Set-Clipboard"], useStdin: true }],
+      installHint: "Clipboard cmdlets ship with Windows PowerShell 5.1+.",
+    };
+  }
+  return {
+    read: [
+      { cmd: "xclip", args: ["-selection", "clipboard", "-o"], useStdin: false },
+      { cmd: "xsel", args: ["--clipboard", "--output"], useStdin: false },
+    ],
+    write: [
+      { cmd: "xclip", args: ["-selection", "clipboard", "-i"], useStdin: true },
+      { cmd: "xsel", args: ["--clipboard", "--input"], useStdin: true },
+    ],
+    installHint: "Install a clipboard helper: `sudo apt install xclip` (or xsel). Headless servers without X/Wayland have no clipboard.",
+  };
+}
+
+function runWithStdin(cmd: string, args: string[], input: string, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(cmd, args, { windowsHide: true });
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    let stderr = "";
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch {}
+      const err = new Error("clipboard write timed out") as Error & { code?: string };
+      reject(err);
+    }, timeoutMs);
+    try { child.stderr?.on("data", (d) => { stderr += String(d); }); } catch {}
+    child.on("error", (e) => { clearTimeout(timer); reject(e); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve("");
+      else {
+        const err = new Error(stderr.trim() || `clipboard writer exited ${code}`) as Error & { code?: string };
+        if (/not recognized|not found|ENOENT/i.test(stderr)) (err as { code?: string }).code = "ENOENT";
+        reject(err);
+      }
+    });
+    try {
+      if (!child.stdin) throw new Error("no stdin on clipboard writer");
+      child.stdin.on("error", () => {});
+      child.stdin.write(input);
+      child.stdin.end();
+    } catch (e) {
+      clearTimeout(timer);
+      reject(e);
+    }
+  });
+}
+
+async function tryCandidates(cands: ClipboardCmd[], input?: string): Promise<{ cmd: string; out: string }> {
+  let lastErr = "";
+  for (const c of cands) {
+    try {
+      if (c.useStdin) {
+        await runWithStdin(c.cmd, c.args, input ?? "", 10000);
+        return { cmd: c.cmd, out: "" };
+      }
+      const { stdout } = await execFileAsync(c.cmd, c.args, { timeout: 10000, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
+      return { cmd: c.cmd, out: (stdout || "").toString() };
+    } catch (e: unknown) {
+      const err = e as { code?: unknown; message?: string };
+      lastErr = (typeof err?.message === "string" ? err.message : String(e)).slice(0, 300);
+      void lastErr;
+    }
+  }
+  throw new Error("unavailable");
+}
+
+export async function runClipboardRead(): Promise<string> {
+  const { read, installHint } = clipboardCommands(process.platform);
+  try {
+    const { out } = await tryCandidates(read);
+    const text = out.replace(/\r\n/g, "\n");
+    return JSON.stringify({
+      tool: "computer_clipboard_read",
+      chars: text.length,
+      truncated: text.length > 4000,
+      text: text.slice(0, 4000),
+    });
+  } catch {
+    return JSON.stringify({ error: true, tool: "computer_clipboard_read", message: `Clipboard read unavailable on this machine. ${installHint}` });
+  }
+}
+
+export async function runClipboardWrite(text: string): Promise<string> {
+  const t = String(text ?? "");
+  if (!t) return JSON.stringify({ error: true, tool: "computer_clipboard_write", message: "text is required." });
+  if (t.length > 100000) return JSON.stringify({ error: true, tool: "computer_clipboard_write", message: "Clipboard text capped at 100k chars." });
+  const { write, installHint } = clipboardCommands(process.platform);
+  try {
+    await tryCandidates(write, t);
+    return JSON.stringify({ tool: "computer_clipboard_write", status: "ok", chars: t.length });
+  } catch {
+    return JSON.stringify({ error: true, tool: "computer_clipboard_write", message: `Clipboard write unavailable on this machine. ${installHint}` });
+  }
+}
+
 export type ComputerToolsOptions = {
   /** Foreground chat passes true (default); subagents/scheduler pass false. */
   includeAskUser?: boolean;
@@ -688,6 +814,21 @@ export function createComputerTools(threadId: string, opts?: ComputerToolsOption
         "Check Computer Use permissions/install (ocu doctor). On macOS reports Accessibility + Screen Recording. Read-only, no approval needed.",
       inputSchema: z.object({ label: labelField }).passthrough(),
       execute: async () => runOcuRaw(["doctor", "--json"]),
+    }),
+
+    computer_clipboard_read: tool({
+      description:
+        "Read the OS clipboard text (up to 4000 chars). Use to grab copied links, codes, or text the user copied for you. Read-only, no approval needed.",
+      inputSchema: z.object({ label: labelField }).passthrough(),
+      execute: async () => runClipboardRead(),
+    }),
+
+    computer_clipboard_write: tool({
+      description:
+        "Write text to the OS clipboard (up to 100k chars). Use to hand links, code, or results to the user for pasting elsewhere. Needs user approval in chat.",
+      inputSchema: z.object({ text: z.string().describe("Text to put on the clipboard"), label: labelField }).passthrough(),
+      execute: async (args: any) =>
+        gate("computer_clipboard_write", args ?? {}, () => runClipboardWrite(String((args as any)?.text ?? ""))),
     }),
 
     computer_capabilities: tool({

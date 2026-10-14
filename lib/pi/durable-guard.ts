@@ -4,7 +4,7 @@ import { isSensitiveConnectorTool } from "@/lib/permissions/sensitive";
 import { isDestructiveCommand } from "@/lib/middleware/workspace";
 import { Approvals } from "@/lib/pi/durable-docs";
 
-const COMPUTER_READONLY = new Set(["computer_list_apps", "computer_get_app_state"]);
+const COMPUTER_READONLY = new Set(["computer_list_apps", "computer_get_app_state", "computer_clipboard_read"]);
 
 /**
  * Mirror of the foreground permission policy for the durable path:

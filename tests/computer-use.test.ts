@@ -48,6 +48,7 @@ describe("computer-use: safety classification", () => {
       "computer_list_apps",
       "computer_get_app_state",
       "computer_doctor",
+      "computer_clipboard_read",
       "computer_capabilities",
     ]) {
       assert.ok(isReadOnlyComputerTool(t), `${t} should be read-only`);
@@ -111,6 +112,8 @@ describe("computer-use: tool factory", () => {
       "computer_launch_app",
       "computer_activate_window",
       "computer_doctor",
+      "computer_clipboard_read",
+      "computer_clipboard_write",
       "computer_capabilities",
       "computer_run_sequence",
     ]) {
@@ -152,6 +155,35 @@ describe("computer-use: tool factory", () => {
     const parsed = JSON.parse(out);
     assert.equal(parsed.error, true);
     assert.equal(parsed.available, false);
+  });
+  it("clipboard write is gated but clipboard read is not", async () => {
+    const tools = createComputerTools("bg-thread", { includeAskUser: false }) as Record<string, any>;
+    const denied = JSON.parse(await tools.computer_clipboard_write.execute({ text: "hi" }));
+    assert.equal(denied.error, true);
+    assert.equal(denied.available, false);
+  });
+});
+
+describe("computer-use: clipboard commands per platform (no desktop needed)", () => {
+  it("selects native helpers per OS", async () => {
+    const { clipboardCommands } = await import("../lib/pi/computer-tools");
+    const mac = clipboardCommands("darwin");
+    assert.equal(mac.read[0].cmd, "pbpaste");
+    assert.equal(mac.write[0].cmd, "pbcopy");
+    const win = clipboardCommands("win32");
+    assert.equal(win.read[0].cmd, "powershell");
+    assert.ok(/Set-Clipboard/.test(win.write[0].args.join(" ")));
+    const lin = clipboardCommands("linux");
+    assert.equal(lin.read[0].cmd, "xclip");
+    assert.ok(/apt install xclip/.test(lin.installHint));
+  });
+  it("read degrades to a JSON unavailable error, never throws", async () => {
+    const { runClipboardRead, runClipboardWrite } = await import("../lib/pi/computer-tools");
+    for (const out of [await runClipboardRead(), await runClipboardWrite("hello")]) {
+      assert.equal(typeof out, "string");
+      JSON.parse(out);
+    }
+    assert.equal(JSON.parse(await runClipboardWrite("")).error, true);
   });
 });
 

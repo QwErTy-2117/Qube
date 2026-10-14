@@ -58,4 +58,32 @@ describe("kernel executor", () => {
     const raw = String(await (out.browser_snapshot as any).execute({}));
     assert.ok(raw.includes("https://x.com/"));
   });
+  it("records a checkpoint on verified navigation", async () => {
+    const { StateTracker } = await import("../lib/computer-use/state");
+    StateTracker.resetForTests();
+    const tools = { browser_navigate: strTool(async () => JSON.stringify({ url: "https://x.com/shop", title: "Shop" })) };
+    const fps = [
+      { at: 1, url: "https://x.com/", title: "t", textHash: "h1", textLen: 5, dialog: false },
+      { at: 2, url: "https://x.com/shop", title: "Shop", textHash: "h2", textLen: 9, dialog: false },
+    ];
+    const out = applyKernel(tools, { threadId: "t7", interactive: true, probePage: async () => fps.shift() ?? fps[0] });
+    const raw = await (out.browser_navigate as any).execute({ url: "https://x.com/shop" });
+    const p = JSON.parse(String(raw));
+    assert.equal(p._kernel.verdict, "verified");
+    const state = StateTracker.forThread("t7");
+    assert.equal(state.checkpoints.length, 1);
+    assert.match(state.checkpoints[0].label, /x.com\/shop/);
+    assert.match(state.resumeContext(), /Confirmed checkpoints/);
+    StateTracker.resetForTests();
+  });
+  it("catalogs clipboard tools as desktop observe/interact", async () => {
+    const { describeAction } = await import("../lib/computer-use/catalog");
+    const r = describeAction("computer_clipboard_read", {});
+    assert.equal(r.domain, "desktop");
+    assert.equal(r.kind, "observe");
+    assert.equal(r.mutating, false);
+    const w = describeAction("computer_clipboard_write", { text: "hi" });
+    assert.equal(w.domain, "desktop");
+    assert.equal(w.mutating, true);
+  });
 });

@@ -61,6 +61,7 @@ export function isReadOnlyComputerTool(qubeTool: string): boolean {
     qubeTool === "computer_get_window" ||
     qubeTool === "computer_get_window_state" ||
     qubeTool === "computer_doctor" ||
+    qubeTool === "computer_clipboard_read" ||
     qubeTool === "computer_capabilities"
   );
 }

@@ -236,6 +236,12 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
         }
       } else if (verdict === "verified") {
         state.noteSuccess(); state.clearFailures(sig);
+        // Milestone checkpoint: a verified navigation is proof an important
+        // step succeeded — resume context reuses it instead of redoing it.
+        if (desc.kind === "navigate" && desc.domain === "browser") {
+          const url = state.lastFingerprint?.url || desc.urls[0] || "";
+          if (url) state.checkpoint(`Reached ${url}`, url, verdict);
+        }
       }
       state.record({ id: state.nextId(), tool: name, summary: desc.summary, risk, verdict, signals, at: Date.now() });
       log(verdict); state.persist(deps.threadId);

@@ -131,6 +131,7 @@ export function classifyLocalTool(
   if (toolName === "computer_list_apps" || toolName === "computer_get_app_state" ||
       toolName === "computer_list_windows" || toolName === "computer_get_window" ||
       toolName === "computer_get_window_state" || toolName === "computer_doctor" ||
+      toolName === "computer_clipboard_read" ||
       toolName === "computer_capabilities") {
     return { sensitive: false, purpose: "" };
   }

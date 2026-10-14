@@ -263,10 +263,16 @@ describe("kernel e2e: real perceive-act-verify-recover loop", () => {
       const run = (name: string, args: unknown) => (wrapped[name] as any).execute(args) as Promise<string>;
 
       // 1. Navigate to page A → verified with a real pre/post fingerprint diff.
+      // Navigation itself now settles event-driven (short floor + DOM quiet)
+      // instead of a fixed 900ms sleep.
       const navRaw = await run("browser_navigate", { url: `${base}/a` });
       const nav = JSON.parse(navRaw);
       assert.equal(nav._kernel.verdict, "verified", `navigate not verified: ${navRaw.slice(0, 400)}`);
       assert.equal(nav._kernel.changed, true);
+
+      // 1b. wait_load settles event-driven on the quiet page (no fixed sleep).
+      const waited = await client.tool("wait_load", {});
+      assert.match(waited, /waited \d+ms \(settled\)/, `wait_load should settle, got: ${waited.slice(0, 200)}`);
 
       // 2. Snapshot → observe passthrough (no _kernel noise on clean reads).
       const snapRaw = await run("browser_snapshot", {});

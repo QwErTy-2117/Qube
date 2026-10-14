@@ -195,8 +195,11 @@ export function browserUseInstructions(pageBrowserAllowed: boolean): string {
       : ``) +
     ` Use web_search and web_fetch to look something up or read a page without the browser. ` +
     `Use request_takeover when the user must provide protected input or human judgment. ` +
-    `Tool results may carry a [kernel ...] trailer or _kernel block with the action verdict (verified/no_effect/failed), change signals, and recovery hints. ` +
-    `Respect repeat_failure blocks: never replay the blocked action — re-observe and switch methods.`
+    `Tool results may carry a [kernel ...] trailer or _kernel block: verdict (verified/no_effect/failed/blocked/denied), change signals (url_changed, text_changed, new_dialog, console/network error details), executed recovery steps, and hints. ` +
+    `Treat hints as orders: never replay a blocked or repeat-warned action — re-observe and switch methods (ref ↔ coordinates ↔ keyboard). ` +
+    `Disabled targets fail before acting: satisfy prerequisites (required fields, scroll into view) instead of clicking again. ` +
+    `Never attempt to solve or bypass CAPTCHAs, logins, or paywalls — call request_takeover so the user handles them. ` +
+    `Risky clicks (purchase, delete, account changes, sends, credential entry) pause for user approval; in background runs they are refused, so report the blocker.`
   );
 }
 

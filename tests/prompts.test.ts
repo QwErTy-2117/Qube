@@ -13,6 +13,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { buildSubagentSystemPrompt } from "@/lib/pi/subagents";
+import { browserUseInstructions } from "@/lib/pi/prompt-context";
 import { buildPiTaskSystemPrompt } from "@/lib/pi/task-runner";
 
 const currentYear = String(new Date().getFullYear());
@@ -33,6 +34,23 @@ describe("subagent system prompt", () => {
     const prompt = buildSubagentSystemPrompt("researcher", "Installed: foo. Apply one.");
     assert.match(prompt, /Installed: foo/);
     assert.match(prompt, /Current time:/);
+  });
+});
+
+describe("browser instructions describe the live kernel contract", () => {
+  it("documents verdicts, repeat discipline, disabled targets, takeover, and gating", () => {
+    const text = browserUseInstructions(true);
+    for (const term of [
+      "_kernel",
+      "blocked/denied",
+      "repeat-warned",
+      "Disabled targets fail before acting",
+      "request_takeover",
+      "CAPTCHAs",
+      "approval",
+    ]) {
+      assert.ok(text.includes(term), `browser instructions must mention: ${term}`);
+    }
   });
 });
 

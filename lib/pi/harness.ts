@@ -25,6 +25,7 @@ import {
   buildContinuationNudge,
   buildIdleContinueNudge,
   buildRecoveryNudge,
+  extractToolError,
   shouldIdleContinue,
   shouldRecoverContinue,
   type TodoSnapshotItem,
@@ -697,35 +698,11 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
         } catch {}
         try {
           const out = await (origExecute as (...a: any[]) => unknown)(...args);
-          if (out && typeof out === "object" && (out as any).isError === true) {
-            // MCP-style error result (e.g. stale browser ref): remember it for
-            // the continuation nudge, still return it so the model sees it now.
-            try {
-              const parts = (out as any).content;
-              const text = Array.isArray(parts)
-                ? parts.map((p: any) => (typeof p?.text === "string" ? p.text : "")).join(" ").trim()
-                : "";
-              lastToolError = `${toolName}: ${(text || JSON.stringify(out)).slice(0, 400)}`;
-            } catch {
-              lastToolError = `${toolName}: tool reported an error`;
-            }
-          } else if (typeof out === "string" && /^error:/i.test(out.trim())) {
-            lastToolError = `${toolName}: ${out.trim().slice(0, 400)}`;
-          } else if (typeof out === "string" && /"\s*error\s*"\s*:\s*true/.test(out.slice(0, 600))) {
-            // Pi tools return JSON-string errors ({"error":true,…}) rather
-            // than MCP isError objects — surface those for recovery too.
-            // Keep the human-readable message, not the whole JSON blob.
-            try {
-              const parsed = JSON.parse(out);
-              const msg = String(parsed.message || parsed.error || out).slice(0, 300);
-              lastToolError = `${toolName}: ${msg}`;
-            } catch {
-              lastToolError = `${toolName}: ${out.trim().slice(0, 400)}`;
-            }
-          } else {
-            // A clean result supersedes any earlier failure.
-            lastToolError = null;
-          }
+          // Single source of truth for "did this tool call fail" (see
+          // extractToolError): covers MCP isError, Pi JSON errors, and the
+          // kernel's repeat-block/deny shapes, so a blocked repeat or a
+          // denied action feeds recovery instead of looking clean.
+          lastToolError = extractToolError(toolName, out);
           return out;
         } catch (e: any) {
           const msg = e instanceof Error ? e.message : String(e);

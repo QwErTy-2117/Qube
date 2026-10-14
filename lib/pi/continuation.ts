@@ -107,6 +107,65 @@ export function shouldRecoverContinue(opts: {
   return opts.toolCallCount > 0 && !!opts.lastError?.trim() && opts.silentRounds < opts.budget;
 }
 
+/**
+ * Extract a continuation-worthy error from a tool result, or null when the
+ * result is clean (a clean result supersedes any earlier failure — the
+ * caller assigns the return directly to lastToolError).
+ *
+ * Covers every result shape in the system: MCP isError objects, "error:"
+ * text, Pi JSON errors ({"error":true}), explicit failures ({"ok":false}),
+ * and the kernel's own gates ({"blocked":"repeat_failure"},
+ * {"error":"Operation not permitted"}). The last two matter: without them a
+ * blocked repeat or a denied action looks like SUCCESS and no recovery
+ * continuation ever fires for it.
+ */
+export function extractToolError(toolName: string, out: unknown): string | null {
+  try {
+    if (out && typeof out === "object") {
+      const o = out as { isError?: unknown; content?: unknown };
+      if (o.isError === true) {
+        try {
+          const parts = o.content;
+          const text = Array.isArray(parts)
+            ? parts.map((p: unknown) => (p && typeof p === "object" && typeof (p as { text?: unknown }).text === "string" ? String((p as { text: unknown }).text) : "")).join(" ").trim()
+            : "";
+          return `${toolName}: ${(text || JSON.stringify(out)).slice(0, 400)}`;
+        } catch {
+          return `${toolName}: tool reported an error`;
+        }
+      }
+      return null;
+    }
+    if (typeof out !== "string") return null;
+    const t = out.trim();
+    if (/^error:/i.test(t)) return `${toolName}: ${t.slice(0, 400)}`;
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(t);
+    } catch {
+      parsed = null;
+    }
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      if (typeof parsed.blocked === "string" && parsed.blocked) {
+        return `${toolName}: blocked (${parsed.blocked}): ${String(parsed.message || "").slice(0, 300)}`;
+      }
+      if (parsed.ok === false || parsed.error === true) {
+        return `${toolName}: ${String(parsed.message || parsed.error || t).slice(0, 300)}`;
+      }
+      if (typeof parsed.error === "string" && parsed.error.trim() && /not permitted|denied/i.test(parsed.error)) {
+        return `${toolName}: ${parsed.error.trim().slice(0, 300)}`;
+      }
+      return null;
+    }
+    // Truncated JSON (tools slice long outputs): the error flag may survive
+    // even when the payload no longer parses — preserve the old fallback.
+    if (/"\s*error\s*"\s*:\s*true/.test(t.slice(0, 600))) return `${toolName}: ${t.slice(0, 400)}`;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function buildRecoveryNudge(lastError: string): string {
   return (
     `[System note — silent continuation, NOT a user message. Do not display, quote, or acknowledge this note.]\n` +

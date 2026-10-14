@@ -15,6 +15,7 @@ import {
   buildRecoveryNudge,
   shouldIdleContinue,
   shouldRecoverContinue,
+  extractToolError,
 } from "@/lib/pi/continuation";
 
 describe("shouldIdleContinue (stall recovery)", () => {
@@ -144,5 +145,33 @@ describe("maxSilentRounds", () => {
       if (prev === undefined) delete process.env.QUBE_SILENT_CONTINUATIONS;
       else process.env.QUBE_SILENT_CONTINUATIONS = prev;
     }
+  });
+
+});
+describe("extractToolError", () => {
+  it("reads MCP isError objects", () => {
+    const err = extractToolError("act", { isError: true, content: [{ text: "Stale ref e2" }] });
+    assert.match(err || "", /Stale ref e2/);
+    assert.equal(extractToolError("snapshot", { content: [{ text: "ok" }], isError: false }), null);
+  });
+  it("reads error:-prefixed text and Pi JSON errors", () => {
+    assert.match(extractToolError("t", "error: boom") || "", /boom/);
+    assert.match(extractToolError("t", JSON.stringify({ error: true, message: "bad" })) || "", /bad/);
+    assert.match(extractToolError("t", JSON.stringify({ ok: false, message: "nope" })) || "", /nope/);
+  });
+  it("reads kernel block and deny shapes", () => {
+    const blocked = extractToolError("browser_act", JSON.stringify({ blocked: "repeat_failure", tool: "browser_act", message: "STOP repeating" }));
+    assert.match(blocked || "", /blocked.*repeat_failure/);
+    assert.match(blocked || "", /STOP repeating/);
+    const denied = extractToolError("browser_act", JSON.stringify({ error: "Operation not permitted", tool: "browser_act", message: "did not approve" }));
+    assert.match(denied || "", /not permitted/i);
+  });
+  it("returns null for clean results", () => {
+    assert.equal(extractToolError("t", JSON.stringify({ ok: true, url: "https://x.com/" })), null);
+    assert.equal(extractToolError("t", JSON.stringify({ command: "ls", exitCode: 0 })), null);
+    assert.equal(extractToolError("t", "plain text result"), null);
+    assert.equal(extractToolError("t", null), null);
+    // Truncated JSON keeps the old fallback: flag survives unparseable payloads.
+    assert.match(extractToolError("t", '{"error":true, broken') || "", /\{"error":true/);
   });
 });

@@ -6,15 +6,11 @@
 
 import { tool } from "ai";
 import { z } from "zod";
+import { recallMemory, rememberMemory, READ_MEMORY_DESCRIPTION, SAVE_MEMORY_DESCRIPTION } from "@/lib/memory/tools-core";
 
 export function createPiMemoryTools(threadId: string): Record<string, any> {
   const read_memory = tool({
-    description:
-      "Recall persistent memory across ALL chats and sessions (factual + persona). " +
-      "Call with a short query describing what you need (e.g. the user's name, preferences, past decisions, project details). " +
-      "Returns the most relevant memories (bounded top-K, relevance-ranked). Call PROACTIVELY — do not wait for the user to say 'remember' or 'last time'. " +
-      "Check memory before asking clarifying questions whenever the task touches identity, preferences, projects, stack, decisions, or ambiguous references ('it', 'my ...', 'that thing'). " +
-      "Use scopeKey to prefer project-scoped memories; use memoryType to narrow (preference, decision, lesson_failure, pending_followup, ...).",
+    description: READ_MEMORY_DESCRIPTION,
     inputSchema: z.object({
       query: z.string().describe("What to recall, e.g. 'user name and preferences'"),
       scopeKey: z.string().optional().describe("Project/workspace key to prefer scoped memories"),
@@ -22,41 +18,13 @@ export function createPiMemoryTools(threadId: string): Record<string, any> {
       scope: z.string().optional().describe("Narrow by scope (global_user, project, workspace, ...)"),
     }),
     execute: async ({ query, scopeKey, memoryType, scope }: { query: string; scopeKey?: string; memoryType?: string; scope?: string }) => {
-      try {
-        const mem = await import("@/lib/memory/memory-store");
-        const { logMemoryRetrieved } = await import("@/lib/agent/observability");
-        if ((scope || scopeKey || memoryType) && (mem as any).searchMemories) {
-          const entries = await (mem as any).searchMemories({ query, scope, scopeKey, memoryType, topK: 8 });
-          await logMemoryRetrieved(threadId, query, entries.map((e: any) => e.id), ["explicit search with filters"]).catch(() => {});
-          if (entries.length === 0) return JSON.stringify({ entries: [], message: "No relevant memories stored yet." });
-          return JSON.stringify({
-            entries: entries.map((e: any) => ({
-              id: e.id, category: e.category, content: e.content,
-              confidence: e.confidence, scope: e.scope || "global_user",
-              memoryType: e.memoryType || "context",
-            })),
-          });
-        }
-        const { getRelevantContext } = await import("@/lib/memory/memory-store");
-        const ctx = await (getRelevantContext as any)(query, { scopeKey });
-        await logMemoryRetrieved(threadId, query, [], ["auto context"]).catch(() => {});
-        if (!ctx) return JSON.stringify({ entries: [], message: "No relevant memories stored yet." });
-        return JSON.stringify({ context: ctx });
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e) });
-      }
+      const res = await recallMemory({ query, scopeKey, memoryType, scope }, { threadId });
+      return JSON.stringify(res);
     },
   });
 
   const save_memory = tool({
-    description:
-      "Save a durable memory across ALL chats and sessions (remembered automatically next time). " +
-      "Use for: user name, preferences, project facts, decisions, constraints, goals, personal details. " +
-      "Save PROACTIVELY even when the user never says 'remember this' — infer from indirect cues: 'I always/never...', " +
-      "'I prefer/like/hate...', 'we decided/chose/switched to...', 'I'm working on...', corrections ('actually...'), " +
-      "goals ('I want to...'), constraints ('must/never/avoid...'). One concise fact per call; GENERALIZE to a reusable principle rather than storing raw incidents. " +
-      "Do NOT store secrets, passwords, or tokens (blocked). Do NOT store ephemeral one-offs. " +
-      "Use the smallest useful scope; pass scopeKey for project-specific facts.",
+    description: SAVE_MEMORY_DESCRIPTION,
     inputSchema: z.object({
       category: z
         .enum(["personal", "preference", "project", "technology", "decision", "pattern", "constraint", "goal", "general"])
@@ -69,31 +37,8 @@ export function createPiMemoryTools(threadId: string): Record<string, any> {
       memoryType: z.string().optional().describe("Semantic type (preference, decision, lesson_failure, ...)"),
     }),
     execute: async (args: { category: string; content: string; relevance?: number; confidence?: number; scope?: string; scopeKey?: string; memoryType?: string }) => {
-      try {
-        const { checkPersistable } = await import("@/lib/memory/safety");
-        const gate = checkPersistable(args.content);
-        if (!gate.ok) return JSON.stringify({ error: gate.reason, saved: false });
-        const mem = await import("@/lib/memory/memory-store");
-        if ((mem as any).addMemoryEntryExt) {
-          const { generalizeContent } = await import("@/lib/memory/learning");
-          const { generalized } = generalizeContent(args.content);
-          const entry = await (mem as any).addMemoryEntryExt(args.category, generalized, {
-            relevance: args.relevance ?? 0.6,
-            confidence: args.confidence ?? args.relevance ?? 0.6,
-            scope: args.scope || "global_user",
-            scopeKey: args.scopeKey,
-            memoryType: args.memoryType,
-            provenance: `tool:${threadId}`,
-            sourceConversation: threadId,
-          });
-          return JSON.stringify({ saved: true, id: entry.id, generalized: generalized !== args.content });
-        }
-        const { upsertMemoryWithContradictionCheck } = await import("@/lib/memory/memory-store");
-        const { entry } = await upsertMemoryWithContradictionCheck(args.category, args.content, args.relevance ?? 0.6, args.confidence);
-        return JSON.stringify({ saved: true, id: entry.id });
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e), saved: false });
-      }
+      const res = await rememberMemory(args, { threadId });
+      return JSON.stringify(res);
     },
   });
 

@@ -355,7 +355,7 @@ describe("persistence and regression", () => {
     });
     assert.ok(entry.id);
     const { readFile } = await import("node:fs/promises");
-    const raw = await readFile(join(process.env.QUBE_DATA_DIR!, ".memory", "dual-memory.json"), "utf-8");
+    const raw = await readFile(join(process.env.QUBE_DATA_DIR!, ".memory", "memory.json"), "utf-8");
     assert.ok(raw.includes("cross-chat probe prefers csv exports"));
   });
 

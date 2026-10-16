@@ -43,7 +43,6 @@ import { readFile, writeFile, unlink, readdir, stat, mkdir } from "node:fs/promi
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { extname, join, dirname } from "node:path";
-import { getMemoryEntries } from "@/lib/memory/memory-store";
 import type { ScheduledTask } from "@/lib/scheduler/types";
 
 const execAsync = promisify(exec);
@@ -389,9 +388,12 @@ async function runPiTaskInternal(
       const { tool } = require("ai") as any;
       const { z } = require("zod") as any;
       return tool({
-        description: "Reads persistent memory across sessions.",
-        inputSchema: z.object({ label: z.string().optional() }),
-        execute: async () => JSON.stringify({ entries: await getMemoryEntries() }),
+        description: "Reads persistent memory across sessions (same unified memory as chat).",
+        inputSchema: z.object({ query: z.string().optional().describe("What to recall; empty returns priority memories") }),
+        execute: async (args: { query?: string }) => {
+          const { recallMemory } = await import("@/lib/memory/tools-core");
+          return JSON.stringify(await recallMemory({ query: args?.query || "", topK: 8 }, { threadId: `pi_task_ctx` }));
+        },
       });
     })(),
   };

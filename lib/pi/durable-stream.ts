@@ -230,6 +230,14 @@ export async function streamDurableToWriter(
         try { writer.write(chunk); } catch {}
       }
     }
+    // Durable-path parity: deterministic single-observer learning (fire-and-forget).
+    try {
+      const { isMemoryEnabled } = await import("@/lib/memory/tools-core");
+      if (isMemoryEnabled() && text && text.trim().length >= 8) {
+        const { observeTurn } = await import("@/lib/memory/observe");
+        void observeTurn({ threadId, userText: text.slice(0, 2000) }).catch(() => {});
+      }
+    } catch {}
     if (capabilityCleanup) {
       try { await capabilityCleanup(); } catch {}
     }

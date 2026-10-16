@@ -1,54 +1,31 @@
 import { Type } from "@earendil-works/pi-ai";
-import { createRegistry, defineExtension, defineTool } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, section } from "@earendil-works/pi-durable";
+import { recallMemory, rememberMemory, READ_MEMORY_DESCRIPTION, SAVE_MEMORY_DESCRIPTION, isMemoryEnabled } from "@/lib/memory/tools-core";
 
 const CATEGORY_VALUES = ["personal", "preference", "project", "technology", "decision", "pattern", "constraint", "goal", "general"] as const;
 
 export const readMemoryTool = defineTool({
   name: "read_memory",
-  description:
-    "Recall persistent memory across ALL chats and sessions (factual + persona). " +
-    "Call with a short query describing what you need. Returns the most relevant memories (bounded top-K, relevance-ranked). " +
-    "Check memory before asking clarifying questions whenever the task touches identity, preferences, projects, or decisions.",
+  description: READ_MEMORY_DESCRIPTION,
   parameters: Type.Object({
-    query: Type.String({ description: "What to recall, e.g. 'user name and preferences'" }),
+    query: Type.Optional(Type.String({ description: "What to recall, e.g. 'user name and preferences' (empty returns priority memories)" })),
     scopeKey: Type.Optional(Type.String({ description: "Project/workspace key to prefer scoped memories" })),
     memoryType: Type.Optional(Type.String({ description: "Narrow by memory type" })),
     scope: Type.Optional(Type.String({ description: "Narrow by scope (global_user, project, workspace, ...)" })),
   }),
   replay: "safe",
   execute: async (args) => {
-    try {
-      const { searchMemories } = await import("@/lib/memory/memory-store");
-      const entries = await searchMemories({
-        query: args.query,
-        scope: args.scope,
-        scopeKey: args.scopeKey,
-        memoryType: args.memoryType,
-        topK: 8,
-      });
-      const text = entries.length === 0
-        ? JSON.stringify({ entries: [], message: "No relevant memories stored yet." })
-        : JSON.stringify({
-          entries: entries.map((e) => ({
-            id: e.id, category: e.category, content: e.content,
-            confidence: e.confidence, scope: e.scope || "global_user",
-            memoryType: e.memoryType || "context",
-          })),
-        });
-      return { output: [{ type: "text", text }] as const };
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return { output: [{ type: "text", text: JSON.stringify({ error: msg }) }] as const };
-    }
+    const res = await recallMemory(
+      { query: (args as { query?: string }).query || "", scope: (args as { scope?: string }).scope, scopeKey: (args as { scopeKey?: string }).scopeKey, memoryType: (args as { memoryType?: string }).memoryType, topK: 8 },
+      {},
+    );
+    return { output: [{ type: "text", text: JSON.stringify(res) }] as const };
   },
 });
 
 export const saveMemoryTool = defineTool({
   name: "save_memory",
-  description:
-    "Save a durable memory across ALL chats and sessions. Use for: user name, preferences, project facts, decisions, constraints, goals. " +
-    "One concise fact per call; generalize to a reusable principle. Do NOT store secrets, passwords, or tokens (blocked). " +
-    "Do NOT store ephemeral one-offs. (Never auto-replayed after a crash.)",
+  description: SAVE_MEMORY_DESCRIPTION,
   parameters: Type.Object({
     category: Type.Union(CATEGORY_VALUES.map((c) => Type.Literal(c))),
     content: Type.String({ description: "One concise, preferably generalized fact to remember" }),
@@ -59,28 +36,31 @@ export const saveMemoryTool = defineTool({
     memoryType: Type.Optional(Type.String()),
   }),
   execute: async (args, api) => {
-    try {
-      const { checkPersistable } = await import("@/lib/memory/safety");
-      const gate = checkPersistable(args.content);
-      if (!gate.ok) return { output: [{ type: "text", text: JSON.stringify({ error: gate.reason, saved: false }) }] as const };
-      const { generalizeContent } = await import("@/lib/memory/learning");
-      const { generalized } = generalizeContent(args.content);
-      const { addMemoryEntryExt } = await import("@/lib/memory/memory-store");
-      const entry = await addMemoryEntryExt(args.category, generalized, {
-        relevance: args.relevance ?? 0.6,
-        confidence: args.confidence ?? args.relevance ?? 0.6,
-        scope: args.scope || "global_user",
-        scopeKey: args.scopeKey,
-        memoryType: args.memoryType,
-        provenance: `tool:${api.taskId}`,
-      });
-      return { output: [{ type: "text", text: JSON.stringify({ saved: true, id: entry.id, generalized: generalized !== args.content }) }] as const };
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return { output: [{ type: "text", text: JSON.stringify({ error: msg, saved: false }) }] as const };
-    }
+    const taskId = String((api as unknown as { taskId?: unknown }).taskId ?? "durable");
+    const res = await rememberMemory(args as { category: string; content: string; relevance?: number; confidence?: number; scope?: string; scopeKey?: string; memoryType?: string }, { threadId: taskId, provenance: `tool:${taskId}` });
+    return { output: [{ type: "text", text: JSON.stringify(res) }] as const };
   },
 });
+
+/**
+ * Query-independent memory section (core profile + index map). Stable across
+ * turns for prompt-cache friendliness; per-query recall goes through
+ * read_memory. Returns undefined when memory is disabled or empty.
+ */
+export function buildMemorySection() {
+  return section("memory", async () => {
+    try {
+      if (!isMemoryEnabled()) return undefined;
+      const { buildMemoryBrief } = await import("@/lib/memory/brief");
+      // No query here: section render has no access to the pending user
+      // message, so render core + map only (recall stays in the tool).
+      const brief = await buildMemoryBrief({});
+      return brief || undefined;
+    } catch {
+      return undefined;
+    }
+  });
+}
 
 export async function buildDurableRegistry(opts?: {
   userName?: string;
@@ -94,7 +74,7 @@ export async function buildDurableRegistry(opts?: {
   registry.install(buildQubeExtension(opts));
   const { buildFilesExtension } = await import("@/lib/pi/durable-files");
   registry.install(buildFilesExtension());
-  registry.install(defineExtension({ name: "memory", tools: [readMemoryTool, saveMemoryTool] }));
+  registry.install(defineExtension({ name: "memory", tools: [readMemoryTool, saveMemoryTool], sections: [buildMemorySection()] }));
   const { buildGoalsExtension, buildNotesExtension } = await import("@/lib/pi/durable-goals");
   registry.install(buildGoalsExtension());
   registry.install(buildNotesExtension());

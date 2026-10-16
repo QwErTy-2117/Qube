@@ -14,7 +14,7 @@
  * persistence + observability + scheduler handoff.
  */
 
-import { isMeaningfulTask, generalizeContent, inferPreference, detectFollowupOpportunity } from "@/lib/memory/learning";
+import { isMeaningfulTask, detectFollowupOpportunity } from "@/lib/memory/learning";
 import { evaluateSkillCreation, isGeneralizableSkill } from "@/lib/skills/learner";
 import { evaluateOpportunity } from "@/lib/proactivity/engine";
 
@@ -61,68 +61,30 @@ export async function runPostTaskLearning(summary: TaskSummary): Promise<Learnin
     });
     if (!meaningful) return empty;
 
-    const { logEvent, logMemoryWritten, logProactiveEvent } = await import("@/lib/agent/observability");
+    const { logEvent, logProactiveEvent } = await import("@/lib/agent/observability");
     const memoriesWritten: Array<{ id: string; category: string }> = [];
     const skillsProposed: Array<{ name: string; reason: string }> = [];
 
-    // 1) Preference / durable context extraction (generalized, confidence-weighted).
+    // 1) Preference / durable context extraction via the SINGLE observer
+    // (idempotent per thread+text with the harness observer — no doubles).
     try {
-      const candidate = inferPreference(summary.userText);
-      if (candidate) {
-        const { generalized } = generalizeContent(candidate.content);
-        const { checkPersistable, sanitizeCategory } = await import("@/lib/memory/safety");
-        const gate = checkPersistable(generalized);
-        if (gate.ok) {
-          const mem = await import("@/lib/memory/memory-store");
-          const category = sanitizeCategory(candidate.memoryType === "preference" ? "preference" : candidate.memoryType === "explicit" ? "personal" : "general");
-          // Avoid duplicates: skip when near-identical content already stored.
-          const existing = await mem.getMemoryEntries().catch(() => []);
-          const dup = existing.some((e: any) => e.content.toLowerCase().trim() === generalized.toLowerCase().trim());
-          if (!dup) {
-            const entry = await (mem as any).addMemoryEntryExt
-              ? await (mem as any).addMemoryEntryExt(category, generalized, {
-                  confidence: candidate.confidence,
-                  importance: candidate.importance,
-                  memoryType: candidate.memoryType,
-                  scope: candidate.scope,
-                  topics: candidate.topics,
-                  confirmation: candidate.confirmation,
-                  provenance: `post-task:${summary.threadId}`,
-                  sourceConversation: summary.threadId,
-                })
-              : await mem.addMemoryEntry(category, generalized, 0.6, candidate.confidence);
-            memoriesWritten.push({ id: (entry as any).id, category });
-            await logMemoryWritten(summary.threadId, (entry as any).id, category, `post-task preference (${candidate.reason})`).catch(() => {});
-          }
-        } else {
-          await logEvent({ threadId: summary.threadId, type: "memory_suppressed", reason: gate.reason }).catch(() => {});
-        }
+      const { observeTurn } = await import("@/lib/memory/observe");
+      const observed = await observeTurn({ threadId: summary.threadId, userText: summary.userText, scopeKey: summary.scopeKey }).catch(() => null);
+      if (observed) {
+        for (const w of observed.written) memoriesWritten.push({ id: w.id, category: w.category });
       }
     } catch {}
 
-    // 2) Failure lesson: generalize the recovery, don't store the raw incident.
+    // 2) Failure lesson via the single write path (dedupe handled in store).
     try {
       if (summary.whatFailed && summary.whatWorked) {
         const lesson = `Recovery that worked: ${summary.whatWorked.slice(0, 200)}. Context: ${summary.whatFailed.slice(0, 200)}`;
-        const { generalized } = generalizeContent(lesson);
-        const { checkPersistable } = await import("@/lib/memory/safety");
-        if (checkPersistable(generalized).ok) {
-          const mem = await import("@/lib/memory/memory-store");
-          const existing = await mem.getMemoryEntries().catch(() => []);
-          const dup = existing.some((e: any) => e.content.toLowerCase().includes(generalized.toLowerCase().slice(0, 60)));
-          if (!dup) {
-            const entry = await (mem as any).addMemoryEntryExt
-              ? await (mem as any).addMemoryEntryExt("general", generalized.slice(0, 500), {
-                  confidence: 0.6,
-                  importance: 0.65,
-                  memoryType: "lesson_failure",
-                  provenance: `post-task:${summary.threadId}`,
-                  sourceConversation: summary.threadId,
-                })
-              : await mem.addMemoryEntry("general", generalized.slice(0, 500), 0.6, 0.6);
-            memoriesWritten.push({ id: (entry as any).id, category: "general" });
-          }
-        }
+        const { rememberMemory } = await import("@/lib/memory/tools-core");
+        const res = await rememberMemory(
+          { category: "general", content: lesson.slice(0, 500), relevance: 0.6, confidence: 0.6, memoryType: "lesson_failure" },
+          { threadId: summary.threadId, provenance: `post-task:${summary.threadId}` },
+        ).catch(() => null);
+        if (res?.saved && res.id) memoriesWritten.push({ id: res.id, category: "general" });
       }
     } catch {}
 

@@ -963,7 +963,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   // Memory state — dual-brain (factual + personal), streaming
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
-  const [memoryStats, setMemoryStats] = useState<null | { left: number; right: number; cross: number; total: number; warmedUp: boolean; prefetchCache: number; stm: number; ltm: number }>(null);
+  const [memoryStats, setMemoryStats] = useState<null | { total: number; byCategory?: Record<string, number>; observations?: number; durable?: number; tokens?: number; warmedUp?: boolean; left?: number; right?: number; cross?: number; stm?: number; ltm?: number; prefetchCache?: number }>(null);
   const [loadingMemories, setLoadingMemories] = useState(false);
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
 
@@ -1186,7 +1186,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       const data = await res.json();
       if (data.entries !== undefined) setMemories([]);
       if (data.stats) setMemoryStats(data.stats);
-      else setMemoryStats({ left: 0, right: 0, cross: 0, total: 0, warmedUp: true, prefetchCache: 0, stm: 0, ltm: 0 });
+      else setMemoryStats({ total: 0, byCategory: {}, observations: 0, durable: 0, tokens: 0, warmedUp: true, left: 0, right: 0, cross: 0, stm: 0, ltm: 0, prefetchCache: 0 });
     } catch { /* ignore */ }
   };
 

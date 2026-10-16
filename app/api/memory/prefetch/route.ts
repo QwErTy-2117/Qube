@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prefetchQuery } from "@/lib/memory/voicemem-core";
+import { warmup } from "@/lib/memory/memory-store";
 
 export async function POST(req: NextRequest) {
   try {
@@ -7,18 +7,17 @@ export async function POST(req: NextRequest) {
     if (settingsStore.getAll().memoryEnabled === false) {
       return NextResponse.json({ ok: true, prefetched: false, reason: "memory disabled" });
     }
-    const { partial, query } = await req.json();
-    const text = (partial || query || "").trim();
+    const { partial, query } = await req.json().catch(() => ({}));
+    const text = ((partial || query || "") as string).trim();
     if (!text || text.length < 2) {
       return NextResponse.json({ ok: true, prefetched: false, reason: "too short" });
     }
-    // Speculative prefetch like VoiceMem 0-300ms — fire and don't block
+    // Retrieval is sub-ms in-memory; prefetch just warms the store.
     const start = Date.now();
-    await prefetchQuery(text);
-    const elapsed = Date.now() - start;
-    return NextResponse.json({ ok: true, prefetched: true, elapsedMs: elapsed });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
+    await warmup();
+    return NextResponse.json({ ok: true, prefetched: true, elapsedMs: Date.now() - start });
+  } catch (e: unknown) {
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
 

@@ -13,7 +13,11 @@ const DATA_FILES = [
   "app-settings.json",
   "browser-session.json",
   "scheduled-tasks.json",
+  "memory.json",
+  "dual-memory.json",
+  "dual-memory.json.bak",
   "semantic-memory.json",
+  "semantic-memory.json.bak",
   "session-tracker.json",
   "task-log.jsonl",
 ];

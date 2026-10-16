@@ -52,12 +52,10 @@ export type PiConfig = {
 export function resolveMemoryEnabled(explicit?: boolean): boolean {
   if (explicit !== undefined) return explicit;
   try {
+    // Single gate lives in lib/memory/tools-core; delegate so both paths agree.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { settingsStore } = require("@/lib/settings-store") as typeof import("@/lib/settings-store");
-    const s = settingsStore.getAll();
-    // Default ON for backward compat; only explicit false disables.
-    if (s.memoryEnabled === false) return false;
-    return true;
+    const { isMemoryEnabled } = require("@/lib/memory/tools-core") as typeof import("@/lib/memory/tools-core");
+    return isMemoryEnabled();
   } catch {
     return true;
   }
@@ -461,7 +459,7 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     console.warn("[pi-harness] OpenUI prompt append failed (non-fatal):", e?.message || String(e));
   }
 
-  // VoiceMem recall (under the hood): relevant memories + past-chat index.
+  // Memory recall (under the hood): relevant memories + past-chat index.
   // Non-fatal by design — an empty context simply means nothing recalled yet.
   // Skipped entirely when long-term memory is disabled in Advanced settings.
   const memoryEnabled = resolveMemoryEnabled(config.memoryEnabled);
@@ -556,7 +554,7 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     } catch (e: any) {
       console.warn("[pi-harness] Agent tools load failed (non-fatal):", e?.message || String(e));
     }
-    // Memory tools: VoiceMem recall across all chats + past-session recall (under the hood)
+    // Memory tools: unified recall across all chats + past-session recall (under the hood)
     // Omitted entirely when long-term memory is disabled so the model cannot
     // read or write persistent memory for this run.
     if (memoryEnabled) {
@@ -1038,12 +1036,12 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     if (sawError) {
       console.log(`[pi-harness] Completed with errors surfaced [${config.threadId}]`);
     }
-    // VoiceMem background extraction (under the hood, fire-and-forget, non-fatal)
+    // Deterministic background observation (under the hood, fire-and-forget, non-fatal)
     // Skipped when long-term memory is disabled — nothing new is learned.
     if (memoryEnabled) {
       try {
         const { extractAndSaveMemories } = await import("./memory-context");
-        extractAndSaveMemories(config.messages as Array<Record<string, unknown>>);
+        extractAndSaveMemories(config.messages as Array<Record<string, unknown>>, config.threadId);
       } catch {}
       // Post-task learning pass (§§4,22): generalize, persist, skill-extract,
       // evaluate proactivity. Fire-and-forget, bounded, never blocks response.

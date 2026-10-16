@@ -124,49 +124,6 @@ function ToolUIRegistrar() {
 }
 
 
-function PrefetchManager() {
-  // VoiceMem-style speculative prefetch: while user still typing, start memory search at 6 chars so full query is 0-300ms when they hit send
-  useEffect(() => {
-    let lastPrefetch = "";
-    let timer: any = null;
-    const handler = () => {
-      try {
-        // Skip speculative memory prefetch when long-term memory is disabled.
-        try {
-          if (localStorage.getItem("qube-memory-enabled") === "false") return;
-        } catch {}
-        // Find composer input — assistant-ui stores it in runtime, but we can also query DOM
-        const composer = document.querySelector('[data-composer-input]') as HTMLTextAreaElement | HTMLInputElement | null;
-        const text = composer?.value?.trim() || "";
-        if (text.length < 6) return;
-        if (text === lastPrefetch) return;
-        if (text.length < lastPrefetch.length && !text.startsWith(lastPrefetch.slice(0, 6))) {
-          // user cleared or changed topic, still prefetch
-        }
-        lastPrefetch = text;
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          fetch("/api/memory/prefetch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ partial: text }),
-          }).catch(()=>{});
-        }, 80); // debounce 80ms like VoiceMem gamble
-      } catch {}
-    };
-    // Poll for composer changes (assistant-ui doesn't expose composer observable easily)
-    const interval = setInterval(handler, 250);
-    // Also listen to input events
-    document.addEventListener("input", handler, true);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener("input", handler, true);
-      if (timer) clearTimeout(timer);
-    };
-  }, []);
-  return null;
-}
-
 export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Startup waterfall fix (Windows): don't fire 5 fetches during first
@@ -296,7 +253,6 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
     <AssistantRuntimeProvider runtime={runtime}>
       <ToolUIRegistrar />
       <CompactionNoticeDataUI />
-      <PrefetchManager />
       {children}
     </AssistantRuntimeProvider>
   );

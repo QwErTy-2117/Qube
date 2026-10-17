@@ -104,6 +104,10 @@ export const FRIENDLY_TOOL_LABELS: Record<string, string> = {
   browser_wait_for: "Waiting for the page",
   browser_tabs: "Checking open pages",
   browser_close: "Closing the page",
+  // Thinking (same playful voice — never raw "Reasoning"/"Thinking")
+  thinking: "Noodling on it",
+  reasoning: "Noodling on it",
+  chainOfThought: "Connecting the dots",
   // Computer Use (OS-level control via open-codex-computer-use)
   computer_list_apps: "Checking open apps",
   computer_get_app_state: "Looking at the app",

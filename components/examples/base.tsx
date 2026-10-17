@@ -23,12 +23,10 @@ import { usePermissionPoller, PermissionBar } from "@/components/assistant-ui/pe
 import { QuestionPanel } from "@/components/assistant-ui/question-panel";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import {
-  Reasoning,
   ReasoningContent,
-  ReasoningRoot,
   ReasoningText,
-  ReasoningTrigger,
 } from "@/components/assistant-ui/reasoning";
+import { ThinkingToolUI } from "@/components/assistant-ui/tools/thinking-tool-ui";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import logoPng from "@/public/logo.png";
@@ -1111,13 +1109,14 @@ const AssistantMessage: FC = () => {
                 );
               case "group-reasoning": {
                 const running = part.status.type === "running";
+                // Thinking is a first-class tool call — same expandable
+                // ToolRow card as every other tool, grouped with them.
                 return (
-                  <ReasoningRoot streaming={running}>
-                    <ReasoningTrigger active={running} />
+                  <ThinkingToolUI status={part.status} defaultOpen={running}>
                     <ReasoningContent aria-busy={running}>
                       <ReasoningText>{children}</ReasoningText>
                     </ReasoningContent>
-                  </ReasoningRoot>
+                  </ThinkingToolUI>
                 );
               }
               case "text": {
@@ -1128,21 +1127,16 @@ const AssistantMessage: FC = () => {
                 return <AssistantText />;
               }
               case "reasoning": {
-                // Render reasoning as a tool-group-like compressed component
+                // Thinking is a first-class tool call — the exact same
+                // expandable ToolRow card as every other tool (playful
+                // verb, muted summary, spinner/check, chevron).
                 const running = part.status?.type === "running";
                 return (
-                  <ToolGroupRoot variant="ghost" defaultOpen={running}>
-                    <ToolGroupTrigger
-                      count={1}
-                      active={running}
-                      label="Thinking"
-                    />
-                    <ToolGroupContent>
-                      <ReasoningContent aria-busy={running}>
-                        <ReasoningText>{part.text}</ReasoningText>
-                      </ReasoningContent>
-                    </ToolGroupContent>
-                  </ToolGroupRoot>
+                  <ThinkingToolUI
+                    text={part.text}
+                    status={part.status}
+                    defaultOpen={running}
+                  />
                 );
               }
               case "tool-call":

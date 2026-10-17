@@ -2,76 +2,14 @@
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { openBrowserWorkspace } from "@/lib/workspace/store";
-import {
-  GlobeIcon,
-  SearchIcon,
-  MousePointerClickIcon,
-  KeyboardIcon,
-  ArrowLeftIcon,
-  FileTextIcon,
-  CameraIcon,
-  MouseIcon,
-  HourglassIcon,
-  CheckIcon,
-  LayoutGridIcon,
-} from "lucide-react";
-
-const ICONS: Record<string, typeof GlobeIcon> = {
-  open_tab: GlobeIcon,
-  navigate: GlobeIcon,
-  tabs: LayoutGridIcon,
-  user_tabs: LayoutGridIcon,
-  page_info: FileTextIcon,
-  snapshot: FileTextIcon,
-  cdp: FileTextIcon,
-  click: MousePointerClickIcon,
-  act: MousePointerClickIcon,
-  type: KeyboardIcon,
-  press_key: KeyboardIcon,
-  move_mouse: MouseIcon,
-  run_action_plan: MousePointerClickIcon,
-  wait_load: HourglassIcon,
-  claim_tab: CheckIcon,
-  finalize_tabs: CheckIcon,
-  ping: GlobeIcon,
-  info: GlobeIcon,
-  name_session: FileTextIcon,
-  turn_ended: CheckIcon,
-  // Legacy browser_* names (kept for old sessions)
-  browser_navigate: GlobeIcon,
-  browser_navigate_back: ArrowLeftIcon,
-  browser_navigate_forward: ArrowLeftIcon,
-  browser_search: SearchIcon,
-  browser_click: MousePointerClickIcon,
-  browser_hover: MousePointerClickIcon,
-  browser_drag: MousePointerClickIcon,
-  browser_type: KeyboardIcon,
-  browser_fill: KeyboardIcon,
-  browser_find: SearchIcon,
-  browser_fill_form: KeyboardIcon,
-  browser_press_key: KeyboardIcon,
-  browser_select_option: KeyboardIcon,
-  browser_file_upload: KeyboardIcon,
-  browser_back: ArrowLeftIcon,
-  browser_read: FileTextIcon,
-  browser_snapshot: FileTextIcon,
-  browser_screenshot: CameraIcon,
-  browser_pixel_act: MousePointerClickIcon,
-  browser_act: MousePointerClickIcon,
-  computer_observe: CameraIcon,
-  computer_act: MousePointerClickIcon,
-  open_path: GlobeIcon,
-  request_takeover: HourglassIcon,
-  browser_console_messages: FileTextIcon,
-  browser_network_requests: FileTextIcon,
-  browser_evaluate: FileTextIcon,
-  browser_wait_for: HourglassIcon,
-  browser_tabs: LayoutGridIcon,
-  browser_close: GlobeIcon,
-  browser_handle_dialog: GlobeIcon,
-};
+import { ToolRow } from "@/components/assistant-ui/tools/tool-row";
+import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
 
 function labelFor(toolName: string, args: Record<string, unknown>): string {
+  // Act refines by action kind; everything else shares the single source
+  // of truth (friendlyToolLabel) so browser rows use the exact same
+  // non-serious names as every other tool call — and an explicit model
+  // `label` arg always wins.
   if (toolName === "act") {
     const actions = (args as { actions?: Array<{ kind?: string }> }).actions;
     if (Array.isArray(actions) && actions.length > 0) {
@@ -83,61 +21,7 @@ function labelFor(toolName: string, args: Record<string, unknown>): string {
     }
     return "Browsing around";
   }
-  // Plain-language labels — no jargon (no snapshot/ref/pixel/takeover/...).
-  const LABELS: Record<string, string> = {
-    open_tab: "Opening a page",
-    navigate: "Going to a page",
-    tabs: "Checking open pages",
-    user_tabs: "Checking open pages",
-    page_info: "Reading the page",
-    snapshot: "Reading the page",
-    cdp: "Working with the page",
-    click: "Clicking something",
-    type: "Typing",
-    press_key: "Pressing a key",
-    move_mouse: "Moving the mouse",
-    run_action_plan: "Browsing around",
-    wait_load: "Waiting for the page",
-    claim_tab: "Picking up the page",
-    finalize_tabs: "Wrapping up",
-    ping: "Checking the browser",
-    info: "Checking the browser",
-    name_session: "Saving the session",
-    turn_ended: "Taking a pause",
-    // Legacy browser_* names (kept for old sessions)
-    browser_navigate: "Going to a page",
-    browser_navigate_back: "Going back",
-    browser_navigate_forward: "Going forward",
-    browser_search: "Searching the page",
-    browser_click: "Clicking something",
-    browser_hover: "Pointing at something",
-    browser_drag: "Dragging something",
-    browser_type: "Typing",
-    browser_fill: "Filling something in",
-    browser_find: "Searching the page",
-    browser_fill_form: "Filling something in",
-    browser_press_key: "Pressing a key",
-    browser_select_option: "Picking an option",
-    browser_file_upload: "Uploading a file",
-    browser_handle_dialog: "Answering a popup",
-    browser_back: "Going back",
-    browser_read: "Reading the page",
-    browser_snapshot: "Reading the page",
-    browser_screenshot: "Looking at the page",
-    browser_pixel_act: "Using the page",
-    browser_act: "Using the page",
-    computer_observe: "Looking at the page",
-    computer_act: "Using the page",
-    open_path: "Opening a file",
-    request_takeover: "Asking you to step in",
-    browser_console_messages: "Checking page details",
-    browser_network_requests: "Checking page details",
-    browser_evaluate: "Checking page details",
-    browser_wait_for: "Waiting for the page",
-    browser_tabs: "Checking open pages",
-    browser_close: "Closing the page",
-  };
-  return LABELS[toolName] || toolName;
+  return friendlyToolLabel(toolName, args);
 }
 
 function detailFor(toolName: string, args: Record<string, unknown>): string {
@@ -213,40 +97,66 @@ function errorFromResult(result: unknown): string {
 }
 
 export const BrowserToolUI: ToolCallMessagePartComponent = ({ args, result, toolName, status }) => {
-  const Icon = ICONS[toolName] || GlobeIcon;
   const a = (args || {}) as Record<string, unknown>;
-  const label = labelFor(toolName, a);
+  // Same playful verb source as every other tool call.
+  const verb = labelFor(toolName, a);
   const running = (status as { type?: string })?.type === "running";
   const detail = detailFor(toolName, a);
   const error = !running ? errorFromResult(result) : "";
+  const summary = error || detail || (running ? "…" : "");
   const openPanel = () => {
     try {
-      // Clicking any browser activity reopens the sidebar on the live page.
+      // The row header toggles expand (same as every other tool);
+      // the expanded detail carries the live-page shortcut.
       openBrowserWorkspace();
     } catch {}
   };
+  // Same expandable ToolRow card as every other tool call — verb +
+  // muted inline summary + spinner/check + chevron, detail below the
+  // divider. The live-page shortcut lives inside the expanded detail so
+  // the header behavior matches all other tools exactly.
+  const hasResult = result !== undefined && result !== null;
+  const resultText = (() => {
+    if (!hasResult) return null;
+    try {
+      const text =
+        typeof result === "string"
+          ? result.slice(0, 2000)
+          : JSON.stringify(result, null, 2).slice(0, 2000);
+      return text.trim() ? text : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  if (!detail && !error && !resultText) {
+    return <ToolRow verb={verb} summary={summary} status={status} result={result} />;
+  }
+
   return (
-    <div
-      data-slot="browser-tool"
-      onClick={openPanel}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          openPanel();
-        }
-      }}
-      role="button"
-      tabIndex={0}
-      title="Show the browser panel"
-      className="flex cursor-pointer items-center gap-2 rounded-xl bg-muted/30 px-3 py-2 text-sm transition hover:bg-muted/60"
-    >
-      <span className={`flex size-6 items-center justify-center rounded-full ${running ? "bg-amber-400/15" : error ? "bg-red-500/10" : "bg-emerald-500/10"}`}>
-        <Icon className={`size-3.5 ${running ? "animate-pulse text-amber-500" : error ? "text-red-500" : "text-emerald-600 dark:text-emerald-400"}`} />
-      </span>
-      <span className="font-medium text-foreground/90">{label}</span>
-      {detail ? <span className="truncate font-mono text-xs text-muted-foreground">{detail}</span> : null}
-      {error ? <span className="truncate text-xs text-red-500/90">{error}</span> : null}
-      {running ? <span className="ml-auto shrink-0 text-[11px] text-amber-600 dark:text-amber-400">working…</span> : null}
-    </div>
+    <ToolRow verb={verb} summary={summary} status={status} result={result} defaultOpen={false}>
+      <div className="space-y-2">
+        {detail ? (
+          <div className="font-mono text-xs break-words whitespace-pre-wrap text-muted-foreground">
+            {detail}
+          </div>
+        ) : null}
+        {error && error !== detail ? (
+          <div className="text-xs break-words whitespace-pre-wrap text-red-500/90">{error}</div>
+        ) : null}
+        {resultText ? (
+          <div className="max-h-48 overflow-auto font-mono text-xs break-words whitespace-pre-wrap text-muted-foreground">
+            {resultText}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          onClick={openPanel}
+          className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          Show live page
+        </button>
+      </div>
+    </ToolRow>
   );
 };

@@ -147,6 +147,9 @@ jobs:
     needs: test
     permissions:
       contents: write
+    # AppImage is best-effort: linuxdeploy is flaky on hosted runners, but a
+    # failure must not block the deb/rpm/Windows/macOS assets.
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       # Do not cancel Windows/macOS when Linux fails (default fail-fast:true
       # cancelled both in v0.0.34). Tauri docs recommend 22.04 as the Linux
@@ -154,25 +157,42 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux builds deb+rpm only: AppImage/linuxdeploy fails on GH
-          # runners with opaque `failed to run linuxdeploy` even on 22.04
-          # with all documented deps (webkit 2.50, pkgconf, libfuse2,
-          # APPIMAGE_EXTRACT_AND_RUN). deb+rmm bundle reliably; updater
-          # artifacts (tar.gz+sig) are still produced via
-          # createUpdaterArtifacts. To debug AppImage, temporarily set Linux
-          # args to '--verbose' and run via workflow_dispatch.
+          # Linux x64: deb+rpm. AppImage is a separate best-effort job below.
           - os: ubuntu-22.04
             args: '--bundles deb,rpm'
-          # Windows builds all targets (NSIS + MSI): the updater self-selects
-          # the right artifact per install — the running app's baked bundle
-          # type picks `{os}-{arch}-{installer}` first (`-nsis` or `-msi`)
-          # and the install procedure sniffs the downloaded bytes, so both
-          # install bases update in place. Shipping only one kind would push
-          # the other base onto a cross-installer update path.
+            label: linux-x64
+          # Linux ARM64: native arm runner, same deb+rpm formats.
+          - os: ubuntu-22.04-arm
+            args: '--bundles deb,rpm'
+            label: linux-arm64
+          # Windows x64: NSIS + MSI so both install bases update in place.
           - os: windows-latest
             args: ''
-          - os: macos-latest
+            label: windows-x64
+          # Windows ARM64: NSIS only (WiX/MSI ARM64 support is inconsistent).
+          - os: windows-11-arm
+            args: '--bundles nsis'
+            label: windows-arm64
+          # macOS Apple Silicon (native arm runner).
+          - os: macos-15
             args: ''
+            label: macos-arm64
+          # macOS Intel (x64). macos-13 is retired; 15-intel is the current label.
+          - os: macos-15-intel
+            args: ''
+            label: macos-x64
+          # Best-effort AppImage. Do not overwrite latest.json with an
+          # AppImage-only payload; deb/rpm remain the updater artifacts.
+          - os: ubuntu-22.04
+            args: '--bundles appimage'
+            label: linux-appimage
+            experimental: true
+            uploadUpdaterJson: false
+          - os: ubuntu-22.04-arm
+            args: '--bundles appimage'
+            label: linux-arm64-appimage
+            experimental: true
+            uploadUpdaterJson: false
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -227,6 +247,9 @@ jobs:
           cache: npm
 
       - name: Create .env with secrets
+        # Force bash so `>` writes LF/UTF-8 on Windows too; pwsh writes
+        # UTF-16 and the sidecar's dotenv reader then misses COMPOSIO_API_KEY.
+        shell: bash
         run: echo "COMPOSIO_API_KEY=${{ secrets.COMPOSIO_API_KEY }}" > .env
 
       - name: Install npm dependencies
@@ -248,7 +271,9 @@ jobs:
           prerelease: false
           # NOTE: v1 input is `uploadUpdaterJson`, not `includeUpdaterJson`
           # (the latter logs "Unexpected input" and is silently ignored).
-          uploadUpdaterJson: true
+          # The best-effort AppImage job must not replace latest.json with an
+          # AppImage-only payload, so it opts out via the matrix.
+          uploadUpdaterJson: ${{ matrix.uploadUpdaterJson != false }}
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
           # AppImage bundling downloads unpinned third-party tools
@@ -256,3 +281,41 @@ jobs:
           # retry absorbs transient network flakes without masking real
           # errors (the log still shows the first failure).
           retryAttempts: 1
+
+      - name: Smoke test bundled sidecar
+        # Prove the exact artifact this runner just packaged boots and serves
+        # HTTP — catches wrong-arch node, missing sidecar files, and lost exec
+        # bits on every release target (including ARM).
+        shell: bash
+        env:
+          PORT: 3010
+          HOSTNAME: 127.0.0.1
+          QUBE_DATA_DIR: ${{ runner.temp }}/qube-data-smoke
+          COMPOSIO_API_KEY: ${{ secrets.COMPOSIO_API_KEY }}
+        run: |
+          mkdir -p "$QUBE_DATA_DIR"
+          test -f sidecar-dist/server.js
+          pushd sidecar-dist >/dev/null
+          if [ -f "node-bin/node.exe" ]; then BIN="node-bin/node.exe"; else BIN="node-bin/node"; fi
+          test -f "$BIN" || { echo "bundled node missing ($BIN)"; exit 1; }
+          "$BIN" --version
+          PORT=3010 HOSTNAME=127.0.0.1 QUBE_DATA_DIR="$QUBE_DATA_DIR" "$BIN" server.js & echo $! > /tmp/qube-sidecar.pid
+          for i in $(seq 1 30); do
+            if curl -s http://127.0.0.1:3010/ >/dev/null 2>&1; then
+              echo "sidecar responded on attempt $i"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "sidecar never responded within 60s"
+              kill "$(cat /tmp/qube-sidecar.pid)" || true
+              popd >/dev/null || true
+              exit 1
+            fi
+            sleep 2
+          done
+          kill "$(cat /tmp/qube-sidecar.pid)" || true
+          popd >/dev/null
+
+      - name: Smoke test browser MCP
+        shell: bash
+        run: node scripts/smoke-mcp.js sidecar-dist

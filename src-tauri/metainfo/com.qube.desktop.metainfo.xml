@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.qube.desktop</id>
+  <name>Qube</name>
+  <summary>Your AI agent for everyday work</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      Qube is a desktop AI agent that can chat, research, use tools, and
+      automate tasks on your computer.
+    </p>
+  </description>
+  <launchable type="desktop-id">Qube.desktop</launchable>
+  <url type="homepage">https://github.com/QwErTy-2117/Qube</url>
+  <url type="bugtracker">https://github.com/QwErTy-2117/Qube/issues</url>
+  <developer_name>Qube</developer_name>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.0.79" date="2026-10-17"/>
+  </releases>
+</component>

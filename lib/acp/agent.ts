@@ -23,9 +23,10 @@ import { acpPromptToUIMessage, acpPromptToText, extractUiText } from "./content"
 import { createAcpBridge } from "./bridge";
 import { createAcpTools, type AcpClientLike } from "./tools";
 import { isAbsolute, resolve } from "node:path";
+import packageJson from "@/package.json";
 
 export const QUBE_ACP_AGENT_NAME = "qube";
-export const QUBE_ACP_AGENT_VERSION = "0.0.38";
+export const QUBE_ACP_AGENT_VERSION = packageJson.version || "0.0.0";
 
 type AnyRecord = Record<string, unknown>;
 

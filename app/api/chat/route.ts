@@ -53,11 +53,13 @@ export async function POST(req: Request) {
     if (typeof modelName === "string" && modelName.startsWith("chatgpt:")) {
       try {
         const { chatGptAuth } = await import("@/lib/chatgpt/handler");
+        const { pickChatGPTModel } = await import("@/lib/chatgpt/models");
         const live = await chatGptAuth.getModels(req as any).catch(() => undefined);
         if (Array.isArray(live) && live.length > 0) {
           const slug = modelName.split(":").slice(1).join(":");
-          if (!live.includes(slug)) {
-            const replacement = `chatgpt:${live[0]}`;
+          const replacementSlug = pickChatGPTModel(live, slug);
+          if (replacementSlug && replacementSlug !== slug) {
+            const replacement = `chatgpt:${replacementSlug}`;
             console.warn(`[chat] ChatGPT model "${modelName}" not on this plan — remapping to "${replacement}" (plan models: ${live.slice(0, 8).join(", ")})`);
             modelName = replacement;
           }

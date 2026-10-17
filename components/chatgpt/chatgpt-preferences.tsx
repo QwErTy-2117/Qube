@@ -81,9 +81,14 @@ export function ChatGPTPreferencesCard() {
 
       localStorage.setItem("qube-providers", JSON.stringify(providers));
       const currentDefault = localStorage.getItem("qube-default-model");
+      const chatgptModels = providers.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models || [];
+      const first = chatgptModels.find((m) => m.enabled) || chatgptModels[0];
       if (!currentDefault) {
-        const first = providers.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models.find((m) => m.enabled);
         if (first) localStorage.setItem("qube-default-model", first.id);
+      } else if (currentDefault.startsWith(`${CHATGPT_PROVIDER_ID}:`) && !chatgptModels.some((m) => m.id === currentDefault)) {
+        // Plan-gated model disappeared (e.g. an old Codex default) — evict it.
+        if (first) localStorage.setItem("qube-default-model", first.id);
+        else localStorage.removeItem("qube-default-model");
       }
       const defaultModelId = localStorage.getItem("qube-default-model") || null;
       fetch("/api/providers/sync", {

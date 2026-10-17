@@ -92,10 +92,16 @@ export function formatProviderError(raw: string, modelName?: string, prefixError
       `Qube also auto-remaps stale defaults on the next message; resend to retry.`
     );
   }
-  if (isChatGPT && /usage_limit_reached|usage_limit|rate_limited/i.test(raw)) {
+  if (isChatGPT && /usage_limit_reached|usage_limit/i.test(raw)) {
     return (
-      `${base}\n\n${model} hit your ChatGPT plan's usage limit (not Qube's free tier).\n` +
-      `Fix: wait for the reset window, try a smaller ChatGPT model, or switch to another provider (Ollama works locally).`
+      `${base}\n\n${model} hit your ChatGPT plan's usage limit (OpenAI enforces this on your account, not Qube).\n` +
+      `Fix: wait for the reset window, pick a smaller ChatGPT model, or switch to another provider (Ollama works locally).`
+    );
+  }
+  if (isChatGPT && /rate_limited/i.test(raw)) {
+    return (
+      `${base}\n\n${model} was throttled by Qube's local ChatGPT proxy (too many model calls in a minute).\n` +
+      `Fix: retry in a minute. Long agent runs with many tool steps can trip this, but it is not an OpenAI quota error.`
     );
   }
 

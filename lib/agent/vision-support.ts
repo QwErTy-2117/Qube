@@ -48,6 +48,9 @@ export function detectModelImageSupport(modelId: unknown): boolean {
     lower.includes("gpt-4.1") ||
     lower.includes("gpt-4.5") ||
     lower.includes("gpt-4-turbo") ||
+    lower.includes("gpt-5") ||
+    lower.includes("gpt-6") ||
+    lower.includes("gpt-reserve") ||
     lower.includes("o1") ||
     lower.includes("o3") ||
     lower.includes("llama-3.2") ||

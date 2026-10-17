@@ -12,7 +12,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { isAgentErrorText, notifyAgentError } from "@/components/chat/chat-error-popup";
+import { isAgentErrorText, notifyAgentError, parseChatGPTError } from "@/components/chat/chat-error-popup";
 
 describe("isAgentErrorText (harness-written error hints)", () => {
   it("matches config/model/stream/cancel failures", () => {
@@ -41,6 +41,43 @@ describe("isAgentErrorText (harness-written error hints)", () => {
     assert.equal(isAgentErrorText("Here is your Daily AI News Report for today!"), false);
     assert.equal(isAgentErrorText("The build failed, so I retried with verbose logs."), false);
     assert.equal(isAgentErrorText(""), false);
+  });
+});
+
+describe("parseChatGPTError free-plan limits", () => {
+  const wrapped = (error: Record<string, unknown>) =>
+    JSON.stringify({
+      error: "responses_request_failed",
+      status: 429,
+      detail: JSON.stringify({ error }),
+    });
+
+  it("explains that a free-plan usage limit comes from OpenAI", () => {
+    const parsed = parseChatGPTError(
+      wrapped({
+        type: "usage_limit_reached",
+        message: "The usage limit has been reached",
+        plan_type: "free",
+        resets_in_seconds: 7200,
+      }),
+    );
+    assert.equal(parsed?.title, "ChatGPT free-plan limit reached");
+    assert.match(parsed?.detail ?? "", /OpenAI enforces this limit/);
+    assert.match(parsed?.detail ?? "", /Resets in: 2h/);
+  });
+
+  it("keeps the generic title for paid plans", () => {
+    const parsed = parseChatGPTError(
+      wrapped({ type: "usage_limit_reached", message: "The usage limit has been reached", plan_type: "plus" }),
+    );
+    assert.equal(parsed?.title, "ChatGPT usage limit reached");
+  });
+
+  it("labels local proxy throttling without blaming OpenAI quota", () => {
+    const parsed = parseChatGPTError(JSON.stringify({ error: "rate_limited", retryAfterSeconds: 12 }));
+    assert.equal(parsed?.title, "Too many ChatGPT requests");
+    assert.match(parsed?.message ?? "", /not an OpenAI quota error/);
+    assert.match(parsed?.detail ?? "", /12s/);
   });
 });
 

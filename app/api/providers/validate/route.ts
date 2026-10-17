@@ -50,7 +50,13 @@ export async function POST(req: Request) {
         } catch {}
         const proxyBase = origin ? `${origin}/api/chatgpt` : "/api/chatgpt";
         const client = createOpenAI({ baseURL: proxyBase, apiKey: "login-with-chatgpt-proxy", fetch: baseFetch as any });
-        const probeModel = (client as any).responses(cleanId || "gpt-5.5");
+        let probeId = cleanId;
+        if (!probeId) {
+          const live = await chatGptAuth.getModels(req as any).catch(() => undefined);
+          const { pickChatGPTModel } = await import("@/lib/chatgpt/models");
+          probeId = pickChatGPTModel(Array.isArray(live) ? live : []) || "gpt-6-luna";
+        }
+        const probeModel = (client as any).responses(probeId);
         const { streamText } = await import("ai");
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 30_000);

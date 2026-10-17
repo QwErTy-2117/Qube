@@ -208,16 +208,29 @@ export function parseChatGPTError(errorText: string): ChatError | null {
     const errObj = typeof err === "string" ? { message: err } : err || {};
     if (errObj?.type === "usage_limit_reached" || /usage_limit/i.test(errObj?.message || "")) {
       const plan = errObj.plan_type;
+      const isFreePlan = String(plan ?? "").toLowerCase() === "free";
       const resetsIn = errObj.resets_in_seconds ? `${Math.ceil(errObj.resets_in_seconds / 3600)}h` : "later";
       const message = errObj.message || "The usage limit has been reached";
       // Don't repeat the message inside detail — title shows once on top,
       // message once below, detail only carries plan/reset extras.
-      const extras = [plan ? `Plan: ${plan}` : null, `Resets in: ${resetsIn}`].filter(Boolean).join(" • ");
+      const extras = [
+        plan ? `Plan: ${plan}` : null,
+        isFreePlan ? "OpenAI enforces this limit on free ChatGPT accounts, not Qube" : null,
+        `Resets in: ${resetsIn}`,
+      ].filter(Boolean).join(" • ");
       return {
-        title: "ChatGPT usage limit reached",
+        title: isFreePlan ? "ChatGPT free-plan limit reached" : "ChatGPT usage limit reached",
         message,
         detail: extras || undefined,
         status: data.statusCode || data.status || 429,
+      };
+    }
+    if (body?.error === "rate_limited") {
+      return {
+        title: "Too many ChatGPT requests",
+        message: "Qube's local ChatGPT proxy throttled this run — it is not an OpenAI quota error.",
+        detail: body.retryAfterSeconds ? `Retry in ${body.retryAfterSeconds}s.` : "Retry shortly.",
+        status: 429,
       };
     }
     const status = data.statusCode || data.status || body?.status;

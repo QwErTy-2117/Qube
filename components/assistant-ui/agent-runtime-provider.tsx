@@ -31,7 +31,19 @@ import {
 } from "@/components/assistant-ui/tools";
 import { ConnectorToolUI, ConnectServiceToolUI, CompactionNoticeDataUI } from "@/components/assistant-ui/tools";
 import { BrowserToolUI } from "@/components/workspace";
+import { useChatGPTProviderSync } from "@/components/chatgpt/chatgpt-provider-sync";
 import { type ReactNode, useEffect, useState } from "react";
+
+/**
+ * Keeps the ChatGPT provider's model list in sync with the signed-in account
+ * on app start. The Codex catalog is plan- and version-gated, so a cached
+ * model can disappear between sessions; this refreshes it without requiring
+ * the user to open Settings first.
+ */
+function ChatGPTProviderSync() {
+  useChatGPTProviderSync();
+  return null;
+}
 
 function ToolUIRegistrar() {
   // Pi harness tools — file, shell, web (Pi emits tool calls as tool-input-available / tool-output-available)
@@ -251,6 +263,7 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <ChatGPTProviderSync />
       <ToolUIRegistrar />
       <CompactionNoticeDataUI />
       {children}

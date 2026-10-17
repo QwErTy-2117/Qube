@@ -6,6 +6,8 @@ export function detectModelThinkingSupport(modelId: unknown): boolean {
     lower.startsWith("o3") ||
     lower.startsWith("o4") ||
     lower.includes("gpt-5") ||
+    lower.includes("gpt-6") ||
+    lower.includes("gpt-reserve") ||
     lower.includes("gpt-oss") ||
     (lower.includes("claude") && /sonnet.*4\.\d|opus.*4\.\d|fable|mythos/.test(lower)) ||
     lower.includes("claude-4") ||

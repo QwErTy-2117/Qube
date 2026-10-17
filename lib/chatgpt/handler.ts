@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { getDataDir } from "@/lib/data-dir";
 import type { KeyValueStore } from "@opencoredev/loginwithchatgpt-core";
+import { getChatGPTClientVersion, refreshChatGPTClientVersion } from "./client-version";
 
 /**
  * Stable secret handling:
@@ -97,8 +98,37 @@ class FileStore<T> implements KeyValueStore<T> {
   }
 }
 
+// The Codex backend gates its model catalog on `client_version`. The core
+// package ships a default that goes stale as Codex CLI releases move on —
+// stale values hide every model except `codex-auto-review` and make
+// subscription chats look broken. Rewrite the query param per request so a
+// background refresh from npm takes effect without recreating the handler.
+const dynamicClientVersionFetch = (async (input: any, init?: any) => {
+  try {
+    const raw =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input instanceof Request
+            ? input.url
+            : String(input);
+    if (raw.includes("/backend-api/codex/")) {
+      const url = new URL(raw);
+      url.searchParams.set("client_version", getChatGPTClientVersion());
+      if (input instanceof Request) {
+        return fetch(new Request(url.toString(), input), init);
+      }
+      return fetch(url.toString(), init);
+    }
+  } catch {}
+  return fetch(input, init);
+}) as typeof fetch;
+
 export const chatGptAuth = createChatGPTHandler({
   secret,
+  fetch: dynamicClientVersionFetch,
+  clientVersion: getChatGPTClientVersion(),
   // @ts-ignore - allow FileStore to satisfy KeyValueStore
   sessionStore: new FileStore(),
   allowedOrigins: [
@@ -111,11 +141,14 @@ export const chatGptAuth = createChatGPTHandler({
   ],
   responsesProxy: {
     // Allow all models returned by the account; handler will validate via upstream.
-    // You can set a guardrail like: allowedModels: ["gpt-5.5", "gpt-5", "gpt-4o", "o3", "o4-mini"]
+    // You can set a guardrail like: allowedModels: ["gpt-6-luna", "gpt-5.6-luna"]
     // Leave undefined to allow any model the signed-in account can access.
+    // Agent runs make one model call per tool step, so the SDK's 30/min
+    // default is too low and surfaced as bogus ChatGPT "quota" failures.
+    rateLimit: { limit: 240, windowMs: 60_000 },
   },
-  // Default model when request omits one; per-docs defaults to gpt-5.5
-  defaultModel: "gpt-5.5",
+  // Only used when a request omits `model` (Qube always sends one).
+  defaultModel: process.env.LWC_DEFAULT_MODEL || "gpt-6-luna",
 });
 
 /**
@@ -160,6 +193,7 @@ function sanitizeOrigin(req: Request): Request {
 // JSON ("Invalid JSON response") and made ChatGPT models look broken.
 const _origHandler = chatGptAuth.handler.bind(chatGptAuth);
 const _origProxyFetch = chatGptAuth.proxyFetch.bind(chatGptAuth);
+const _origGetModels = chatGptAuth.getModels.bind(chatGptAuth);
 
 async function ensureStreamFlag(req: Request): Promise<Request> {
   if (req.method !== "POST" || !req.url.includes("/responses")) return req;
@@ -186,11 +220,21 @@ async function ensureStreamFlag(req: Request): Promise<Request> {
 }
 
 (chatGptAuth as any).handler = async (req: Request) => {
+  try {
+    if (new URL(req.url).pathname.endsWith("/models")) {
+      await refreshChatGPTClientVersion();
+    }
+  } catch {}
   const sanitized = sanitizeOrigin(req);
   const fixed = await ensureStreamFlag(sanitized);
   return _origHandler(fixed);
 };
 (chatGptAuth as any).fetch = (chatGptAuth as any).handler;
+
+(chatGptAuth as any).getModels = async (req: Request) => {
+  await refreshChatGPTClientVersion().catch(() => {});
+  return _origGetModels(req);
+};
 
 (chatGptAuth as any).proxyFetch = (req: Request) => {
   const baseFetch = _origProxyFetch(req) as typeof fetch;

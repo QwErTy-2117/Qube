@@ -204,6 +204,10 @@ COMPOSIO_API_KEY=...
 # For a stable ChatGPT login (optional, otherwise auto-created locally)
 LWC_SECRET=...
 # Generate with: openssl rand -hex 32
+
+# ChatGPT model discovery tracks the latest Codex CLI release automatically.
+# Pin a version only if model discovery misbehaves.
+# LWC_CLIENT_VERSION=0.163.0
 ```
 
 Most day-to-day settings — which AI you use, your name and preferences, theme, connected apps, and recurring tasks — are managed in the app under Settings and stored locally.

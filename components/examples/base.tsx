@@ -1077,9 +1077,7 @@ function ToolGroupWithTitle({
       title = labels[labels.length - 1] || "Working on it";
     }
   } else {
-    title = `${connectorIcons.length > 0 ? ", " : ""}used ${visibleCount} ${
-      visibleCount === 1 ? "tool" : "tools"
-    }`;
+    title = `used ${visibleCount} ${visibleCount === 1 ? "tool" : "tools"}`;
   }
 
   const icon =
@@ -1099,7 +1097,7 @@ function ToolGroupWithTitle({
 
   return (
     <ToolGroupRoot variant="ghost">
-      <ToolGroupTrigger active={active} label={title} icon={icon} />
+      <ToolGroupTrigger active={active} label={title} icon={active ? undefined : icon} />
       <ToolGroupContent>{children}</ToolGroupContent>
     </ToolGroupRoot>
   );

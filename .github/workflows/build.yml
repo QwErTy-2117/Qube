@@ -147,17 +147,14 @@ jobs:
     needs: test
     permissions:
       contents: write
-    # AppImage is best-effort: linuxdeploy is flaky on hosted runners, but a
-    # failure must not block the deb/rpm/Windows/macOS assets.
-    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       # Do not cancel Windows/macOS when Linux fails (default fail-fast:true
       # cancelled both in v0.0.34). Tauri docs recommend 22.04 as the Linux
-      # baseline for AppImage/glibc compat.
+      # baseline for Linux/glibc compat.
       fail-fast: false
       matrix:
         include:
-          # Linux x64: deb+rpm. AppImage is a separate best-effort job below.
+          # Linux x64: deb+rpm.
           - os: ubuntu-22.04
             args: '--bundles deb,rpm'
             label: linux-x64
@@ -177,22 +174,13 @@ jobs:
           - os: macos-15
             args: ''
             label: macos-arm64
-          # macOS Intel (x64). macos-13 is retired; 15-intel is the current label.
+          # macOS Intel (x64). Skip DMG: the Intel runner's hdiutil hangs
+          # for ~8 minutes (`diskimages-help` orphans) and then fails.
+          # `app` still produces Qube.app + the signed .app.tar.gz updater
+          # artifact; a .zip is uploaded below for manual installs.
           - os: macos-15-intel
-            args: ''
+            args: '--bundles app'
             label: macos-x64
-          # Best-effort AppImage. Do not overwrite latest.json with an
-          # AppImage-only payload; deb/rpm remain the updater artifacts.
-          - os: ubuntu-22.04
-            args: '--bundles appimage'
-            label: linux-appimage
-            experimental: true
-            uploadUpdaterJson: false
-          - os: ubuntu-22.04-arm
-            args: '--bundles appimage'
-            label: linux-arm64-appimage
-            experimental: true
-            uploadUpdaterJson: false
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -228,17 +216,7 @@ jobs:
             libxtst-dev \
             patchelf \
             rpm \
-            libfuse2 \
-            zsync \
-            xdg-utils \
             pkgconf
-            # NOTE: pkgconf is a hard requirement of linuxdeploy-plugin-gtk.sh
-            # (fetched unpinned from master at bundle time — it aborts with
-            # "pkg-config/pkgconf not found in PATH" without it, surfacing
-            # only as Tauri's opaque `failed to run linuxdeploy`). libfuse2
-            # + file + zsync + xdg-utils + APPIMAGE_EXTRACT_AND_RUN below cover
-            # the FUSE-less runner side of AppImage bundling. Ubuntu 22.04 uses
-            # libfuse2 (24.04 renamed it libfuse2t64).
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -261,8 +239,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # linuxdeploy/appimagetool need this on runners without FUSE
-          APPIMAGE_EXTRACT_AND_RUN: 1
         with:
           tagName: v__VERSION__
           releaseName: "Qube v__VERSION__"
@@ -271,16 +247,29 @@ jobs:
           prerelease: false
           # NOTE: v1 input is `uploadUpdaterJson`, not `includeUpdaterJson`
           # (the latter logs "Unexpected input" and is silently ignored).
-          # The best-effort AppImage job must not replace latest.json with an
-          # AppImage-only payload, so it opts out via the matrix.
-          uploadUpdaterJson: ${{ matrix.uploadUpdaterJson != false }}
+          # Undefined matrix values compare equal to false in GitHub
+          # expressions; keep this literal so latest.json is always uploaded.
+          uploadUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
-          # AppImage bundling downloads unpinned third-party tools
-          # (linuxdeploy, appimagetool, gtk plugins) at build time; a single
-          # retry absorbs transient network flakes without masking real
-          # errors (the log still shows the first failure).
+          # A single retry absorbs transient network flakes (tool downloads,
+          # crates) without masking real errors; the log keeps the first failure.
           retryAttempts: 1
+
+      - name: Package macOS x64 app (DMG workaround)
+        # The Intel runner's hdiutil DMG step hangs on hosted CI. Ship the
+        # built Qube.app as a zip in addition to the signed .app.tar.gz
+        # updater artifact produced by Tauri.
+        if: matrix.label == 'macos-x64'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "src-tauri/target/release/bundle/macos/Qube.app" \
+            "Qube_${VERSION}_x64.app.zip"
+          gh release upload "${GITHUB_REF_NAME}" "Qube_${VERSION}_x64.app.zip" --clobber
 
       - name: Smoke test bundled sidecar
         # Prove the exact artifact this runner just packaged boots and serves

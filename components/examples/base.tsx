@@ -10,6 +10,11 @@ import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
+import {
+  getConnectorMetaForTool,
+  inferConnectorMetasFromArgs,
+  type ConnectorMeta,
+} from "@/lib/connectors/connector-meta";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
 import { composioLogoUrlForIconId, composioLogoDarkClass } from "@/lib/connectors/composio-logo";
 import { Sources } from "@/components/assistant-ui/sources";
@@ -42,7 +47,6 @@ import {
 import { ComposerTriggerPopover } from "@/components/assistant-ui/composer-trigger-popover";
 import { DirectiveText } from "@/components/assistant-ui/directive-text";
 import {
-  ActionBarMorePrimitive,
   ActionBarPrimitive,
   AuiIf,
   type AssistantState,
@@ -60,18 +64,13 @@ import {
 import {
   ArrowUpIcon,
   ChartColumnIcon,
-  CheckIcon,
   CloudSunIcon,
   CodeXmlIcon,
-  CopyIcon,
-  DownloadIcon,
   MicIcon,
-  MoreHorizontalIcon,
   PaperclipIcon,
   PencilIcon,
   PencilLineIcon,
   PlusIcon,
-  RefreshCwIcon,
   Settings as SettingsIcon,
   SlashIcon,
   SquareIcon,
@@ -925,39 +924,83 @@ function getToolLabel(part: ToolCallMessagePart): string {
 
 const HIDDEN_INLINE_TOOLS = new Set(["TodoWrite", "present_file"]);
 
-function getConnectorIconForTool(toolName: string): ReactNode {
+type ConnectorIconEntry = {
+  key: string;
+  name: string;
+  node: ReactNode;
+};
+
+function connectorIconEntryForMeta(meta: ConnectorMeta): ConnectorIconEntry {
+  const key = `${meta.displayId}:${meta.iconId}`;
+  // Per-app Composio logo first (same source as the tool cards): cached
+  // toolkit logo, else the live Composio CDN artwork (works before the
+  // list has ever been fetched — e.g. Calendar / Drive on first load),
+  // else the static brand mark.
   try {
-    const { getConnectorMetaForTool } = require("@/lib/connectors/connector-meta") as typeof import("@/lib/connectors/connector-meta");
-    const meta = getConnectorMetaForTool(toolName);
-    if (!meta || meta.displayId === "composio") return null;
-    // Per-app Composio logo first (same source as the tool cards): cached
-    // toolkit logo, else the live Composio CDN artwork (works before the
-    // list has ever been fetched — e.g. Calendar / Drive on first load),
-    // else the static brand mark.
-    try {
-      const { getCachedConnectors } = require("@/lib/connectors/connectors-cache") as typeof import("@/lib/connectors/connectors-cache");
-      const entry = getCachedConnectors?.()?.find?.(
-        (c: any) => c.id?.toLowerCase?.() === meta.displayId.toLowerCase(),
-      );
-      const url = entry?.toolkitLogos?.[meta.prefixes[0]];
-      if (url) {
-        // eslint-disable-next-line @next/next/no-img-element
-        return <img src={url} alt="" className={`size-3.5 object-contain${composioLogoDarkClass(meta.prefixes[0])}`} loading="lazy" />;
+    const { getCachedConnectors } = require("@/lib/connectors/connectors-cache") as typeof import("@/lib/connectors/connectors-cache");
+    const entry = getCachedConnectors?.()?.find?.(
+      (c: any) => c.id?.toLowerCase?.() === meta.displayId.toLowerCase(),
+    );
+    const url = entry?.toolkitLogos?.[meta.prefixes[0]];
+    if (url) {
+      return {
+        key,
+        name: meta.name,
+        node: (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt="" className={`size-3.5 object-contain${composioLogoDarkClass(meta.prefixes[0])}`} loading="lazy" />
+        ),
+      };
+    }
+  } catch {}
+  try {
+    // Null for ids with no single Composio logo (e.g. parent "google"
+    // bundle) — falls through to the static mark below.
+    const direct = composioLogoUrlForIconId(meta.iconId);
+    if (direct) {
+      return {
+        key,
+        name: meta.name,
+        node: (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={direct} alt="" className={`size-3.5 object-contain${composioLogoDarkClass(meta.prefixes[0])}`} loading="lazy" />
+        ),
+      };
+    }
+  } catch {}
+  return { key, name: meta.name, node: renderConnectorIcon(meta.iconId, 14) };
+}
+
+const INFER_CONNECTOR_META_TOOLS = new Set(["mcp_tool_call", "connect_service"]);
+
+/** Unique connector icons for a set of tool calls (Gmail, Calendar, …). */
+function getConnectorIconEntries(parts: ToolCallMessagePart[]): ConnectorIconEntry[] {
+  const seen = new Set<string>();
+  const entries: ConnectorIconEntry[] = [];
+  for (const part of parts) {
+    let metas: ConnectorMeta[] = [];
+    const direct = getConnectorMetaForTool(part.toolName);
+    if (direct && direct.displayId !== "composio") {
+      metas = [direct];
+    } else if (direct || INFER_CONNECTOR_META_TOOLS.has(part.toolName)) {
+      // Composio meta-tools hide the real app in their args. Only scan
+      // known connector wrappers — never arbitrary tool args (a shell
+      // command mentioning "github" must not sprout a GitHub icon).
+      try {
+        metas = inferConnectorMetasFromArgs(part.args);
+      } catch {
+        metas = [];
       }
-    } catch {}
-    try {
-      // Null for ids with no single Composio logo (e.g. parent "google"
-      // bundle) — falls through to the static mark below.
-      const direct = composioLogoUrlForIconId(meta.iconId);
-      if (direct) {
-        // eslint-disable-next-line @next/next/no-img-element
-        return <img src={direct} alt="" className={`size-3.5 object-contain${composioLogoDarkClass(meta.prefixes[0])}`} loading="lazy" />;
-      }
-    } catch {}
-    return renderConnectorIcon(meta.iconId, 14);
-  } catch {
-    return null;
+    }
+    for (const meta of metas) {
+      if (meta.displayId === "composio") continue;
+      const entry = connectorIconEntryForMeta(meta);
+      if (seen.has(entry.key)) continue;
+      seen.add(entry.key);
+      entries.push(entry);
+    }
   }
+  return entries;
 }
 
 function isReadTool(name: string): boolean {
@@ -981,10 +1024,6 @@ function isSearchTool(name: string): boolean {
   );
 }
 
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
 function ToolGroupWithTitle({
   indices,
   active,
@@ -995,55 +1034,72 @@ function ToolGroupWithTitle({
   children: ReactNode;
 }) {
   const message = useAuiState((s) => s.message);
-  const parts = indices
-    .map((i) => message.content[i])
-    .filter((p): p is ToolCallMessagePart => p?.type === "tool-call");
+  const groupParts = indices.map((i) => message.content[i]).filter(Boolean);
+  const parts = groupParts.filter(
+    (p): p is ToolCallMessagePart => p?.type === "tool-call",
+  );
   const visibleParts = parts.filter((p) => !HIDDEN_INLINE_TOOLS.has(p.toolName));
-  const reasoningParts = indices
-    .map((i) => message.content[i])
-    .filter((p): p is { type: "reasoning"; text: string } => p?.type === "reasoning");
+  const reasoningParts = groupParts.filter(
+    (p): p is { type: "reasoning"; text: string } => p?.type === "reasoning",
+  );
   // Hidden inline tools (TodoWrite goals panel, present_file bottom list)
   // join the group to keep it contiguous but never affect title/count.
   if (visibleParts.length === 0 && reasoningParts.length === 0) return null;
-  // A single visible tool is never a group — render it directly inline.
-  if (visibleParts.length + reasoningParts.length <= 1) return <>{children}</>;
   const labels = visibleParts.map(getToolLabel);
-  const lastTool = visibleParts[visibleParts.length - 1];
-  const groupIcon = lastTool ? getConnectorIconForTool(lastTool.toolName) : null;
+  const connectorIcons = getConnectorIconEntries(visibleParts);
   const visibleCount = visibleParts.length + reasoningParts.length;
 
-  // Screenshot-style multi-call summary ("Explored 9 reads, 2 searches"):
-  // pure read/search groups get the friendly "Explored" verb with a
-  // counts breakdown; mixed groups keep the playful last-tool label.
+  // While running the title is the live act (playful tool verb, or
+  // "Exploring" for pure read/search runs) and deliberately carries no
+  // count; once finished it always becomes "[icons], used N tools".
   const reads = visibleParts.filter((p) => isReadTool(p.toolName)).length;
   const searches = visibleParts.filter(
     (p) => !isReadTool(p.toolName) && isSearchTool(p.toolName),
   ).length;
   const others = visibleParts.length - reads - searches;
   const allExplore = others === 0 && reads + searches === visibleParts.length;
+  const lastPart = [...indices]
+    .reverse()
+    .map((i) => message.content[i])
+    .find(
+      (p) =>
+        p?.type === "reasoning" ||
+        (p?.type === "tool-call" && !HIDDEN_INLINE_TOOLS.has(p.toolName)),
+    );
 
   let title: string;
-  let detail: string | undefined;
-  if (allExplore && (reads > 0 || searches > 0)) {
-    title = "Explored";
-    const bits: string[] = [];
-    if (reads > 0) bits.push(plural(reads, "read", "reads"));
-    if (searches > 0) bits.push(plural(searches, "search", "searches"));
-    detail = bits.join(", ");
+  if (active) {
+    if (allExplore && (reads > 0 || searches > 0)) {
+      title = "Exploring";
+    } else if (lastPart?.type === "reasoning") {
+      title = "Noodling on it";
+    } else {
+      title = labels[labels.length - 1] || "Working on it";
+    }
   } else {
-    title = labels[labels.length - 1] || (reasoningParts.length > 0 ? "Thinking" : "Working on it");
-    detail = undefined;
+    title = `${connectorIcons.length > 0 ? ", " : ""}used ${visibleCount} ${
+      visibleCount === 1 ? "tool" : "tools"
+    }`;
   }
+
+  const icon =
+    connectorIcons.length > 0 ? (
+      <span className="flex items-center -space-x-1">
+        {connectorIcons.map((entry) => (
+          <span
+            key={entry.key}
+            title={entry.name}
+            className="relative flex size-4 items-center justify-center rounded-[5px] bg-background ring-1 ring-background"
+          >
+            {entry.node}
+          </span>
+        ))}
+      </span>
+    ) : undefined;
 
   return (
     <ToolGroupRoot variant="ghost">
-      <ToolGroupTrigger
-        count={visibleCount > 0 ? visibleCount : indices.length}
-        active={active}
-        label={title}
-        detail={detail}
-        icon={groupIcon}
-      />
+      <ToolGroupTrigger active={active} label={title} icon={icon} />
       <ToolGroupContent>{children}</ToolGroupContent>
     </ToolGroupRoot>
   );
@@ -1094,11 +1150,20 @@ const AssistantMessage: FC = () => {
           {({ part, children }) => {
             switch (part.type) {
               case "group-chainOfThought":
-                return <div data-slot="aui_chain-of-thought">{children}</div>;
+                // The rows live one level below ToolGroupContent, so this
+                // wrapper carries the vertical spacing between tool cards.
+                return (
+                  <div
+                    data-slot="aui_chain-of-thought"
+                    className="flex flex-col gap-3.5"
+                  >
+                    {children}
+                  </div>
+                );
               case "group-tool":
-                if (part.indices.length === 1) {
-                  return children;
-                }
+                // Every tool call lives in a group — even a single one —
+                // so browser/computer/thinking rows share the same
+                // compressed header and expandable list.
                 return (
                   <ToolGroupWithTitle
                     indices={part.indices}
@@ -1182,73 +1247,9 @@ const AssistantMessage: FC = () => {
         data-slot="aui_assistant-message-footer"
         className={cn("ml-2 flex items-center", ACTION_BAR_HEIGHT)}
       >
-        <AssistantActionBar />
+        <MessageTiming />
       </div>
     </MessagePrimitive.Root>
-  );
-};
-
-const handleExportMarkdown = async (content: string) => {
-  const date = new Date();
-  const stamp = `${date.toISOString().slice(0, 10)}_${date.getHours().toString().padStart(2, "0")}-${date.getMinutes().toString().padStart(2, "0")}`;
-  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `qube-message-${stamp}.md`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
-};
-
-const AssistantActionBar: FC = () => {
-  return (
-    <ActionBarPrimitive.Root
-      hideWhenRunning
-      autohide="not-last"
-      className="aui-assistant-action-bar-root text-muted-foreground col-start-3 row-start-2 -ml-1 flex gap-1"
-    >
-      <ActionBarPrimitive.Copy asChild>
-        <TooltipIconButton tooltip="Copy" className="!size-6">
-          <AuiIf condition={(s) => s.message.isCopied}>
-            <CheckIcon className="size-3.5" />
-          </AuiIf>
-          <AuiIf condition={(s) => !s.message.isCopied}>
-            <CopyIcon className="size-3.5" />
-          </AuiIf>
-        </TooltipIconButton>
-      </ActionBarPrimitive.Copy>
-      <ActionBarPrimitive.Reload asChild>
-        <TooltipIconButton tooltip="Refresh" className="!size-6">
-          <RefreshCwIcon className="size-3.5" />
-        </TooltipIconButton>
-      </ActionBarPrimitive.Reload>
-      <ActionBarMorePrimitive.Root>
-        <ActionBarMorePrimitive.Trigger asChild>
-          <TooltipIconButton
-            tooltip="More"
-            className="!size-6 data-[state=open]:bg-accent"
-          >
-            <MoreHorizontalIcon className="size-3.5" />
-          </TooltipIconButton>
-        </ActionBarMorePrimitive.Trigger>
-        <ActionBarMorePrimitive.Content
-          side="bottom"
-          align="start"
-          sideOffset={6}
-          className="aui-action-bar-more-content bg-popover text-popover-foreground data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:animate-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] overflow-hidden rounded-xl border p-1 shadow-lg"
-        >
-          <ActionBarPrimitive.ExportMarkdown asChild onExport={handleExportMarkdown}>
-            <ActionBarMorePrimitive.Item className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none">
-              <DownloadIcon className="size-4" />
-              Export as Markdown
-            </ActionBarMorePrimitive.Item>
-          </ActionBarPrimitive.ExportMarkdown>
-        </ActionBarMorePrimitive.Content>
-      </ActionBarMorePrimitive.Root>
-      <MessageTiming />
-    </ActionBarPrimitive.Root>
   );
 };
 

@@ -36,13 +36,23 @@ interface ScheduledTask {
   nextRunAt: number;
 }
 
-function isDone(task: ScheduledTask): boolean {
-  return task.schedule.kind === "once" && task.lastRunAt != null;
+function isDone(task: ScheduledTask, now = Date.now()): boolean {
+  if (task.lastRunAt == null) return false;
+  if (task.schedule.kind === "once") return true;
+  // Recurring task: once it has run in the current recurrence window it is
+  // done for that period (a daily task that already ran today belongs in
+  // Done until the next day starts).
+  const intervalMinutes = task.schedule.intervalMinutes;
+  if (!intervalMinutes || intervalMinutes <= 0) return false;
+  return now < task.lastRunAt + intervalMinutes * 60_000;
 }
 
 export function SchedulingTab() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
+  // Re-evaluate interval windows while the tab stays open, so a recurring
+  // task leaves Done when its period rolls over.
+  const [now, setNow] = useState(() => Date.now());
   const [dragState, setDragState] = useState<DragState>(null);
   // Ids of tasks currently executing (triggered via the board).
   const [runningIds, setRunningIds] = useState<string[]>([]);
@@ -79,8 +89,14 @@ export function SchedulingTab() {
     })();
   }, [fetchTasks]);
 
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Every scheduled task lives on the board — pending interval (recurring)
-  // tasks as well as one-shots. Only ran one-shots count as Done.
+  // tasks as well as one-shots. Ran one-shots and recurring tasks that
+  // already ran in their current interval window count as Done.
   const boardTasks = useMemo(
     () => tasks.filter((t) => t.type === "scheduled"),
     [tasks]
@@ -95,7 +111,7 @@ export function SchedulingTab() {
       done: [],
     };
     for (const task of boardTasks) {
-      if (isDone(task)) {
+      if (isDone(task, now)) {
         buckets.done.push(task);
       } else if (runningIds.includes(task.id)) {
         buckets["in-progress"].push(task);
@@ -123,10 +139,15 @@ export function SchedulingTab() {
         id: "done",
         title: "Done",
         status: "done",
-        cards: buckets.done.map((t) => ({ id: t.id, title: t.name, done: true })),
+        cards: buckets.done.map((t) => ({
+          id: t.id,
+          title: t.name,
+          done: true,
+          persist: t.schedule.kind === "interval",
+        })),
       },
     ];
-  }, [boardTasks, runningIds]);
+  }, [boardTasks, runningIds, now]);
 
   // Dropping a card into In progress triggers the task for real. Anything
   // else is a no-op — placement always derives from task state.
@@ -154,13 +175,17 @@ export function SchedulingTab() {
   // A Done card that slid out (past the cap of 5) is deleted for good —
   // removed locally at once, deleted server-side in the background.
   const handleCardGone = useCallback((cardId: string) => {
+    // Safety net: recurring tasks are never deleted by the Done-column
+    // overflow — they return to To do when their period rolls over.
+    const task = tasks.find((t) => t.id === cardId);
+    if (task && task.schedule.kind === "interval") return;
     setTasks((prev) => prev.filter((t) => t.id !== cardId));
     fetch("/api/scheduler/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "delete", id: cardId }),
     }).catch(() => {});
-  }, []);
+  }, [tasks]);
 
   const handleDrop = useCallback(
     (cardId: string, fromColumnId: ColumnStatus, toColumnId: ColumnStatus) => {
@@ -334,8 +359,9 @@ export function SchedulingTab() {
             <DialogHeader>
               <DialogTitle>New task</DialogTitle>
               <DialogDescription>
-                One-off tasks run once and land in Done. Recurring tasks stay
-                in To do and run on repeat.
+                One-off tasks run once and land in Done. Recurring tasks move
+                to Done for the current period after each run, then return to
+                To do when the next period starts.
               </DialogDescription>
             </DialogHeader>
 

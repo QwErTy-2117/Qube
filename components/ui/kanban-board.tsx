@@ -71,6 +71,9 @@ export type CardData = {
   title: string
   /** Backend truth: the task actually ran. Drives the status circle. */
   done?: boolean
+  /** Recurring cards never overflow/delete — they return to To do when the
+      current period ends. */
+  persist?: boolean
 }
 
 export type ColumnData = {
@@ -342,8 +345,22 @@ export function Column({
   const [vanishedIds, setVanishedIds] = useState<string[]>([])
   const liveCards = column.cards.filter((c) => !vanishedIds.includes(c.id))
   const cap = isDone ? DONE_VISIBLE : isTodo ? TODO_VISIBLE : liveCards.length
-  const visibleCards = liveCards.slice(0, cap)
-  const overflowCards = isDone ? liveCards.slice(cap) : []
+  // Recurring (persist) cards are always visible in Done: they must never
+  // slide out and be deleted — they return to To do at the next period.
+  let visibleCards = liveCards.slice(0, cap)
+  let overflowCards = isDone ? liveCards.slice(cap) : []
+  if (isDone) {
+    const keepCards = liveCards.filter((c) => c.persist)
+    const regularCards = liveCards.filter((c) => !c.persist)
+    const slots = Math.max(0, DONE_VISIBLE - keepCards.length)
+    const visibleIds = new Set(
+      [...keepCards, ...regularCards.slice(0, slots)].map((c) => c.id)
+    )
+    visibleCards = liveCards.filter((c) => visibleIds.has(c.id))
+    overflowCards = liveCards.filter(
+      (c) => !visibleIds.has(c.id) && !c.persist
+    )
+  }
   const queuedCount = liveCards.length - visibleCards.length - overflowCards.length
 
   // Staged refill for To do: when a card leaves, the rest slide up first

@@ -93,7 +93,7 @@ function ToolGroupRoot({
 }
 
 function ToolGroupTrigger({
-  count,
+  count = 0,
   active = false,
   className,
   label: customLabel,
@@ -101,7 +101,7 @@ function ToolGroupTrigger({
   icon,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
-  count: number;
+  count?: number;
   active?: boolean;
   label?: string;
   detail?: string;
@@ -129,13 +129,25 @@ function ToolGroupTrigger({
         {icon && (
           <span
             data-slot="tool-group-trigger-icon"
-            className="inline-flex size-4 shrink-0 translate-y-0.5 items-center justify-center self-center [&_svg]:size-4"
+            className="inline-flex shrink-0 translate-y-0.5 items-center justify-center self-center [&_svg]:size-4"
           >
             {icon}
           </span>
         )}
-        <span className={cn("shrink-0 font-medium tracking-[-0.01em] text-foreground/90", active && "animate-pulse")}>
-          {displayLabel}
+        <span
+          data-slot="tool-group-trigger-label-text"
+          className="relative inline-block shrink-0 font-medium tracking-[-0.01em] text-foreground/90"
+        >
+          <span>{displayLabel}</span>
+          {active ? (
+            <span
+              aria-hidden
+              data-slot="tool-group-trigger-shimmer"
+              className="shimmer pointer-events-none absolute inset-0 motion-reduce:animate-none"
+            >
+              {displayLabel}
+            </span>
+          ) : null}
         </span>
         {customDetail ? (
           <span className="min-w-0 truncate font-normal text-muted-foreground">
@@ -181,7 +193,7 @@ function ToolGroupContent({
     >
       <div
         className={cn(
-          "ml-5 flex flex-col gap-2 pt-1 pb-1",
+          "ml-5 flex flex-col gap-3.5 pt-2 pb-2",
           "[&_[data-slot=tool-row]]:mt-0",
           "[&_[data-slot=browser-tool]]:mt-0",
           "[&>*]:animate-in [&>*]:fade-in-0 [&>*]:blur-in-[2px] [&>*]:slide-in-from-top-1 [&>*]:duration-(--animation-duration) [&>*]:ease-[cubic-bezier(0.32,0.72,0,1)]",

@@ -70,6 +70,16 @@ fn is_server_running(port: u16) -> bool {
     .is_ok()
 }
 
+/// Bring the existing Qube window back to the foreground (used when an
+/// OAuth callback deep-links back into the app from the browser).
+fn focus_main(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 use tauri_plugin_autostart::MacosLauncher;
 
 fn read_app_settings(data_dir: &std::path::Path) -> (bool, bool) {
@@ -86,7 +96,20 @@ fn read_app_settings(data_dir: &std::path::Path) -> (bool, bool) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Must be the first plugin: when a `qube://` link (OAuth callback) opens
+    // while Qube is already running, the second process hands the URL to the
+    // existing instance and exits instead of spawning a duplicate app.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            focus_main(app);
+        }));
+    }
+
+    let app = builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         // Safety net: never navigate the app webview to an external site.
         // External http(s) links (and mailto:/tel:) are opened in the system
@@ -137,6 +160,29 @@ pub fn run() {
         .manage(AppState::new())
         .setup(|app| {
             tray::build_tray(app.handle())?;
+
+            // OAuth callbacks return to the browser's /connectors/callback
+            // page, which immediately opens `qube://connectors/callback`.
+            // Register the scheme (dev/Linux/Windows) and focus the app when
+            // the link arrives, so users land back in Qube instead of a
+            // browser copy of the interface.
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+                {
+                    let _ = app.deep_link().register_all();
+                }
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    if event.urls().iter().any(|url| url.scheme() == "qube") {
+                        focus_main(&handle);
+                    }
+                });
+                if matches!(app.deep_link().get_current(), Ok(Some(urls)) if !urls.is_empty()) {
+                    focus_main(app.handle());
+                }
+            }
 
             let data_dir = app.path().app_data_dir().unwrap_or_else(|_| {
                 std::env::temp_dir().join("qube-data")

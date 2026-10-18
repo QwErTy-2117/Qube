@@ -5,7 +5,7 @@ import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { renderConnectorIcon } from "@/lib/connectors/icons";
 import { composioLogoUrlForIconId, composioLogoDarkClass } from "@/lib/connectors/composio-logo";
 import { ToolRow } from "@/components/assistant-ui/tools/tool-row";
-import { ExternalLinkIcon } from "lucide-react";
+import { ArrowUpRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const CONNECTOR_NAMES: Record<string, string> = {
@@ -67,11 +67,25 @@ export const ConnectServiceToolUI: ToolCallMessagePartComponent = ({ args: rawAr
       onOpenChange={() => {}}
     >
       {connectUrl ? (
-        <Button asChild size="sm" className="w-full rounded-full h-7 text-[11px] font-medium"
-          style={{ backgroundColor: color === "currentColor" ? undefined : color, color: "#fff" }}>
-          <a href={connectUrl} target="_blank" rel="noopener noreferrer">
-            <ExternalLinkIcon className="size-3 mr-1.5" /> Connect
-          </a>
+        <Button
+          type="button"
+          size="sm"
+          className="w-full rounded-full h-7 text-[11px] font-medium"
+          style={{ backgroundColor: color === "currentColor" ? undefined : color, color: "#fff" }}
+          onClick={() => {
+            // Hand off to Qube's own Connectors tab (focused on this app)
+            // instead of opening a raw browser page. The OAuth step itself
+            // still happens from the app's Connect button.
+            try {
+              window.dispatchEvent(
+                new CustomEvent("qube-open-settings", {
+                  detail: { tab: "connectors", connectorId },
+                }),
+              );
+            } catch {}
+          }}
+        >
+          <ArrowUpRightIcon className="size-3 mr-1.5" /> Connect
         </Button>
       ) : null}
       {error ? (

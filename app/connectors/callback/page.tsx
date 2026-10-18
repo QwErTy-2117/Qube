@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CircleCheck } from "lucide-react";
+
+const DEEP_LINK = "qube://connectors/callback";
 
 export default function ConnectorCallback() {
-  const [closed, setClosed] = useState(false);
+  const [showFallback, setShowFallback] = useState(false);
 
   useEffect(() => {
-    // Tell any opener (same-browser popup flows) that auth finished. The
-    // desktop app detects completion by polling, so this is best-effort.
+    const openedByScript = Boolean(window.opener);
+    // Best-effort signals for popup/broadcast flows (web-only usage).
     try {
       window.opener?.postMessage({ type: "connector-auth-complete" }, "*");
     } catch {}
@@ -17,38 +18,55 @@ export default function ConnectorCallback() {
       ch.postMessage({ type: "connector-auth-complete" });
       ch.close();
     } catch {}
-    // Auto-close tabs that were opened by script; otherwise leave the
-    // friendly message below ("you can now close this page").
-    try {
-      window.close();
-    } catch {}
-    const t = setTimeout(() => setClosed(true), 800);
-    return () => clearTimeout(t);
+
+    // Hand the auth result back to the desktop app instead of leaving the
+    // user on a browser copy of the Qube interface. Qube registers the
+    // `qube://` scheme and focuses its window when this fires (it also
+    // polls connector status, so the connection appears immediately).
+    const redirect = window.setTimeout(() => {
+      try {
+        window.location.replace(DEEP_LINK);
+      } catch {}
+    }, 300);
+
+    // If the app is not installed (or the browser blocks the hand-off),
+    // offer an explicit button rather than showing the full app UI.
+    const fallback = window.setTimeout(() => setShowFallback(true), 1800);
+
+    // A script-opened OAuth popup (web app) can close itself and return to
+    // the chat tab. Desktop OAuth opens in the system browser (no opener),
+    // where the `qube://` hand-off above focuses the app instead.
+    const close = openedByScript
+      ? window.setTimeout(() => {
+          try {
+            window.close();
+          } catch {}
+        }, 1200)
+      : null;
+
+    return () => {
+      window.clearTimeout(redirect);
+      window.clearTimeout(fallback);
+      if (close !== null) window.clearTimeout(close);
+    };
   }, []);
 
   return (
-    <div className="bg-background text-foreground flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-sm rounded-3xl border border-border bg-background p-8 text-center shadow-xl">
-        <span className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-emerald-500/10">
-          <CircleCheck className="size-6 text-emerald-500" />
-        </span>
-        <h1 className="text-lg font-semibold tracking-tight">Connected</h1>
-        <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
-          Your app is now connected to Qube.
-          {closed
-            ? " You can now close this tab and return to Qube."
-            : " Finishing up…"}
-        </p>
-        {closed && (
-          <button
-            type="button"
-            onClick={() => window.close()}
-            className="bg-muted hover:bg-muted/70 mt-5 h-9 w-full rounded-full text-sm font-medium transition-colors"
-          >
-            Close this tab
-          </button>
-        )}
+    <main className="flex min-h-screen items-center justify-center p-6 font-sans text-sm text-neutral-600">
+      <div className="text-center">
+        <p>Connection complete.</p>
+        <a
+          href={DEEP_LINK}
+          className="mt-3 inline-block rounded-full bg-neutral-900 px-4 py-2 text-xs font-medium text-white"
+        >
+          Return to Qube
+        </a>
+        {showFallback ? (
+          <p className="mt-3 text-xs text-neutral-400">
+            If Qube did not open, you can close this tab.
+          </p>
+        ) : null}
       </div>
-    </div>
+    </main>
   );
 }

@@ -63,6 +63,11 @@
     ]
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["qube"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlDQjQ5RjlGNDg2Rjk4QkMKUldTOG1HOUluNSswbkNuOWdWTHJuZXlrRkJMSE8zTEY0WVllSU9qN05XSjhwV1ZKTkdJcDBzRlIK",
       "endpoints": [

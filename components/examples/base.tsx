@@ -1081,6 +1081,10 @@ function ToolGroupWithTitle({
     } else {
       title = labels[labels.length - 1] || "Working on it";
     }
+  } else if (connectorIcons.length > 0) {
+    // When a connector tool finishes, show its own friendly title instead of
+    // the generic "used N tools" — the connector icons sit before it.
+    title = labels[labels.length - 1] || "Working on it";
   } else {
     title = `used ${visibleCount} ${visibleCount === 1 ? "tool" : "tools"}`;
   }
@@ -1117,7 +1121,7 @@ const icon =
 
   return (
     <ToolGroupRoot variant="ghost">
-      <ToolGroupTrigger active={active} label={title} icon={active ? undefined : icon} />
+      <ToolGroupTrigger active={active} label={title} icon={icon} />
       <ToolGroupContent>{children}</ToolGroupContent>
     </ToolGroupRoot>
   );

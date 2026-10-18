@@ -1024,6 +1024,10 @@ function isSearchTool(name: string): boolean {
   );
 }
 
+// Mirrors ConnectorAppIcons in connector-tool-ui.tsx — tilted stacked
+// connector tiles that straighten and push apart on hover.
+const TOOL_GROUP_STACK_TILTS = [-8, 6, -5, 7, -6];
+
 function ToolGroupWithTitle({
   indices,
   active,
@@ -1034,6 +1038,7 @@ function ToolGroupWithTitle({
   children: ReactNode;
 }) {
   const message = useAuiState((s) => s.message);
+  const [hoveredIcon, setHoveredIcon] = useState<number | null>(null);
   const groupParts = indices.map((i) => message.content[i]).filter(Boolean);
   const parts = groupParts.filter(
     (p): p is ToolCallMessagePart => p?.type === "tool-call",
@@ -1084,15 +1089,24 @@ const STACK_TILTS = [-8, 6, -5, 7, -6];
 
 const icon =
     connectorIcons.length > 0 ? (
-      <span className="flex shrink-0 items-center">
+      <span className="flex items-center">
         {connectorIcons.map((entry, i) => {
+          const isHovered = hoveredIcon === i;
+          const push = hoveredIcon === null || isHovered ? 0 : i < hoveredIcon ? -4 : 4;
           const tilt = connectorIcons.length > 1 ? STACK_TILTS[i % STACK_TILTS.length] : 0;
           return (
             <span
               key={entry.key}
               title={entry.name}
-              className="relative flex size-4 shrink-0 items-center justify-center rounded-[5px] bg-background ring-1 ring-background transition-transform duration-200 hover:scale-110 hover:z-10"
-              style={{ transform: `rotate(${tilt}deg)` }}
+              onMouseEnter={() => setHoveredIcon(i)}
+              onMouseLeave={() => setHoveredIcon(null)}
+              className={cn(
+                "relative flex size-4 shrink-0 items-center justify-center rounded-[5px] bg-background ring-1 ring-background transition-transform duration-200 hover:scale-110 hover:z-10",
+                i > 0 ? "-ml-1" : ""
+              )}
+              style={{
+                transform: `rotate(${isHovered ? 0 : tilt}deg) translateX(${push}px)`,
+              }}
             >
               {entry.node}
             </span>

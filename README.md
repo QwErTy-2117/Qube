@@ -117,17 +117,17 @@ Everyday jobs people hand it:
 
 They're powerful, but they're built for people who are comfortable in the terminal. Qube is built for everyone else too.
 
-**OpenClaw** runs as a gateway on your machine or server, and now also ships desktop apps (Windows Hub installer, macOS menu-bar app) that can provision a local Gateway on first run. Its docs still route setup through terminal commands like `openclaw onboard`, an API key or CLI login, and a Gateway process with a browser Control UI you manage. It's a good fit if you want your agent plugged into many chat channels at once and don't mind config files and background services. See their [Install](https://docs.openclaw.ai/install) and [Getting started](https://docs.openclaw.ai/start/getting-started) docs.
+**OpenClaw** runs as a gateway on your machine or server, and now also ships desktop apps (Windows Hub installer, macOS menu-bar app) that can provision a local Gateway on first run. Its docs still route setup through terminal commands like `openclaw onboard`, an API key or CLI login, and a Gateway process with a browser Control UI you manage. It's a good fit if you want your agent plugged into many chat channels at once and don't mind config files and background services.
 
-**Hermes Agent** is a terminal-first agent that now also offers a Desktop installer on macOS/Windows. Its docs still route setup through commands like `hermes setup`, `hermes model`, and `hermes gateway setup`, with providers, toolsets, and config files to manage. It's a good fit if you like fine-tuning every tool and running bots or always-on servers. See their [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart).
+**Hermes Agent** is a terminal-first agent that now also offers a Desktop installer on macOS/Windows. Its docs still route setup through commands like `hermes setup`, `hermes model`, and `hermes gateway setup`, with providers, toolsets, and config files to manage. It's a good fit if you like fine-tuning every tool and running bots or always-on servers.
 
 **Qube takes the opposite route:**
 
 - Install it like a normal desktop app — no terminal commands to get started.
 - If you already have ChatGPT, just sign in with it. No hunting for API keys. Or paste a single key, or point it at a local model via Ollama or LM Studio you run yourself.
-- Connect Gmail, Drive, Slack, and the rest with a normal sign-in window (releases include a built-in key; source builds use your own `COMPOSIO_API_KEY`), then just ask in plain words. There's no bot token to create and no Gateway to keep alive for everyday use.
+- Connect Gmail, Drive, Slack, and the rest with a normal sign-in window (releases include a built-in composio api key, but if you want you can set your own in the in-app seettings), then just ask in plain words. There's no bot token to create and no Gateway to keep alive for everyday use.
 
-If you enjoy running servers and editing settings files, you'll feel at home in OpenClaw or Hermes. If you just want to download something and ask for help in your own words, Qube is the easier start.
+If you enjoy running servers and editing settings files, you'll feel at home in OpenClaw or Hermes. If you just want to download something and ask for help in your own words, Qube is the way to go.
 
 ---
 
@@ -154,7 +154,6 @@ Tell Qube what you want to happen, in your own words. If it needs a detail you d
 A few tips that help:
 - Say what the outcome should look like and who it's for
 - Mention where files should go or which app to use, if you already know
-- Check what it did before you share or send anything — you can see every file it changed and open it right from the chat
 
 ---
 

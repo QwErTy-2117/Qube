@@ -1080,18 +1080,24 @@ function ToolGroupWithTitle({
     title = `used ${visibleCount} ${visibleCount === 1 ? "tool" : "tools"}`;
   }
 
-  const icon =
+const STACK_TILTS = [-8, 6, -5, 7, -6];
+
+const icon =
     connectorIcons.length > 0 ? (
-      <span className="flex items-center -space-x-1">
-        {connectorIcons.map((entry) => (
-          <span
-            key={entry.key}
-            title={entry.name}
-            className="relative flex size-4 items-center justify-center rounded-[5px] bg-background ring-1 ring-background"
-          >
-            {entry.node}
-          </span>
-        ))}
+      <span className="flex shrink-0 items-center">
+        {connectorIcons.map((entry, i) => {
+          const tilt = connectorIcons.length > 1 ? STACK_TILTS[i % STACK_TILTS.length] : 0;
+          return (
+            <span
+              key={entry.key}
+              title={entry.name}
+              className="relative flex size-4 shrink-0 items-center justify-center rounded-[5px] bg-background ring-1 ring-background transition-transform duration-200 hover:scale-110 hover:z-10"
+              style={{ transform: `rotate(${tilt}deg)` }}
+            >
+              {entry.node}
+            </span>
+          );
+        })}
       </span>
     ) : undefined;
 

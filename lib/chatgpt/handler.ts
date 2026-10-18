@@ -1,4 +1,6 @@
 import { createChatGPTHandler } from "@opencoredev/loginwithchatgpt-server";
+import { createOpenAI } from "@ai-sdk/openai";
+import { filterChatGPTModelsByPlan, isPlanOrLimitError } from "@/lib/chatgpt/models";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -233,7 +235,54 @@ async function ensureStreamFlag(req: Request): Promise<Request> {
 
 (chatGptAuth as any).getModels = async (req: Request) => {
   await refreshChatGPTClientVersion().catch(() => {});
-  return _origGetModels(req);
+  const live = await _origGetModels(req);
+  if (!Array.isArray(live) || live.length === 0) return live;
+  // Only probe when the account's model catalog is being listed for the
+  // user — not when picking a replacement model mid-chat.
+  if (!new URL(req.url).pathname.endsWith("/models")) return live;
+    try {
+    const origin = new URL(req.url).origin;
+    const proxyBase = origin ? `${origin}/api/chatgpt` : "/api/chatgpt";
+    const baseFetch = chatGptAuth.proxyFetch(req) as typeof fetch;
+    const client = createOpenAI({
+      baseURL: proxyBase,
+      apiKey: "login-with-chatgpt-proxy",
+      fetch: baseFetch as any,
+    });
+    const probe = async (modelId: string) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15_000);
+      try {
+        const { streamText } = await import("ai");
+        const model = (client as any).responses(modelId);
+        const res: any = await (streamText as any)({
+          model,
+          prompt: ".",
+          maxOutputTokens: 1,
+          temperature: 0,
+          maxRetries: 0,
+          abortSignal: controller.signal,
+        });
+        try {
+          await res.consumeStream();
+        } catch {}
+        await res.text;
+        return { ok: true, planLimited: false };
+      } catch (e: any) {
+        return {
+          ok: false,
+          planLimited: isPlanOrLimitError(e),
+          error: String(e?.message ?? e).slice(0, 300),
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    return filterChatGPTModelsByPlan(live, probe);
+  } catch (e) {
+    console.error("[chatgpt] model plan-probe failed:", e);
+    return live;
+  }
 };
 
 (chatGptAuth as any).proxyFetch = (req: Request) => {

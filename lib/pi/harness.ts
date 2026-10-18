@@ -521,6 +521,16 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     if (providerId === "mistral") providerOptions.mistral = { reasoningEffort: effort };
     else providerOptions.openai = { reasoningEffort: effort };
   }
+  // Prompt caching (OpenAI-compatible providers only): send a stable cache key
+  // per thread so the system prompt + conversation prefix are cached upstream.
+  // Subsequent turns in the same thread hit the cache on the shared prefix,
+  // cutting input token cost roughly in half. Only applies to non-mistral
+  // providers (mistral uses its own SDK key, not providerOptions.openai).
+  if (providerId !== "mistral" && config.threadId) {
+    providerOptions.openai ??= {};
+    providerOptions.openai.promptCacheKey = config.threadId;
+    providerOptions.openai.promptCacheRetention = "24h";
+  }
 
   const resolveModel = (modelId?: string | null) => {
     const target = modelId || config.modelName || "";

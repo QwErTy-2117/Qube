@@ -269,6 +269,14 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             "src-tauri/target/release/bundle/macos/Qube.app" \
             "Qube_${VERSION}_x64.app.zip"
+          # Ensure the release exists before uploading: tauri-action creates it
+          # in whichever matrix job runs first, but a parallel job can hit
+          # "release not found" if the release isn't visible yet.
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "Qube v${VERSION}" \
+              --notes "See the assets to download this version." || true
+          fi
           gh release upload "${GITHUB_REF_NAME}" "Qube_${VERSION}_x64.app.zip" --clobber
 
       - name: Smoke test bundled sidecar

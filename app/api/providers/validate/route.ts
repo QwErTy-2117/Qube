@@ -1,6 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createMistral } from "@ai-sdk/mistral";
 import { generateText } from "ai";
+import { OPENCODE_ZEN_HEADERS } from "@/lib/pi/opencode-zen";
 
 /**
  * POST /api/providers/validate
@@ -98,7 +99,11 @@ export async function POST(req: Request) {
             error: `Zen model "${modelId}" needs an endpoint Qube does not support yet (Anthropic/Google/SystemOne). Pick a GPT, DeepSeek, GLM, Kimi, MiniMax or Big Pickle model.`,
           });
         }
-        const client = createOpenAI({ apiKey: apiKey || "", baseURL: base || "https://opencode.ai/zen/v1" });
+        const client = createOpenAI({
+          apiKey: apiKey || "",
+          baseURL: base || "https://opencode.ai/zen/v1",
+          headers: OPENCODE_ZEN_HEADERS,
+        });
         model = isResponses ? (client as any).responses(modelId) : client.chat(modelId);
       } else {
         const client = createOpenAI({ apiKey: apiKey || "", baseURL: base || undefined });
@@ -137,8 +142,8 @@ export async function POST(req: Request) {
         return Response.json({
           ok: false,
           code: "ZEN_FREE_TIER_BLOCKED",
-          error: "OpenCode Zen free tier can only be used from within the official OpenCode client.",
-          hint: "This is enforced by OpenCode, not Qube. Use a paid Zen model (add billing at opencode.ai/zen) or another provider.",
+          error: "OpenCode Zen rejected this request from Qube, even with the required OpenCode client headers.",
+          hint: "Free model access may still be restricted by OpenCode. Check that the API key and model are enabled, or try a paid Zen model or another provider.",
         });
       }
       if (status === 401 || /invalid.*api.*key|unauthorized|authentication/i.test(combined)) {

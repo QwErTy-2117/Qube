@@ -2,6 +2,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createMistral } from "@ai-sdk/mistral";
 import { providerStore } from "./provider-store";
 import { chatGptAuth } from "@/lib/chatgpt/handler";
+import { OPENCODE_ZEN_HEADERS } from "./opencode-zen";
 
 type ChatModel = ReturnType<ReturnType<typeof createOpenAI>["chat"]> | ReturnType<ReturnType<typeof createOpenAI>["responses"]>;
 
@@ -88,6 +89,7 @@ export function createPiModelClient(qualifiedModelId?: string | null): ChatModel
     const client = createOpenAI({
       apiKey: provider.apiKey || "",
       baseURL: effectiveBaseURL || "https://opencode.ai/zen/v1",
+      headers: OPENCODE_ZEN_HEADERS,
     });
     // GPT/Grok/Muse-Spark live behind /responses; everything else Qube
     // supports lives behind /chat/completions.
@@ -166,6 +168,7 @@ export function createPiModelClientForRequest(
     const client = createOpenAI({
       apiKey: provider.apiKey || "",
       baseURL: effectiveBaseURL || "https://opencode.ai/zen/v1",
+      headers: OPENCODE_ZEN_HEADERS,
     });
     if (isZenResponsesModel(modelId)) {
       return (client as any).responses(modelId);

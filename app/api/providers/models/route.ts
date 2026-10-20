@@ -1,3 +1,5 @@
+import { OPENCODE_ZEN_HEADERS } from "@/lib/pi/opencode-zen";
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -18,6 +20,7 @@ export async function POST(req: Request) {
         headers: {
           Authorization: `Bearer ${apiKey || ""}`,
           "Content-Type": "application/json",
+          ...(providerId === "opencode" ? OPENCODE_ZEN_HEADERS : {}),
         },
       });
     };
@@ -39,8 +42,8 @@ export async function POST(req: Request) {
         hint = " Access forbidden — the key may lack permission for this endpoint or the workspace may be blocked.";
         if (/FreeTier/i.test(errText)) {
           hint =
-            " OpenCode Zen free tier can only be used from within the official OpenCode client. " +
-            "Use a paid Zen model with billing enabled, or another provider.";
+            " OpenCode Zen rejected model discovery even with Qube's OpenCode client headers. " +
+            "Free model access can be restricted by OpenCode; try a paid Zen model or another provider.";
         }
       } else if (res.status === 429) {
         hint = " Rate-limited — the provider is throttling requests. Wait a minute and try again.";

@@ -50,7 +50,7 @@ import { SchedulingTab } from "./scheduling-tab";
 import { ConnectorsTab } from "./connectors-tab";
 import { SkillsTab } from "./skills-tab";
 import { AllowedDirectoriesSection } from "./allowed-directories";
-import { syncTauriAutostart } from "@/lib/tauri-utils";
+import { getTauriAppVersion, syncTauriAutostart } from "@/lib/tauri-utils";
 import { Switch } from "radix-ui";
 import { ChatGPTPreferencesCard } from "@/components/chatgpt/chatgpt-preferences";
 import { useLoginWithChatGPT } from "@opencoredev/loginwithchatgpt-react";
@@ -936,6 +936,19 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [tabValue, setTabValue] = useState("preferences");
   const [focusedConnectorId, setFocusedConnectorId] = useState<string | null>(null);
+
+  // The desktop binary is the source of truth for the version. Until now the
+  // label came from the bundled sidecar's package.json, so a stale sidecar
+  // copy made an updated app keep showing the previous release.
+  useEffect(() => {
+    let cancelled = false;
+    getTauriAppVersion().then((v) => {
+      if (!cancelled && v) setAppVersion(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Keep the preferences Tabs in sync with the single source of truth (`next-themes`).
   // Previously this read `localStorage` + observed the `dark` class, which desynced from

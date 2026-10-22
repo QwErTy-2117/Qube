@@ -151,6 +151,33 @@ App connections use a built-in key in releases, so there's nothing to paste. If 
 
 Tell Qube what you want to happen, in your own words. If it needs a detail you didn't give, it'll ask. Otherwise it gets started and shows you what it's doing.
 
+### 3. Updating or removing Qube
+
+Qube checks for updates itself and can install them in place. On Linux it hands the new package to your system package manager, so expect the normal administrator password prompt. You can also download the newest package from the [Releases page](https://github.com/QwErTy-2117/Qube/releases) and install it over the old one — no need to remove the previous version first. The version shown in Settings is the version of the running desktop app.
+
+**Fedora / RHEL / openSUSE (RPM)**
+
+```bash
+sudo dnf remove qube
+```
+
+The package is named `qube` (the downloaded file is `Qube-<version>-1.x86_64.rpm`). Check what is installed with `rpm -q qube`.
+
+**Debian / Ubuntu (DEB)**
+
+```bash
+sudo apt remove qube
+```
+
+The package only owns the installed files. Two leftovers are worth cleaning up by hand:
+
+```bash
+rm -f ~/.config/autostart/Qube.desktop   # only if you enabled "Run on start"
+rm -rf /tmp/qube-sidecar                 # temp copy of the local server
+```
+
+Your chats, settings and generated files live in `~/.local/share/com.qube.desktop` and are deliberately kept across updates and uninstalls. Delete that folder too if you want a completely clean removal.
+
 A few tips that help:
 - Say what the outcome should look like and who it's for
 - Mention where files should go or which app to use, if you already know

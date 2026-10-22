@@ -191,21 +191,34 @@ pub fn run() {
             commands::set_autostart(app.handle().clone(), run_on_start).ok();
 
             if let Some(dist_dir) = find_dist_dir(app.handle()) {
-                // Check if a previous sidecar is already running (keepAlive)
+                let app_version = app.package_info().version.to_string();
+                // Reuse an already-running sidecar (keepAlive) only when it
+                // belongs to this exact build. A leftover server from an older
+                // release would otherwise serve the previous UI under the new
+                // binary: Settings keeps showing the old version while the
+                // updater — which reads the binary version — correctly says
+                // "up to date", which looks like a broken updater.
                 let preferred_port: u16 = 3010;
                 if is_server_running(preferred_port) {
-                    let state = app.state::<AppState>();
-                    state.set_port(preferred_port);
-                    let url = format!("http://127.0.0.1:{}", preferred_port);
-                    if let Some(window) = app.get_webview_window("main") {
-                        if let Ok(parsed) = url::Url::parse(&url) {
-                            let _ = window.navigate(parsed);
+                    let running = sidecar::running_version(preferred_port);
+                    if running.as_deref() == Some(app_version.as_str()) {
+                        let state = app.state::<AppState>();
+                        state.set_port(preferred_port);
+                        let url = format!("http://127.0.0.1:{}", preferred_port);
+                        if let Some(window) = app.get_webview_window("main") {
+                            if let Ok(parsed) = url::Url::parse(&url) {
+                                let _ = window.navigate(parsed);
+                            }
                         }
+                        return Ok(());
                     }
-                    return Ok(());
+                    eprintln!(
+                        "Ignoring sidecar on port {preferred_port} (version {:?}, app is {app_version}); starting a fresh one",
+                        running
+                    );
                 }
 
-                match sidecar::Sidecar::start(&dist_dir, &data_dir) {
+                match sidecar::Sidecar::start(&dist_dir, &data_dir, &app_version) {
                     Ok(s) => {
                         let state = app.state::<AppState>();
                         state.set_port(s.port);

@@ -1,15 +1,5 @@
 import { settingsStore, type AppSettings } from "@/lib/settings-store";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-function getAppVersion(): string {
-  try {
-    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf-8"));
-    return pkg.version || "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-}
+import { getAppVersion } from "@/lib/app-version";
 
 export async function GET() {
   try {

@@ -71,8 +71,21 @@ async function tauriCheck(): Promise<CheckResult> {
     // Surface the failure as data: checkForUpdates() never throws, so
     // without this every caller reads a failed check as "no update" and
     // shows "You're up to date" on a broken updater.
-    return { available: false, error: msg.slice(0, 500) };
+    return { available: false, error: explainCheckError(msg.slice(0, 500)) };
   }
+}
+
+/**
+ * Turns the updater's platform-lookup error into something a user can act on.
+ * It means the release exists but carries no package for this exact
+ * OS/arch/installer (e.g. an RPM install where latest.json only has an
+ * AppImage) — not that the app is current.
+ */
+function explainCheckError(message: string): string {
+  if (/platforms` object/.test(message)) {
+    return `${message}. This release has no update package for your installation type — download it from https://github.com/QwErTy-2117/Qube/releases.`;
+  }
+  return message;
 }
 
 async function webFallbackCheck(): Promise<CheckResult> {
@@ -127,6 +140,24 @@ export async function checkForUpdates(): Promise<CheckResult> {
   }
 }
 
+/**
+ * Linux installs go through the system package manager (rpm/dpkg) and need an
+ * administrator prompt (polkit/pkexec). When that prompt is missing the raw
+ * plugin error ("Authentication failed") tells a user nothing actionable, so
+ * add where to get the package manually.
+ */
+function withInstallHint(message: string): string {
+  const isLinux =
+    typeof navigator !== "undefined" && /linux/i.test(navigator.platform || "");
+  if (!isLinux) return message;
+  const installProblem =
+    /Authentication failed|Failed to install|permission|denied|pkexec|polkit|sudo/i.test(
+      message
+    );
+  if (!installProblem) return message;
+  return `${message}. If no administrator password prompt appeared, download the latest package from https://github.com/QwErTy-2117/Qube/releases and install it with "sudo dnf install ./Qube-<version>-1.x86_64.rpm" (Fedora) or "sudo apt install ./Qube_<version>_amd64.deb" (Debian/Ubuntu).`;
+}
+
 export async function downloadAndInstall(
   onProgress?: (ev: { event: string; data: any }) => void
 ): Promise<void> {
@@ -145,7 +176,7 @@ export async function downloadAndInstall(
       try {
         console.error("[updater] downloadAndInstall failed:", msg.slice(0, 500));
       } catch {}
-      throw e;
+      throw new Error(withInstallHint(msg));
     }
     // Note: on Windows (NSIS passive), the installer exits the app during
     // install — relaunch is best-effort only. Previously an unconditional

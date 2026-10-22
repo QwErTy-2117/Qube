@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "motion/react";
 import { useUpdaterStore } from "@/lib/updater-store";
+import { getTauriAppVersion } from "@/lib/tauri-utils";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useChatCenter } from "./use-chat-center";
@@ -9,8 +10,25 @@ import { useChatCenter } from "./use-chat-center";
 export function UpToDateToast() {
   const { showUpToDate, setShowUpToDate } = useUpdaterStore();
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // Version the updater compared against (the desktop binary's own version).
+  // Showing it turns "up to date" from an opaque claim into a diagnostic: if
+  // Settings still lists an older release, this number proves which one is
+  // actually running.
+  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const centerX = useChatCenter(mounted && showUpToDate);
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!showUpToDate) return;
+    let cancelled = false;
+    getTauriAppVersion().then((v) => {
+      if (!cancelled) setCurrentVersion(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showUpToDate]);
 
   useEffect(() => {
     if (!showUpToDate) return;
@@ -36,7 +54,7 @@ export function UpToDateToast() {
           <div className="rounded-[26px] border border-[#e7e7e7] bg-white shadow-xl shadow-black/10 overflow-hidden w-auto">
             <div className="px-5 py-3 flex items-center justify-center whitespace-nowrap">
               <p className="text-[14px] font-semibold tracking-tight text-[#1e4d2f] leading-none text-center whitespace-nowrap">
-                You’re up to date
+                You’re up to date{currentVersion ? ` · v${currentVersion}` : ""}
               </p>
             </div>
           </div>

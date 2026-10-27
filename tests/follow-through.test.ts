@@ -3,7 +3,9 @@
  *
  * These are STRUCTURAL checks (the prompt still says what we intend, the
  * permission classifier still gates what it should). They do not prove the
- * model behaves — for that, run the scenarios in docs/follow-through-evals.md.
+ * model behaves — end-to-end follow-through still needs manual, repeated
+ * evaluation against a real model, since temperature makes single runs
+ * unreliable.
  *
  * Run: QUBE_DATA_DIR=$(mktemp -d) npx tsx --test tests/follow-through.test.ts
  */

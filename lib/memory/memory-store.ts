@@ -789,6 +789,27 @@ export async function upsertMemoryWithContradictionCheck(category: string, conte
   return remember(category, content, { relevance, confidence });
 }
 
+/**
+ * Hard reset helper: wait for queued writes, then clear every in-memory
+ * snapshot without persisting an empty file. The reset endpoint removes the
+ * files immediately afterwards.
+ */
+export async function resetMemoryRuntimeForHardReset(): Promise<void> {
+  try {
+    const g = globalThis as unknown as { __qube_memory__?: Record<string, StoreState> };
+    for (const st of Object.values(g.__qube_memory__ || {})) {
+      await st.writeQueue.catch(() => {});
+      st.entries = [];
+      st.mtimeMs = 0;
+      st.size = -1;
+      st.loaded = true;
+      st.warmupDone = true;
+      st.writesSinceConsolidate = 0;
+      st.writeQueue = Promise.resolve();
+    }
+  } catch {}
+}
+
 // Test helper: reset in-process cache for the current data dir (tests use isolated dirs per file).
 export function __resetForTests(): void {
   try {

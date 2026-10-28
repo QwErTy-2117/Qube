@@ -101,9 +101,13 @@ safe to clear while Qube is closed.
   removed.
 - Turn memory off in **Settings → Advanced → Memory**, or delete the memory
   files in the data directory.
-- **Settings → Advanced → Hard reset** signs out of ChatGPT, wipes the local
-  data files (providers, sessions, memory, tasks, settings) and clears
-  in-browser storage, returning Qube to a fresh state.
+- **Settings → Advanced → Hard reset** signs out of ChatGPT, pauses background
+  work, and wipes every local state file (`.memory/`, including scheduled
+  tasks, heartbeat work, approvals and the cross-chat announcement ledger),
+  the experimental `agent.sqlite`, the managed browser profile, connector
+  keys, provider settings and memories. It also clears in-browser storage and
+  in-process caches. Workspace deliverables, including chat attachments saved
+  under `workspace/attachments/`, and `sidecar.log` are preserved.
 - Uninstalling the app leaves the data directory in place deliberately; delete
   it manually for a complete removal. See [Desktop app details](./desktop.md#uninstalling).
 

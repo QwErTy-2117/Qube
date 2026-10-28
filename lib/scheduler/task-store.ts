@@ -15,6 +15,15 @@ const TASKS_FILE = join(DATA_DIR, "scheduled-tasks.json");
 
 let cachedTasks: ScheduledTask[] | null = null;
 
+/**
+ * Install a fresh in-memory default task list without writing a file.
+ * Hard reset removes scheduled-tasks.json; this prevents an in-flight tick
+ * from resurrecting the deleted task list from its old cache.
+ */
+export function resetTasksForHardReset(): void {
+  cachedTasks = [getDefaultHeartbeatTask()];
+}
+
 async function ensureDataDir() {
   if (!existsSync(DATA_DIR)) {
     await mkdir(DATA_DIR, { recursive: true });
@@ -140,7 +149,11 @@ export async function deleteTask(id: string): Promise<boolean> {
   return true;
 }
 
-export async function updateTaskRunTime(id: string, success: boolean) {
+export async function updateTaskRunTime(
+  id: string,
+  success: boolean,
+  opts?: { skipHeartbeatState?: boolean },
+) {
   const tasks = await getTasks();
   const task = tasks.find((t) => t.id === id);
   if (!task) return;
@@ -165,8 +178,9 @@ export async function updateTaskRunTime(id: string, success: boolean) {
   task.updatedAt = now;
   await persist(tasks);
 
-  // Persist heartbeat state as well if this is heartbeat
-  if (id === "heartbeat") {
+  // Persist heartbeat state as well if this is heartbeat. The scheduler owns
+  // its own detailed tick record and opts out to avoid double-counting ticks.
+  if (id === "heartbeat" && !opts?.skipHeartbeatState) {
     try {
       const { recordHeartbeatTick } = await import("./heartbeat-state");
       await recordHeartbeatTick({ hadAction: success, success, actionDescription: success ? "heartbeat completed" : "heartbeat failed", taskId: id });

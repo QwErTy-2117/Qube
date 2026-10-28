@@ -88,9 +88,12 @@ export async function buildMemoryContext(
     }
     try {
       const { buildHeartbeatBrief } = await import("@/lib/proactivity/heartbeat-brief");
-      const hb = await buildHeartbeatBrief().catch(() => null);
+      const hb = await buildHeartbeatBrief({ query, threadId: currentThreadId }).catch(() => null);
       if (hb && !hb.empty) {
         if (hb.announcementsBlock) blocks.push(`## Background news — weave into this reply\n${hb.announcementsBlock}`);
+        if (hb.announcementHistoryBlock) blocks.push(`## Already-announced facts — answer explicit questions normally\n${hb.announcementHistoryBlock}`);
+        if (hb.approvalBlock) blocks.push(`## Background approvals — ask once\n${hb.approvalBlock}`);
+        if (hb.workBlock) blocks.push(`## Heartbeat work — continue from progress\n${hb.workBlock}`);
         if (hb.heartbeatBlock) blocks.push(`## Heartbeat — what to remember\n${hb.heartbeatBlock}`);
         if (hb.scheduledBlock) blocks.push(`## Scheduled tasks — what to remember\n${hb.scheduledBlock}`);
         if (hb.suggestionsBlock) blocks.push(`## Custom suggestions for this user\n${hb.suggestionsBlock}`);

@@ -51,8 +51,12 @@ judgment, states its assumptions, and continues.
 ## Attachments and voice
 
 - **Attach files** with the paperclip button or by dragging them in. Images
-  are sent to vision-capable models; documents and other files are placed
-  where Qube can read them.
+  and PDFs are sent inline to supported models; text files are included as
+  clearly marked untrusted data, and other documents are saved under
+  `workspace/attachments/` where Qube's tools can read or convert them.
+- **Previews survive sending, editing and retrying.** Qube keeps the
+  attachment's data in the message itself, so opening the file chip later no
+  longer depends on the original browser `File` object.
 - **Pasting** a large block of text automatically turns it into a text
   attachment instead of flooding the composer.
 - **Voice input** is available on the microphone button when your runtime

@@ -26,6 +26,12 @@ import {
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { cn } from "@/lib/utils";
+import {
+  isTextAttachment,
+  mediaTypeFromFilename,
+  previewAttachment,
+  type AttachmentPreview,
+} from "@/lib/chat/attachments";
 
 
 const useFileSrc = (file: File | undefined) => {
@@ -126,26 +132,47 @@ const AttachmentThumb: FC = () => {
   );
 };
 
-const TEXT_PREVIEW_EXTS = new Set([
-  "txt", "md", "markdown", "csv", "tsv", "json", "log",
-  "js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp",
-  "h", "css", "html", "yml", "yaml", "toml", "sh", "sql", "xml",
-]);
+const MAX_PREVIEW_BYTES = 2_000_000;
 
-function getAttachmentText(
-  file: File | undefined,
-  content: Array<{ type?: string; text?: string; data?: string }> | undefined,
-): string | null {
-  if (Array.isArray(content)) {
-    const texts: string[] = [];
-    for (const part of content) {
-      if (part && part.type === "text" && typeof part.text === "string" && part.text.trim()) {
-        texts.push(part.text);
-      }
-    }
-    if (texts.length > 0) return texts.join("\n");
+type DocumentPreviewState =
+  | { status: "loading" }
+  | { status: "text"; text: string }
+  | { status: "binary"; dataUrl?: string; mediaType: string; sizeBytes?: number }
+  | { status: "too-large"; sizeBytes?: number }
+  | { status: "unavailable" };
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatPreviewSize(bytes?: number): string {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes)) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function stateFromAttachmentPreview(preview: AttachmentPreview): DocumentPreviewState {
+  switch (preview.kind) {
+    case "text":
+      return { status: "text", text: preview.text };
+    case "binary":
+      return {
+        status: "binary",
+        dataUrl: preview.dataUrl,
+        mediaType: preview.mediaType,
+        sizeBytes: preview.sizeBytes,
+      };
+    case "too-large":
+      return { status: "too-large", sizeBytes: preview.sizeBytes };
+    default:
+      return { status: "unavailable" };
   }
-  return null;
 }
 
 const DocumentPreviewDialog: FC<{
@@ -155,64 +182,50 @@ const DocumentPreviewDialog: FC<{
 }> = ({ open, onOpenChange, filename }) => {
   const file = useAuiState((s) => (s.attachment as unknown as { file?: File })?.file);
   const content = useAuiState(
-    (s) => (s.attachment as unknown as { content?: Array<{ type?: string; text?: string }> })?.content,
+    (s) => (s.attachment as unknown as { content?: unknown })?.content,
   );
-  const [body, setBody] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [tooLarge, setTooLarge] = useState(false);
-  const [binary, setBinary] = useState(false);
+  const [preview, setPreview] = useState<DocumentPreviewState>({ status: "loading" });
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setBody(null);
-    setTooLarge(false);
-    setBinary(false);
-    setLoading(true);
+    setPreview({ status: "loading" });
     (async () => {
       try {
         if (file) {
-          if (file.size > 2_000_000) {
-            if (!cancelled) setTooLarge(true);
+          if (file.size > MAX_PREVIEW_BYTES) {
+            if (!cancelled) setPreview({ status: "too-large", sizeBytes: file.size });
             return;
           }
-          const ext = (file.name.split(".").pop() || "").toLowerCase();
-          const textLike =
-            file.type.startsWith("text/") ||
-            file.type === "application/json" ||
-            file.type === "" ||
-            TEXT_PREVIEW_EXTS.has(ext);
-          if (!textLike) {
-            if (!cancelled) setBinary(true);
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const mediaType = file.type || mediaTypeFromFilename(filename);
+          if (isTextAttachment({ filename, mediaType, bytes })) {
+            const text = await file.text();
+            if (!cancelled) setPreview({ status: "text", text });
             return;
           }
-          const text = await file.text();
+          const dataUrl = await readFileAsDataUrl(file);
           if (!cancelled) {
-            setBody(text);
+            setPreview({ status: "binary", dataUrl, mediaType, sizeBytes: file.size });
           }
           return;
         }
-        const fromContent = getAttachmentText(
-          undefined,
-          content as Array<{ type?: string; text?: string }> | undefined,
-        );
-        if (!cancelled) {
-          if (fromContent) {
-            setBody(fromContent);
-          } else {
-            setBinary(true);
-          }
-        }
+        // Sent/restored messages have no raw File; their bytes live in a
+        // `data:` URL file part. Decode that URL so retry keeps the preview.
+        const fromContent = previewAttachment({
+          content,
+          filename,
+          maxBytes: MAX_PREVIEW_BYTES,
+        });
+        if (!cancelled) setPreview(stateFromAttachmentPreview(fromContent));
       } catch {
-        if (!cancelled) setBinary(true);
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setPreview({ status: "unavailable" });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, file, content]);
+  }, [open, file, content, filename]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -225,25 +238,66 @@ const DocumentPreviewDialog: FC<{
         </DialogHeader>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pb-6">
           <div className="min-h-0 flex-1 overflow-y-auto text-sm leading-relaxed text-foreground scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {loading ? (
+            {preview.status === "loading" ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2Icon className="size-5 animate-spin text-muted-foreground/40" />
               </div>
-            ) : tooLarge ? (
+            ) : preview.status === "too-large" ? (
               <p className="text-xs text-muted-foreground">
-                This file is too large to preview. Remove it or open it externally to review the contents.
+                This file is too large to preview{formatPreviewSize(preview.sizeBytes) ? ` (${formatPreviewSize(preview.sizeBytes)})` : ""}. Open or download it to review the contents.
               </p>
-            ) : binary ? (
+            ) : preview.status === "text" ? (
+              <pre className="font-mono text-[13px] leading-relaxed whitespace-pre-wrap wrap-break-word">
+                {preview.text}
+              </pre>
+            ) : preview.status === "binary" && preview.mediaType === "application/pdf" && preview.dataUrl ? (
+              <div className="flex flex-col gap-3">
+                <iframe
+                  src={preview.dataUrl}
+                  title={`PDF preview of ${filename}`}
+                  className="h-[65vh] w-full rounded-xl border border-border bg-white"
+                />
+                <a
+                  href={preview.dataUrl}
+                  download={filename}
+                  className="text-xs font-medium text-blue-600 underline-offset-2 hover:underline"
+                >
+                  Download original
+                </a>
+              </div>
+            ) : preview.status === "binary" && preview.mediaType.startsWith("image/") && preview.dataUrl ? (
+              <div className="flex flex-col items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={preview.dataUrl} alt={filename} className="max-h-[65vh] max-w-full object-contain" />
+                <a
+                  href={preview.dataUrl}
+                  download={filename}
+                  className="text-xs font-medium text-blue-600 underline-offset-2 hover:underline"
+                >
+                  Download original
+                </a>
+              </div>
+            ) : (
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <FileText className="size-8 text-blue-500/60" />
                 <p className="text-xs text-muted-foreground">
-                  No text preview available for this file type.
+                  This attachment doesn’t have an inline text preview. You can still open or download the original file.
                 </p>
+                {preview.status === "binary" && preview.mediaType ? (
+                  <p className="text-[11px] text-muted-foreground/70">
+                    {preview.mediaType}{formatPreviewSize(preview.sizeBytes) ? ` • ${formatPreviewSize(preview.sizeBytes)}` : ""}
+                  </p>
+                ) : null}
+                {preview.status === "binary" && preview.dataUrl ? (
+                  <a
+                    href={preview.dataUrl}
+                    download={filename}
+                    className="mt-2 rounded-full bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700"
+                  >
+                    Open / download
+                  </a>
+                ) : null}
               </div>
-            ) : (
-              <pre className="font-mono text-[13px] leading-relaxed whitespace-pre-wrap wrap-break-word">
-                {body ?? ""}
-              </pre>
             )}
           </div>
         </div>

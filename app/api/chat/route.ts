@@ -1,5 +1,7 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { runPiHarness } from "@/lib/pi/harness";
+import { currentSchedulerEpoch } from "@/lib/scheduler/runtime-state";
+import { normalizeAttachmentsForModel } from "@/lib/chat/attachment-model";
 
 export const maxDuration = 300;
 
@@ -31,8 +33,138 @@ function extractText(m: Record<string, unknown>): string {
   return "";
 }
 
+const RESEARCH_TOOL_RE = /(web_|browser_|subagent|search|fetch|read_|list_|get_|research|gmail|github|notion|drive)/i;
+const RESEARCH_INTENT_RE = /(research|find|look up|check|compare|latest|investigate|what|why|how|when|where|source|summary|report)/i;
+
+function lastUserText(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as Record<string, unknown>;
+    if (m?.role !== "user") continue;
+    const text = extractText(m).trim();
+    if (text) return text.slice(0, 1000);
+  }
+  return "";
+}
+
+function deriveResearchTopic(userText: string): string {
+  const clean = String(userText || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .replace(/^\s*(can you|could you|please|research|find|look up|check|tell me|what|why|how|when|where|about|the|a|an)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, 10)
+    .join(" ");
+  return clean ? clean.slice(0, 80) : "Chat research";
+}
+
+interface AnnouncementTurn {
+  writer: any;
+  replyText: () => string;
+  finalize: () => Promise<void>;
+  release: () => Promise<void>;
+}
+
+/**
+ * Verify delivery from VISIBLE text. Claims were taken before prompt building;
+ * only mentioned items become delivered. A failed/generic turn releases its
+ * claims and leaves every item pending for another chat or a restart. Research
+ * actually communicated in this normal chat is recorded as a delivered fact,
+ * so heartbeat/scheduled work cannot later present it as fresh news.
+ */
+function watchAnnouncementDelivery(
+  writer: any,
+  pending: any[],
+  threadId: string,
+  userText: string,
+): AnnouncementTurn {
+  let replyText = "";
+  let hadError = false;
+  let finalized = false;
+  // A hard reset increments the epoch. A stream that began before the reset
+  // must not write old announcement receipts into the fresh ledger.
+  const startEpoch = currentSchedulerEpoch();
+  const resetDuringTurn = () => currentSchedulerEpoch() !== startEpoch;
+  const toolNames = new Set<string>();
+  const origWrite = writer.write.bind(writer);
+  try {
+    writer.write = (chunk: any) => {
+      try {
+        if (chunk?.type === "text-delta" && typeof chunk?.delta === "string") replyText += chunk.delta;
+        if (chunk?.type === "error" || chunk?.errorText) hadError = true;
+        const name = chunk?.toolName || chunk?.name || chunk?.tool_name || chunk?.toolCallName;
+        if (typeof name === "string") toolNames.add(name);
+        if (typeof chunk?.type === "string" && chunk.type.includes("tool")) {
+          const raw = chunk.type.match(/(?:dynamic-tool|tool)-?([a-z0-9_-]+)/i)?.[1];
+          if (raw) toolNames.add(raw);
+        }
+      } catch {}
+      return origWrite(chunk);
+    };
+  } catch {}
+
+  const release = async () => {
+    if (pending.length === 0 || resetDuringTurn()) return;
+    try {
+      const { releaseAnnouncementClaims } = await import("@/lib/scheduler/announcements");
+      await releaseAnnouncementClaims(pending.map((p) => String(p.id)), threadId);
+    } catch {}
+  };
+
+  const finalize = async () => {
+    if (finalized) return;
+    finalized = true;
+    if (resetDuringTurn()) return;
+    const visible = replyText.trim();
+    if (hadError || visible.length < 8) {
+      await release();
+      return;
+    }
+    try {
+      const ledger = await import("@/lib/scheduler/announcements");
+      const marked = pending.length > 0
+        ? await ledger.markAnnouncementsDeliveredIfMentioned(pending, visible, { threadId })
+        : [];
+      if (pending.length > 0 && marked.length < pending.length) {
+        console.log(`[chat] Announcements verified ${marked.length}/${pending.length} mentioned — rest stay pending`);
+      }
+      try {
+        const { markNotified } = await import("@/lib/scheduler/heartbeat-state");
+        for (const p of pending) {
+          if (marked.includes(String(p.id)) || ledger.announcementMentionedInReply(p, visible)) {
+            await markNotified(String(p.taskName || p.topic || "announcement")).catch(() => {});
+          }
+        }
+      } catch {}
+
+      const researchTool = [...toolNames].some((n) => RESEARCH_TOOL_RE.test(n));
+      const researchIntent = RESEARCH_INTENT_RE.test(userText);
+      if (visible.length >= 40 && (researchTool || researchIntent) && marked.length === 0) {
+        await ledger.recordDeliveredChatFinding({
+          threadId,
+          topic: deriveResearchTopic(userText),
+          summary: visible.slice(0, 600),
+          replyText: visible,
+          metadata: { toolNames: [...toolNames].slice(0, 12), source: "normal-chat" },
+        });
+      }
+      if (pending.length > 0) await release();
+    } catch (e) {
+      console.warn("[chat] announcement delivery finalize failed (non-fatal):", e);
+      await release();
+    }
+  };
+
+  return { writer, replyText: () => replyText, finalize, release };
+}
+
 export async function POST(req: Request) {
   console.log("[chat] POST /api/chat start (Pi harness)", { url: req.url });
+  let claimedAnnouncements: any[] = [];
+  let activeThreadId = "";
+  const requestEpoch = currentSchedulerEpoch();
   // Explicit scheduler boot (audit fix #10): the tick must not depend on a
   // lazy client task-list load. Idempotent — startScheduler guards re-entry.
   // Isolation: ticks run sequentially (running flag) so a long heartbeat LLM
@@ -74,25 +206,45 @@ export async function POST(req: Request) {
       (typeof qubeThreadId === "string" && qubeThreadId) ||
       threadId ||
       `thread_${Date.now()}`;
+    activeThreadId = String(currentThreadId);
+
+    // Keep the original UIMessages for the client stream and history, but send
+    // a normalized copy to the model. Unsupported attachment MIME types become
+    // fenced untrusted text and their bytes are saved in the workspace, so a
+    // sent/restored/retried attachment cannot trigger a provider file-part
+    // error. Images and PDFs remain inline for providers that support them.
+    let modelMessages = Array.isArray(messages) ? messages as any[] : [];
+    try {
+      modelMessages = await normalizeAttachmentsForModel(modelMessages, {
+        threadId: String(currentThreadId),
+      });
+    } catch (error) {
+      console.warn("[chat] attachment normalization failed (non-fatal):", (error as Error)?.message || String(error));
+      modelMessages = Array.isArray(messages) ? messages as any[] : [];
+    }
+    const latestUserText = lastUserText(modelMessages);
 
     if (process.env.PI_DURABLE_ENABLED === "1") {
       const { streamDurableToWriter, buildRequestId } = await import("@/lib/pi/durable-stream");
-      const last = Array.isArray(messages) ? messages[messages.length - 1] : null;
+      const last = modelMessages.length > 0 ? modelMessages[modelMessages.length - 1] : null;
       const text = last ? extractText(last as Record<string, unknown>) : "";
       const durableStream = createUIMessageStream({
         originalMessages: (messages ?? []) as any[],
         execute: async ({ writer }) => {
+          const turn = watchAnnouncementDelivery(writer, claimedAnnouncements, activeThreadId, latestUserText);
           try {
-          await streamDurableToWriter(currentThreadId, text, buildRequestId(currentThreadId, String(Date.now())), writer as never, {
-            modelName,
-            reasoningEffort: typeof reasoningEffort === "string" ? reasoningEffort : undefined,
-            instanceId: typeof instanceId === "string" ? instanceId : undefined,
-            signal: req.signal ?? undefined,
-            // Foreground user chat: kernel-gated tools may raise the approval
-            // card instead of denying outright.
-            interactive: true,
-          });
+            await streamDurableToWriter(currentThreadId, text, buildRequestId(currentThreadId, String(Date.now())), turn.writer as never, {
+              modelName,
+              reasoningEffort: typeof reasoningEffort === "string" ? reasoningEffort : undefined,
+              instanceId: typeof instanceId === "string" ? instanceId : undefined,
+              signal: req.signal ?? undefined,
+              // Foreground user chat: kernel-gated tools may raise the approval
+              // card instead of denying outright.
+              interactive: true,
+            });
+            await turn.finalize();
           } catch (e) {
+            await turn.release();
             const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
             if (!/abort/i.test(msg)) {
               try {
@@ -106,6 +258,15 @@ export async function POST(req: Request) {
       });
       return createUIMessageStreamResponse({ stream: durableStream });
     }
+
+    // Claim BEFORE the prompt is built. A second chat sees an active lease,
+    // so the same pending announcement cannot be injected into two replies.
+    // The durable path has no dynamic announcement section yet; it leaves
+    // items pending and still records its own normal-chat research as delivered.
+    try {
+      const { claimPendingAnnouncements } = await import("@/lib/scheduler/announcements");
+      claimedAnnouncements = await claimPendingAnnouncements({ limit: 3, threadId: activeThreadId });
+    } catch {}
 
     // If MCP servers provided per-request, sync to store for persistence
     if (Array.isArray(mcpServers) && mcpServers.length >= 0) {
@@ -157,15 +318,8 @@ export async function POST(req: Request) {
 
     const uiMessages = messages as any[];
 
-    // Snapshot undelivered task-result announcements BEFORE the turn: the
-    // harness injects them into this turn's prompt with a weave-in
-    // directive, so after the reply streams they count as told. A failed
-    // turn leaves them pending for the next turn.
-    let pendingSnapshots: Array<{ id: string; taskName: string; excerpt: string }> = [];
-    try {
-      const { getPendingAnnouncements } = await import("@/lib/scheduler/announcements");
-      pendingSnapshots = (await getPendingAnnouncements(3).catch(() => [])).map((a: any) => ({ id: a.id, taskName: a.taskName, excerpt: a.excerpt }));
-    } catch {}
+    // claimedAnnouncements was snapshotted and claimed BEFORE the durable
+    // branch, so the Pi and durable paths share the same global ledger.
 
     const rawStream = createUIMessageStream({
       originalMessages: uiMessages,
@@ -175,20 +329,10 @@ export async function POST(req: Request) {
         return `Error [${errMsg}]`;
       },
       execute: async ({ writer }) => {
-        // Accumulate visible text so delivery is VERIFIED: only announcements
-        // actually mentioned in the reply are marked delivered. A generic
-        // greeting no longer burns the news (audit fix #6).
-        let replyText = "";
-        const origWrite = writer.write.bind(writer);
-        (writer as any).write = (chunk: any) => {
-          try {
-            if (chunk?.type === "text-delta" && typeof chunk?.delta === "string") replyText += chunk.delta;
-          } catch {}
-          return origWrite(chunk);
-        };
+        const turn = watchAnnouncementDelivery(writer, claimedAnnouncements, activeThreadId, latestUserText);
         try {
-          await runPiHarness(writer, {
-            messages: uiMessages,
+          await runPiHarness(turn.writer, {
+            messages: modelMessages,
             threadId: currentThreadId,
             modelName,
             customSystemPrompt,
@@ -202,29 +346,11 @@ export async function POST(req: Request) {
             userAbout: typeof userAbout === "string" ? userAbout : undefined,
             memoryEnabled: typeof memoryEnabled === "boolean" ? memoryEnabled : undefined,
           });
-          // Turn replied — mark ONLY verified mentions delivered.
-          if (pendingSnapshots.length > 0) {
-            try {
-              const { markAnnouncementsDeliveredIfMentioned, announcementMentionedInReply } = await import("@/lib/scheduler/announcements");
-              const marked = await markAnnouncementsDeliveredIfMentioned(pendingSnapshots as any, replyText);
-              if (marked.length < pendingSnapshots.length) {
-                console.log(`[chat] Announcements verified ${marked.length}/${pendingSnapshots.length} mentioned — rest stay pending`);
-              }
-              // Verified mentions also count as notified in heartbeat state
-              // (same two-word rule — shared words alone never suppress).
-              try {
-                if (replyText.trim().length >= 10) {
-                  const { markNotified } = await import("@/lib/scheduler/heartbeat-state");
-                  for (const p of pendingSnapshots.slice(0, 3)) {
-                    if (marked.includes(p.id) || announcementMentionedInReply({ taskName: p.taskName, excerpt: p.excerpt }, replyText)) {
-                      await markNotified(String(p.taskName)).catch(() => {});
-                    }
-                  }
-                }
-              } catch {}
-            } catch {}
-          }
+          // Verified delivery + normal-chat research dedup happen only after
+          // a successful turn with visible reply text.
+          await turn.finalize();
         } catch (e) {
+          await turn.release();
           const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
           console.error("[chat] runPiHarness failed:", msg);
           try {
@@ -249,6 +375,13 @@ export async function POST(req: Request) {
 
     return createUIMessageStreamResponse({ stream });
   } catch (error) {
+    // A pre-stream failure must not leave an announcement permanently claimed.
+    try {
+      if (claimedAnnouncements.length > 0 && activeThreadId && currentSchedulerEpoch() === requestEpoch) {
+        const { releaseAnnouncementClaims } = await import("@/lib/scheduler/announcements");
+        await releaseAnnouncementClaims(claimedAnnouncements.map((a) => String(a.id)), activeThreadId);
+      }
+    } catch {}
     const detail = {
       name: error instanceof Error ? error.name : typeof error,
       message: error instanceof Error ? error.message : String(error),

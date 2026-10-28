@@ -58,6 +58,12 @@ class McpStore {
     }
   }
 
+  /** Hard reset: drop cached MCP server configs/credentials in memory. */
+  resetForHardReset(): void {
+    this.initialized = true;
+    this.servers = [];
+  }
+
   getAll(): McpServerConfig[] {
     this.ensureInitialized();
     return [...this.servers];

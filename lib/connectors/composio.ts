@@ -280,6 +280,15 @@ export function invalidateConnectorListCache(userId?: string) {
   else listCache.clear();
 }
 
+/** Hard reset: forget connector identity, API client, and all cached lists. */
+export function resetComposioRuntimeForHardReset(): void {
+  pendingConfirmations.clear();
+  canonicalCache = undefined;
+  composioClient = null;
+  listCache.clear();
+  toolkitMetaCache = null;
+}
+
 export const COMPOSIO_TOOLKIT_MAP: Record<string, string[]> = {
   linear: ["linear"],
   atlassian: ["jira"],

@@ -53,6 +53,13 @@ class ProviderStore {
     }
   }
 
+  /** Hard reset: forget cached providers/keys without rewriting the file. */
+  resetForHardReset(): void {
+    this.initialized = true;
+    this.providers.clear();
+    this.defaultModelId = null;
+  }
+
   getProvider(providerId: string): ProviderConfig | undefined {
     this.ensureInitialized();
     return this.providers.get(providerId);

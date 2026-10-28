@@ -1,3 +1,4 @@
+import { activeToolkitSlugs } from "@/lib/connectors/account-status";
 import { Composio } from "@composio/core";
 import { VercelProvider } from "@composio/vercel";
 import { z } from "zod";
@@ -410,12 +411,7 @@ export async function listConnectors(userId?: string, opts?: { bypassCache?: boo
       return fallback;
     }
 
-    const connectedSlugs = new Set<string>();
-    for (const acct of connectedAccounts.items || []) {
-      if (acct.status !== "ACTIVE") continue;
-      const slug = acct.toolkit?.slug || acct.app?.toLowerCase();
-      if (slug) connectedSlugs.add(slug);
-    }
+    const connectedSlugs = activeToolkitSlugs(connectedAccounts.items || []);
 
     const toolkitSlugs = new Set<string>();
     for (const ac of authConfigs.items || []) {
@@ -502,11 +498,7 @@ export async function getConnectedToolkits(userId: string, connectorId?: string)
     const uid = resolveComposioUserId(userId);
     const client = getClient();
     const accounts = await client.connectedAccounts.list({ userIds: [uid], limit: 100 }).catch(() => ({ items: [] }));
-    const slugs = new Set<string>();
-    for (const acct of accounts.items || []) {
-      const slug = acct.toolkit?.slug || acct.app?.toLowerCase();
-      if (slug) slugs.add(slug);
-    }
+    const slugs = activeToolkitSlugs(accounts.items || []);
 
     if (connectorId) {
       const toolkits = COMPOSIO_TOOLKIT_MAP[connectorId] || [connectorId];

@@ -11,17 +11,9 @@ import {
 } from "@/lib/connectors/connectors-cache";
 import { SearchIcon, Loader2Icon, XIcon, UnplugIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isDesktopApp, openConnectorAuth } from "@/lib/connectors/oauth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-
-async function openUrl(url: string) {
-  try {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(url);
-  } catch {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-}
 
 const TOOLKIT_SLUGS: Record<string, string[]> = {
   linear: ["linear"],
@@ -204,7 +196,7 @@ export function ConnectorsTab({
       const res = await fetch(`/api/connectors/link?instanceId=${getInstanceId()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ connectorId }),
+        body: JSON.stringify({ connectorId, desktop: isDesktopApp() }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -213,7 +205,7 @@ export function ConnectorsTab({
         return;
       }
       if (data.redirectUrl) {
-        openUrl(data.redirectUrl);
+        await openConnectorAuth(data.redirectUrl);
 
         const pollInterval = setInterval(async () => {
           try {
@@ -234,6 +226,9 @@ export function ConnectorsTab({
           clearInterval(pollInterval);
           setConnectingId(null);
         }, 120_000);
+      } else {
+        setStatusMsg("No sign-in link was returned");
+        setConnectingId(null);
       }
     } catch {
       setStatusMsg("Connection failed");

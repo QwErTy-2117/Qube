@@ -26,8 +26,17 @@ the same screen.
 1. Open **Settings → Connectors** (or the connectors step in onboarding).
 2. Pick an app and choose connect. Your system browser opens the provider's
    normal OAuth sign-in page — log in and approve access there.
-3. The browser hands you back to Qube automatically (the app registers a
-   `qube://` deep link for this), and the app shows as connected.
+3. The browser hands you back to Qube automatically (the desktop app
+   registers a `qube://` deep link), and Qube checks whether the connection
+   succeeded. The browser shows only a return screen, not the Qube interface.
+   If your browser blocks the hand-off, choose **Return to Qube** or switch
+   back to the app manually. Some browsers ask permission to open the app.
+
+The provider's sign-in and consent pages still open in your system browser;
+this is required by many OAuth providers. Browser tabs opened by the system
+cannot always be closed automatically, so you may need to close the return
+screen yourself. In a web-only session, the return screen instead directs you
+back to your existing Qube tab.
 
 Sign in once per app. Credentials stay with the provider and Composio; Qube
 works with the resulting session and never asks you to paste a password into

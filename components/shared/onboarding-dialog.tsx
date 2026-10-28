@@ -1,5 +1,6 @@
 "use client";
 
+import { isDesktopApp, openConnectorAuth } from "@/lib/connectors/oauth";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Dialog,
@@ -462,16 +463,11 @@ export function OnboardingModal() {
       const res = await fetch(`/api/connectors/link?instanceId=${getInstanceId()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ connectorId }),
+        body: JSON.stringify({ connectorId, desktop: isDesktopApp() }),
       });
       const data = await res.json();
       if (data.redirectUrl) {
-        try {
-          const { open } = await import("@tauri-apps/plugin-shell");
-          await open(data.redirectUrl);
-        } catch {
-          window.open(data.redirectUrl, "_blank", "noopener,noreferrer");
-        }
+        await openConnectorAuth(data.redirectUrl);
       } else {
         setConnectingId(null);
         void fetchConnectors(true);

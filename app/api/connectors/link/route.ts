@@ -1,39 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initiateConnection, resolveComposioUserId } from "@/lib/connectors/composio";
+import { connectorCallbackUrl } from "@/lib/connectors/oauth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { connectorId } = await req.json();
+    const { connectorId, desktop } = await req.json();
     if (!connectorId) {
       return NextResponse.json({ error: "Missing connectorId" }, { status: 400 });
     }
 
     const { searchParams } = new URL(req.url);
     const instanceId = resolveComposioUserId(searchParams.get("instanceId"));
-    // The OAuth provider redirects the user's BROWSER to this URL after auth,
-    // so it must be the sidecar's real, reachable origin. The hardcoded
-    // localhost:3000 fallback broke this on Windows (dev runs on 3010, prod
-    // on a dynamic port): the browser landed on a dead page instead of the
-    // "you can close this tab" screen. Prefer the request's origin, then the
-    // referer, then the sidecar's own URL (always correct) — never a guess.
-    const headers = req.headers;
-    let callbackOrigin: string | null = headers.get("origin");
-    if (!callbackOrigin) {
-      const referer = headers.get("referer");
-      if (referer) {
-        try {
-          callbackOrigin = new URL(referer).origin;
-        } catch {}
-      }
-    }
-    if (!callbackOrigin) {
-      try {
-        callbackOrigin = new URL(req.url).origin;
-      } catch {}
-    }
-    const callbackUrl = `${callbackOrigin}/connectors/callback`;
+    // The callback is opened by the system browser, so use the app's real
+    // HTTP origin (including its dynamically assigned sidecar port).
+    const callbackUrl = connectorCallbackUrl(
+      req.url, req.headers.get("origin"), req.headers.get("referer"), desktop === true,
+    );
 
     const redirectUrl = await initiateConnection(connectorId, instanceId, callbackUrl);
     if (!redirectUrl) {

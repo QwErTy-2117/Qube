@@ -989,6 +989,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [clearConfirm, setClearConfirm] = useState<"memories" | "sessions" | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<boolean>(false);
   const [hardResetConfirm, setHardResetConfirm] = useState<boolean>(false);
+  const [hardResetError, setHardResetError] = useState<string | null>(null);
   const [termsOpen, setTermsOpen] = useState<boolean>(false);
 
   // Updater state (web UI, wired to Tauri via plugin)
@@ -1483,11 +1484,29 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
   const handleHardReset = async () => {
     setHardResetConfirm(false);
-    // Disconnect ChatGPT (clears server-side session)
+    setHardResetError(null);
+    // Disconnect ChatGPT (clears server-side session). A logout failure is
+    // non-fatal: /api/reset also clears the session store and its files.
     try { await fetch("/api/chatgpt/logout", { method: "POST", credentials: "same-origin" }); } catch {}
-    // Wipe all server-side data files (providers, chatgpt-sessions, lwc-secret, memories, sessions, etc.)
-    try { await fetch("/api/reset", { method: "POST", credentials: "same-origin" }); } catch {}
-    // Clear all localStorage (providers, models, preferences, sessions metadata, etc.)
+    try {
+      const res = await fetch("/api/reset", { method: "POST", credentials: "same-origin", cache: "no-store" });
+      if (!res.ok) {
+        let detail = `Hard reset failed (${res.status}).`;
+        try {
+          const body = await res.json();
+          if (body?.error) detail = String(body.error);
+          else if (Array.isArray(body?.errors) && body.errors.length > 0) detail = String(body.errors[0]);
+        } catch {}
+        setHardResetError(`${detail} Nothing was cleared in your browser.`);
+        setHardResetConfirm(true);
+        return;
+      }
+    } catch (e) {
+      setHardResetError(`${e instanceof Error ? e.message : String(e)} Nothing was cleared in your browser.`);
+      setHardResetConfirm(true);
+      return;
+    }
+    // Clear all localStorage only after the server reset is verified.
     try { localStorage.clear(); } catch {}
     setTimeout(() => location.reload(), 300);
   };
@@ -2849,13 +2868,21 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
-          <Dialog open={hardResetConfirm} onOpenChange={setHardResetConfirm}>
+          <Dialog open={hardResetConfirm} onOpenChange={(open) => {
+            setHardResetConfirm(open);
+            if (!open) setHardResetError(null);
+          }}>
             <DialogContent className="sm:max-w-sm rounded-3xl">
               <DialogHeader>
                 <DialogTitle>Hard Reset</DialogTitle>
                 <DialogDescription>
-                  This will permanently delete all providers, models, ChatGPT login, memories, sessions, and settings, then reload Qube. This cannot be undone.
+                  This will permanently delete all providers, models, ChatGPT login, memories, sessions, settings, scheduled tasks, heartbeat work and announcements, browser profile, and stored connector keys, then reload Qube. Workspace files are kept. This cannot be undone.
                 </DialogDescription>
+                {hardResetError && (
+                  <p className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-600">
+                    {hardResetError}
+                  </p>
+                )}
               </DialogHeader>
               <DialogFooter>
                 <div className="flex items-center gap-2 ml-auto">

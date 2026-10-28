@@ -111,6 +111,18 @@ export function createQuestionnaire(
   return { requestId, promise };
 }
 
+/** Hard reset: release pending questionnaires without leaving dead UI cards. */
+export function clearPendingQuestionsForHardReset(): void {
+  for (const [, resolver] of pendingResolvers) {
+    try {
+      resolver.resolve({});
+    } catch {}
+  }
+  pendingResolvers.clear();
+  questionnaireStore.clear();
+  requestCounter = 0;
+}
+
 export function resolveQuestionnaire(
   requestId: string,
   answers: QuestionAnswers,

@@ -856,7 +856,19 @@ class SingleScreenClaimTracker {
     this.owner = null;
     return true;
   }
+  resetForHardReset(): void {
+    this.owner = null;
+  }
 }
 
 export const screenClaim = new SingleScreenClaimTracker();
 export const COMPUTER_SCREEN_UNAVAILABLE = SCREEN_BUSY;
+
+/** Hard reset: drop in-memory page refs, screenshot bytes, and screen claim. */
+export function resetComputerUseRuntimeForHardReset(): void {
+  lastBrowserSnap = { url: "", at: 0, refs: new Map() };
+  lastFrameId = null;
+  lastFrameBytes = null;
+  frameBytes.clear();
+  screenClaim.resetForHardReset();
+}

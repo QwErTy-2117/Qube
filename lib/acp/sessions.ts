@@ -110,3 +110,13 @@ export function cancelAcpSession(sessionId: string): boolean {
 export function __clearAcpSessions(): void {
   sessions.clear();
 }
+
+/** Hard reset — abort and forget all live ACP sessions. */
+export function clearAcpSessionsForHardReset(): void {
+  for (const session of sessions.values()) {
+    try {
+      session.abortController?.abort(new Error("Hard reset cancelled session"));
+    } catch {}
+  }
+  sessions.clear();
+}

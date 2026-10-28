@@ -88,8 +88,8 @@ Chats, settings, memory, connected accounts and generated state live in the
 (`~/.local/share/com.qube.desktop` on Linux, `~/Library/Application Support/com.qube.desktop`
 on macOS, `%APPDATA%\com.qube.desktop` on Windows) and survive both updates
 and uninstalls. Delete that folder for a fully clean removal, or use
-**Settings → Advanced → Hard reset** to wipe its contents without
-uninstalling.
+**Settings → Advanced → Hard reset** to wipe Qube's stored state without
+uninstalling (workspace deliverables and the diagnostic log are kept).
 
 ## Diagnostics
 

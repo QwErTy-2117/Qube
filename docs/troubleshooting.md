@@ -202,9 +202,12 @@ Only stdio MCP servers are supported; HTTP/SSE servers won't connect.
 ## Resetting everything
 
 For a fresh start without uninstalling, use **Settings → Advanced → Hard
-reset**. It signs out of ChatGPT, clears local data files (providers,
-sessions, memory, tasks, settings) and browser storage, then reloads. To
-remove everything including on-disk state, also delete the
+reset**. It signs out of ChatGPT, pauses and clears background work, removes
+all local state files (providers, sessions, memory, tasks, heartbeat work,
+announcements, settings, connector keys, the durable database and browser
+profile), clears browser storage, then reloads. Workspace deliverables
+(including saved chat attachments) and the diagnostic log are kept. To remove
+those too, also delete the
 [application data directory](./permissions-privacy.md#where-your-data-is-stored).
 
 ## Reporting a problem

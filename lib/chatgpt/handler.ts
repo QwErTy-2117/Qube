@@ -98,6 +98,19 @@ class FileStore<T> implements KeyValueStore<T> {
     this.mem.delete(key);
     this.persist();
   }
+
+  /** Hard reset: forget cached sign-in state without recreating its file. */
+  clearForHardReset(): void {
+    this.mem.clear();
+    this.loaded = true;
+  }
+}
+
+const sessionStore = new FileStore();
+
+/** Hard reset helper for the live ChatGPT auth handler. */
+export function clearChatGPTSessionsForHardReset(): void {
+  sessionStore.clearForHardReset();
 }
 
 // The Codex backend gates its model catalog on `client_version`. The core
@@ -132,7 +145,7 @@ export const chatGptAuth = createChatGPTHandler({
   fetch: dynamicClientVersionFetch,
   clientVersion: getChatGPTClientVersion(),
   // @ts-ignore - allow FileStore to satisfy KeyValueStore
-  sessionStore: new FileStore(),
+  sessionStore,
   allowedOrigins: [
     "http://localhost:3010",
     "http://127.0.0.1:3010",

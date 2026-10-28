@@ -58,6 +58,12 @@ class BrowserStore {
     }
   }
 
+  /** Hard reset: clear the cached live-page state without writing a file. */
+  resetForHardReset(): void {
+    this.loaded = true;
+    this.state = blank();
+  }
+
   get(): BrowserPageState {
     this.ensureLoaded();
     return { ...this.state };

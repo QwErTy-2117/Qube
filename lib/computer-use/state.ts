@@ -47,6 +47,7 @@ export class StateTracker {
     return s;
   }
   static resetForTests(): void { StateTracker.instances.clear(); }
+  static resetForHardReset(): void { StateTracker.instances.clear(); }
 
   nextId(): string { this.idSeq += 1; return `k${Date.now().toString(36)}_${this.idSeq}`; }
 

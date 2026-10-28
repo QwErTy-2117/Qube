@@ -109,6 +109,12 @@ class ComposioKeyStore {
     this.state.updatedAt = Date.now();
     this.persist();
   }
+
+  /** Hard reset: forget the custom connector key without rewriting the file. */
+  resetForHardReset(): void {
+    this.initialized = true;
+    this.state = { ...DEFAULT_STATE };
+  }
 }
 
 export const composioKeyStore = new ComposioKeyStore();

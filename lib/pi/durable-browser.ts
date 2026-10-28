@@ -206,9 +206,14 @@ export function buildBrowserExtension() {
   });
 }
 
-/** Test-only: drop cached kernel tools and turn/thread mappings. */
+/** Drop cached kernel tools and turn/thread mappings. */
 export function resetDurableBrowserForTests(): void {
   kernelToolsCache = null;
   turnContexts.clear();
   conversationThreads.clear();
+}
+
+/** Production hard-reset alias with the same deterministic behavior. */
+export function resetDurableBrowserForHardReset(): void {
+  resetDurableBrowserForTests();
 }

@@ -43,27 +43,41 @@ check-in, below, cannot.
 Every run is recorded in an execution log with status, duration and output.
 Successful results become an **announcement** that Qube weaves into your next
 conversation — it mentions each finished task exactly once, even if you only
-open the chat to say hi. You can also run any task immediately (“trigger now”)
-from the scheduling screen, which shows tasks as a To do / In progress / Done
-board.
+open the chat to say hi. Announcements also cover heartbeat work, approval
+requests, and research first communicated in an ordinary chat. Each has its own
+persistent delivery record: Qube claims it for one conversation, marks it
+delivered only after the visible reply actually mentions it, and leaves failed
+or unmentioned items pending across chats and restarts. A genuinely new update
+gets a separate announcement; an explicit question about an old one is answered
+normally, not announced again. **Hard reset** clears this delivery history and
+the work ledger along with all other local state, so only a genuinely new fact
+is announced after the reset. You can also run any task immediately (“trigger
+now”) from the scheduling screen, which shows tasks as a To do / In progress /
+Done board.
 
 ## The periodic check-in (heartbeat)
 
-The check-in is a lightweight background inspection, every 30 minutes by
-default, that looks for things you would want to know next time you talk. It
-operates in three lanes:
+The check-in is a background inspection, every 30 minutes by default, that
+looks for actionable unfinished work and carries it forward. Every enabled
+tick performs a deterministic sweep of workspace files, open goals, due
+checklist items, and read-only tools from **authorized, connected apps** —
+including emails needing replies, documents needing work, relevant GitHub
+issues, and other ongoing tasks. Connector and file content is treated as
+untrusted data, never as instructions. It operates in three lanes:
 
-1. **Monitor** — read-only checks of the workspace and connected apps (mail,
-   calendar, Slack, GitHub) for fresh items.
-2. **Prepare** — reversible in-workspace prep it's clearly allowed to do:
-   compile a pending document, tidy a folder, build a comparison table, and
-   save a note with the file path for your next chat.
-3. **Hold** — sending, posting, deleting or purchasing never happens
-   headless. Those are drafted and presented for your approval in the next
-   conversation.
+1. **Monitor** — bounded read-only checks for fresh, actionable items.
+2. **Prepare** — reversible work it can safely finish now: research, reply
+   drafts, improved documents, issue investigation, and locally developed and
+   tested fixes. Progress, deliverables, blockers, and the next step are saved
+   in a durable work ledger so later ticks/restarts continue without repeating
+   completed work.
+3. **Hold** — sending, posting, deleting, purchasing, merging, or closing an
+   issue never happens headless. The exact prepared action is recorded and
+   presented for explicit approval in the next conversation, where the normal
+   permission card still confirms it.
 
-When nothing has changed, the check-in stays completely silent (no LLM call,
-no notification) and simply records a quiet tick. You can change its interval,
+When nothing useful can be carried forward, the check-in stays silent (no model
+call, no notification) and simply records a quiet tick. You can change its interval,
 rewrite its instructions, or disable it in **Settings → Scheduling** or by
 asking Qube directly. It cannot be deleted, only switched off.
 

@@ -55,6 +55,14 @@ function writeCache(cache: VersionCache): void {
 }
 
 /** Current Codex client version: env override > cached release > bundled fallback. */
+/** Hard reset: restore the bundled version and forget the persisted cache. */
+export function resetChatGPTClientVersionForHardReset(): void {
+  current = BUNDLED_CHATGPT_CLIENT_VERSION;
+  loadedCache = false;
+  inflight = undefined;
+  lastFailureAt = 0;
+}
+
 export function getChatGPTClientVersion(): string {
   if (process.env.LWC_CLIENT_VERSION) return process.env.LWC_CLIENT_VERSION;
   if (!loadedCache) {

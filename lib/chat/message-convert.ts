@@ -5,6 +5,12 @@
  * Rebuilds a plain AI SDK UIMessage from a ThreadMessage when bound inner
  * messages are unavailable (legacy snapshots, unbound content).
  */
+
+import {
+  mediaTypeFromFilename,
+  parseAttachmentDataUrl,
+} from "./attachments";
+
 export function threadMessageToUIMessage(tm: any): any | null {
   if (!tm || typeof tm !== "object") return null;
   const role = tm.role;
@@ -17,8 +23,30 @@ export function threadMessageToUIMessage(tm: any): any | null {
       parts.push({ type: p.type, text: p.text });
     } else if (p.type === "tool-call") {
       parts.push({ type: "text", text: `[tool: ${p.toolName ?? "unknown"}]` });
+    } else if (p.type === "file" && typeof p.data === "string") {
+      // Preserve sent attachments: otherwise a legacy/history round-trip drops
+      // the data URL and the restored preview says no text is available.
+      const filename = typeof p.filename === "string" ? p.filename : undefined;
+      const parsed = parseAttachmentDataUrl(p.data);
+      parts.push({
+        type: "file",
+        url: p.data,
+        mediaType: p.mimeType || parsed?.mediaType || mediaTypeFromFilename(filename),
+        ...(filename ? { filename } : {}),
+      });
+    } else if (p.type === "image" && typeof p.image === "string") {
+      const filename = typeof p.filename === "string" ? p.filename : undefined;
+      const parsed = parseAttachmentDataUrl(p.image);
+      parts.push({
+        type: "file",
+        url: p.image,
+        mediaType: p.mimeType || parsed?.mediaType || "image/png",
+        ...(filename ? { filename } : {}),
+      });
     } else if (typeof (p as any).text === "string") {
       parts.push({ type: "text", text: (p as any).text });
+    } else if (typeof (p as any).content === "string" && (p as any).content.trim()) {
+      parts.push({ type: "text", text: (p as any).content });
     }
   }
   if (parts.length === 0) return null;

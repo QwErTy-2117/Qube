@@ -38,6 +38,12 @@ class SettingsStore {
     }
   }
 
+  /** Hard reset: restore defaults in memory without rewriting the file. */
+  resetForHardReset(): void {
+    this.initialized = true;
+    this.settings = { ...defaults };
+  }
+
   getAll(): AppSettings {
     this.ensureInitialized();
     return { ...this.settings };

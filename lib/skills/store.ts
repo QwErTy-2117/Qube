@@ -161,6 +161,12 @@ class SkillStore {
     this.persist();
     return { ok: true };
   }
+
+  /** Hard reset: restore the built-in skill set in memory without writing it. */
+  resetForHardReset(): void {
+    this.initialized = true;
+    this.skills = SYSTEM_SKILLS.map((s) => ({ ...s }));
+  }
 }
 
 export const skillStore = new SkillStore();

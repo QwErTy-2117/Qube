@@ -96,6 +96,12 @@ class AllowedDirsStore {
     }
   }
 
+  /** Hard reset: revoke all remembered directory approvals in memory. */
+  resetForHardReset(): void {
+    this.initialized = true;
+    this.dirs = [];
+  }
+
   getAll(): AllowedDir[] {
     this.ensureInitialized();
     return this.dirs.map((d) => ({ ...d }));

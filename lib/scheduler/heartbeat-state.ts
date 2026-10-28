@@ -32,6 +32,16 @@ export type HeartbeatState = {
   totalTicks: number;
   lastDiscoveryHash?: string | null;
   lastDiscoveryAt?: number | null;
+  /** Full work/connector discovery hash (heartbeat v2). */
+  lastWorkDiscoveryHash?: string | null;
+  lastWorkDiscoveryAt?: number | null;
+  lastConnectorHash?: string | null;
+  lastConnectorCheckAt?: number | null;
+  connectedApps?: string[];
+  openWorkCount?: number;
+  pendingApprovalCount?: number;
+  lastWorkAt?: number | null;
+  lastWorkOutput?: string | null;
 };
 
 function defaultState(): HeartbeatState {
@@ -48,6 +58,17 @@ function defaultState(): HeartbeatState {
     notificationStatus: {},
     consecutiveEmptyTicks: 0,
     totalTicks: 0,
+    lastDiscoveryHash: null,
+    lastDiscoveryAt: null,
+    lastWorkDiscoveryHash: null,
+    lastWorkDiscoveryAt: null,
+    lastConnectorHash: null,
+    lastConnectorCheckAt: null,
+    connectedApps: [],
+    openWorkCount: 0,
+    pendingApprovalCount: 0,
+    lastWorkAt: null,
+    lastWorkOutput: null,
   };
 }
 
@@ -134,9 +155,9 @@ export async function recordHeartbeatTick(opts: {
 }
 
 export function classifyHeartbeatNeed(state: HeartbeatState): "nothing" | "later" | "in_progress" | "failed_retry" | "needs_attention" | "proactive" {
-  if (Object.values(state.taskStatus).some((s) => s === "in_progress")) return "in_progress";
+  if (Object.values(state.taskStatus).some((s) => s === "in_progress") || (state.openWorkCount ?? 0) > 0) return "in_progress";
   if (state.failedActions.some((f) => f.retryAt <= Date.now())) return "failed_retry";
-  if (Object.values(state.taskStatus).some((s) => s === "needs_attention")) return "needs_attention";
+  if (Object.values(state.taskStatus).some((s) => s === "needs_attention") || (state.pendingApprovalCount ?? 0) > 0) return "needs_attention";
   if (state.pendingActions.some((a) => !a.deferredUntil || a.deferredUntil <= Date.now())) return "proactive";
   if (state.deferredActions.some((a) => a.deferredUntil <= Date.now())) return "later";
   return "nothing";

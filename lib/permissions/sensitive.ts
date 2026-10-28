@@ -28,6 +28,8 @@ export type SensitiveKind =
   | "delete_file"
   | "delete_external"
   | "modify_external"
+  | "merge_pull_request"
+  | "close_issue"
   | "destructive_command"
   | "outside_workspace"
   | "purchase"
@@ -42,18 +44,36 @@ export interface SensitiveVerdict {
 }
 
 const CONNECTOR_WRITE_RE =
-  /(send|create|post|publish|share|invite|schedule|book|order|purchase|pay|transfer|upload|delete|remove|destroy|trash|cancel|update|edit|modify|move|archive|comment|reply|post_message)/i;
+  /(?:^|[^a-z])(send|create|post|publish|share|invite|schedule|book|order|purchase|pay|transfer|upload|delete|remove|destroy|trash|cancel|update|edit|modify|move|archive|comment|reply|post_message|merge|close|closed|reopen|approve|submit|commit|push|restore|lock|unlock|assign|unassign)(?=$|[^a-z])/i;
 
-const CONNECTOR_DELETE_RE = /(delete|remove|destroy|trash|cancel|revoke)/i;
-const CONNECTOR_SEND_RE = /(send|post|publish|share|invite|reply|comment|schedule|book)/i;
+const CONNECTOR_DELETE_RE = /(delete|remove|destroy|trash|cancel|revoke|close|closed)/i;
+const CONNECTOR_SEND_RE = /(send|post|publish|share|invite|reply|comment|schedule|book|merge|submit)/i;
 
 const EMAIL_TOOLS_RE = /(gmail|email|mail)/i;
 const CHAT_TOOLS_RE = /(slack|discord|teams|message|chat)/i;
 
-// Auto-except-externals: pure read verbs (get/list/search/fetch/read) never gate.
 const CONNECTOR_READ_RE = /(^_|^(get|list|search|fetch|read|lookup|find|check|view)_)/i;
+const READ_VERBS = new Set(["get", "list", "search", "fetch", "read", "lookup", "find", "check", "view"]);
+const WRITE_VERBS = new Set([
+  "send", "create", "post", "publish", "share", "invite", "schedule", "book", "order", "purchase", "pay", "transfer",
+  "upload", "delete", "remove", "destroy", "trash", "cancel", "update", "edit", "modify", "move", "archive", "comment",
+  "reply", "merge", "close", "closed", "reopen", "approve", "submit", "commit", "push", "restore", "lock", "unlock",
+  "assign", "unassign",
+]);
+
+/**
+ * Pure reads never gate. Composio names include a toolkit prefix, so inspect
+ * the first ACTION token rather than a substring: GITHUB_LIST_CLOSED_ISSUES
+ * and GMAIL_LIST_SENT_EMAILS are reads, while GITHUB_CLOSE_ISSUE is not.
+ */
 export function isReadOnlyConnectorTool(toolName: string): boolean {
-  return CONNECTOR_READ_RE.test(toolName) && !CONNECTOR_WRITE_RE.test(toolName);
+  if (!toolName) return false;
+  const lower = toolName.toLowerCase();
+  const parts = lower.split(/[^a-z0-9]+/).filter(Boolean);
+  const action = parts.find((p) => READ_VERBS.has(p) || WRITE_VERBS.has(p));
+  if (action && READ_VERBS.has(action)) return true;
+  if (action && WRITE_VERBS.has(action)) return false;
+  return CONNECTOR_READ_RE.test(lower) && !CONNECTOR_WRITE_RE.test(lower);
 }
 
 /** Connector tool names are dynamic (Composio). Classify by name pattern. */
@@ -73,6 +93,8 @@ export function isSensitiveConnectorTool(toolName: string): boolean {
 export function connectorSensitiveKind(toolName: string): SensitiveKind {
   const lower = toolName.toLowerCase();
   if (/(purchase|pay|order|checkout)/i.test(lower)) return "purchase";
+  if (/(merge)/i.test(lower)) return "merge_pull_request";
+  if (/(close|closed|reopen|resolve|lock|unlock)/i.test(lower)) return "close_issue";
   if (CONNECTOR_DELETE_RE.test(lower)) return "delete_external";
   if (CONNECTOR_SEND_RE.test(lower)) {
     if (EMAIL_TOOLS_RE.test(lower)) return "send_email";

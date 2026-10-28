@@ -358,6 +358,25 @@ export async function getBrowserStatus(): Promise<BrowserStatus> {
   };
 }
 
+/**
+ * Hard reset: terminate a browser we own without relaunching it, so its
+ * profile can be removed cleanly (including on Windows where files lock).
+ */
+export async function stopManagedChromeForHardReset(): Promise<void> {
+  if (weOwnProc) {
+    try {
+      browserProc?.kill();
+    } catch {}
+  }
+  browserProc = null;
+  weOwnProc = false;
+  ensurePromise = null;
+  try {
+    const { resetBrowserArgsCache } = await import("@/lib/pi/browser-mcp");
+    resetBrowserArgsCache();
+  } catch {}
+}
+
 /** Kill the managed browser and reset state so the next use relaunches. */
 export async function restartManagedChrome(): Promise<BrowserStatus> {
   if (weOwnProc) {

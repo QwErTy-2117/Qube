@@ -66,6 +66,18 @@ export function createPermissionRequest(
   return { requestId, promise };
 }
 
+/** Hard reset: deny and forget every pending permission request. */
+export function clearPendingPermissionsForHardReset(): void {
+  for (const [, resolver] of pendingPermissions) {
+    try {
+      resolver.resolve({ approved: false });
+    } catch {}
+  }
+  pendingPermissions.clear();
+  permissionStore.clear();
+  requestCounter = 0;
+}
+
 export function resolvePermission(
   requestId: string,
   approved: boolean,

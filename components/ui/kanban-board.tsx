@@ -74,6 +74,9 @@ export type CardData = {
   /** Recurring cards never overflow/delete — they return to To do when the
       current period ends. */
   persist?: boolean
+  /** Done recurring cards can be dragged back to In progress to re-run.
+      The card stays non-draggable otherwise (Done is backend truth only). */
+  rerunnable?: boolean
 }
 
 export type ColumnData = {
@@ -95,13 +98,14 @@ type CardProps = {
   onDragStart: (e: React.DragEvent<HTMLDivElement>) => void
   onDragEnd: () => void
   isDragging: boolean
-  /** Done-column cards are locked: backend truth only, no manual dragging. */
+  /** Most Done-column cards are locked; rerunnable ones can be dragged out. */
   locked?: boolean
   /** In-progress column: yellow spinning ring instead of the outline ring. */
   spinning?: boolean
   /** Queued card newly risen into view: enters from further below. */
   enterFromBelow?: boolean
-  /** Overflow beyond the Done cap: slides right and disappears. */
+  /** Overflow beyond the Done cap: slides right and disappears. Overflow
+      cards are never rerunnable — only visible Done cards can be re-run. */
   vanish?: boolean
   onVanished?: (id: string) => void
 }
@@ -195,6 +199,10 @@ function Card({
   // completed task keeps its filled check.
   const taskDone = card.done ?? isDone
 
+  // A Done card is draggable only when its data opts in (re-run affordance
+  // for recurring tasks); other Done cards and plain `locked` cards stay put.
+  const draggable = !locked || card.rerunnable === true
+
   const containerStyle = {
     borderRadius: 14,
     background: "var(--muted)",
@@ -234,11 +242,11 @@ function Card({
     <motion.div
       animate="animate"
       className={
-        locked
-          ? "not-prose flex select-none flex-row items-start gap-2"
-          : "not-prose flex cursor-grab select-none flex-row items-start gap-2 active:cursor-grabbing"
+        draggable
+          ? "not-prose flex cursor-grab select-none flex-row items-start gap-2 active:cursor-grabbing"
+          : "not-prose flex select-none flex-row items-start gap-2"
       }
-      draggable={!locked}
+      draggable={draggable}
       exit="exit"
       initial={
         enterFromBelow
@@ -413,7 +421,8 @@ export function Column({
     [onCardGone]
   )
 
-  // No manual moves into or out of Done — highlight only for To do / In progress.
+  // Drag-over highlight: not while hovering the Done column itself (no
+  // drops into it), and a rerunnable Done card lights up In progress instead.
   const showOver = dragOver && !isDone
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -433,8 +442,9 @@ export function Column({
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault()
       setDragOver(false)
-      // Done is locked: no manual drops into it (and its cards can't be
-      // dragged out — they're rendered with draggable={false}).
+      // Done is locked: no manual drops into it. Dragging out is allowed
+      // only for rerunnable cards (recurring re-runs) — the source column
+      // stamps the payload at drag start.
       if (column.id === "done") return
       // Prefer React state, fall back to the native payload (some webviews
       // deliver the drop without the state update having flushed).
@@ -444,7 +454,7 @@ export function Column({
         dragState?.fromColumn ||
         (e.dataTransfer.getData("application/x-from-column") as ColumnStatus)
       if (!cardId || !from) return
-      if (from === "done") return
+      if (from === "done" && e.dataTransfer.getData("application/x-rerunnable") !== "1") return
       onDrop(cardId, from, column.id)
     },
     [dragState, onDrop, column.id]
@@ -508,6 +518,11 @@ export function Column({
                   "application/x-from-column",
                   column.id
                 )
+                // Rerunnable Done cards stamp the opt-in so In progress can
+                // accept the drop even when React state hasn't flushed.
+                if (isDone && card.rerunnable) {
+                  e.dataTransfer.setData("application/x-rerunnable", "1")
+                }
                 e.dataTransfer.effectAllowed = "move"
                 setDragState({ cardId: card.id, fromColumn: column.id })
               }}

@@ -93,7 +93,9 @@ export function SchedulingTab() {
   );
 
   // Columns always match task state: done when ran, in progress while the
-  // execution triggered from the board is running, to do otherwise.
+  // execution triggered from the board is running, to do otherwise. Done
+  // covers current-period runs — rerunnable recurring cards can be dragged
+  // back to In progress.
   const columns: ColumnData[] = useMemo(() => {
     const buckets: Record<ColumnStatus, ScheduledTask[]> = {
       todo: [],
@@ -134,6 +136,9 @@ export function SchedulingTab() {
           title: t.name,
           done: true,
           persist: t.schedule.kind === "interval",
+          // Recurring cards can be dragged Done -> In progress to re-run.
+          // One-shots stay locked (terminal).
+          rerunnable: t.schedule.kind === "interval",
         })),
       },
     ];
@@ -183,13 +188,21 @@ export function SchedulingTab() {
   const handleDrop = useCallback(
     (cardId: string, fromColumnId: ColumnStatus, toColumnId: ColumnStatus) => {
       if (fromColumnId === toColumnId) return;
-      // Done is locked: no manual moves into or out of it.
-      if (fromColumnId === "done" || toColumnId === "done") return;
+      // Done is locked except for re-runs: a rerunnable (recurring) card may
+      // move Done -> In progress. No manual moves into Done.
+      if (toColumnId === "done") return;
+      if (fromColumnId === "done") {
+        const task = boardTasks.find((t) => t.id === cardId);
+        if (!task || task.schedule.kind !== "interval") return;
+        if (toColumnId !== "in-progress") return;
+        triggerTask(cardId);
+        return;
+      }
       if (toColumnId === "in-progress" && fromColumnId === "todo") {
         triggerTask(cardId);
       }
     },
-    [triggerTask]
+    [triggerTask, boardTasks]
   );
 
   function resetCreateForm() {

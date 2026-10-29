@@ -192,6 +192,19 @@ git add components/shared/scheduling-tab.tsx
 git commit -m "fix: recurring runs land in Done; Done recurring tasks stay re-runnable"
 ```
 
-## Self-review note (plan author)
+### Task 3: Re-run affordance — drag Done recurring cards to In progress
+
+**Files:**
+- Modify: `components/ui/kanban-board.tsx` (`CardData.rerunnable`, `Card` draggable logic, drop guards)
+- Modify: `components/shared/scheduling-tab.tsx` (`rerunnable` flag, `handleDrop` Done → In progress path)
+
+Done recurring cards are draggable (`rerunnable: true`, stamped into the
+native drag payload as `application/x-rerunnable`); `handleDrop` accepts
+Done → In progress for interval tasks and calls `triggerTask`. One-shots
+stay locked; overflow (vanishing) cards are never rerunnable. No new tests
+(presentational drag wiring; covered by typecheck + manual board check).
+
+**Status: implemented as `77d111a` during execution** (spec-reviewer follow-up
+to Task 2: the relaxed guard alone was unreachable by drag).
 
 Spec section 3 coverage: 3.1 (helper + rule), 3.2 (guard change), 3.3 (acceptance via tests + manual board check). No placeholders: all code inline. Types: `isTaskDone(task: Pick<ScheduledTask, ...>, now)` matches test, UI-local, and store call sites without casts.

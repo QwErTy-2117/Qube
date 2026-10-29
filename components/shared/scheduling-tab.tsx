@@ -20,6 +20,7 @@ import {
   type ColumnStatus,
   type DragState,
 } from "@/components/ui/kanban-board";
+import { isTaskDone } from "@/lib/scheduler/board-status";
 
 interface ScheduledTask {
   id: string;
@@ -34,17 +35,6 @@ interface ScheduledTask {
   enabled: boolean;
   lastRunAt: number | null;
   nextRunAt: number;
-}
-
-function isDone(task: ScheduledTask, now = Date.now()): boolean {
-  if (task.lastRunAt == null) return false;
-  if (task.schedule.kind === "once") return true;
-  // Recurring task: once it has run in the current recurrence window it is
-  // done for that period (a daily task that already ran today belongs in
-  // Done until the next day starts).
-  const intervalMinutes = task.schedule.intervalMinutes;
-  if (!intervalMinutes || intervalMinutes <= 0) return false;
-  return now < task.lastRunAt + intervalMinutes * 60_000;
 }
 
 export function SchedulingTab() {
@@ -111,7 +101,7 @@ export function SchedulingTab() {
       done: [],
     };
     for (const task of boardTasks) {
-      if (isDone(task, now)) {
+      if (isTaskDone(task, now)) {
         buckets.done.push(task);
       } else if (runningIds.includes(task.id)) {
         buckets["in-progress"].push(task);
@@ -155,7 +145,10 @@ export function SchedulingTab() {
     async (id: string) => {
       if (runningRef.current.has(id)) return;
       const task = boardTasks.find((t) => t.id === id);
-      if (!task || isDone(task)) return;
+      if (!task) return;
+      // Finished one-shots are terminal; recurring tasks stay re-runnable and
+      // fresh timestamps keep them in Done.
+      if (task.schedule.kind === "once" && isTaskDone(task, Date.now())) return;
       runningRef.current.add(id);
       setRunningIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
       try {

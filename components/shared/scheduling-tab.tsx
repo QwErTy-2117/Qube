@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { Loader2, Check, Plus, Trash2 } from "lucide-react";
+import { Loader2, Check, Plus, Trash2, Clock, Calendar, CalendarDays, CalendarRange } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PromptPill } from "@/components/shared/prompt-pill";
@@ -13,6 +13,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 import {
   Column,
@@ -70,7 +75,7 @@ export function SchedulingTab() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   // AI draft flow: prompt -> generating -> review (prefilled form).
-  const [draftStage, setDraftStage] = useState<"prompt" | "generating" | "review">("prompt");
+  const [draftStage, setDraftStage] = useState<"prompt" | "generating" | "review">("review");
   const [draftError, setDraftError] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
 
@@ -445,32 +450,15 @@ export function SchedulingTab() {
             if (!v) resetCreateForm();
           }}
         >
-          <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogContent className="sm:max-w-md rounded-3xl h-[640px] flex flex-col overflow-hidden">
             <DialogHeader>
               <DialogTitle>New task</DialogTitle>
               <DialogDescription>
-                {createKind === "none"
-                  ? "No schedule: the card sits in To do until you run it from the board, and the next heartbeat picks it up with full task powers. It lands in Done when finished."
-                  : "One-off tasks run once and land in Done. Recurring tasks move to Done for the current period after each run, then return to To do when the next period starts."}
+                One-off tasks run once and land in Done. Recurring tasks move to Done for the current period after each run, then return to To do when the next period starts.
               </DialogDescription>
             </DialogHeader>
 
-            {draftStage === "prompt" ? (
-              <div className="space-y-3 py-2">
-                <PromptPill busy={false} onSend={(t) => runDraft(t, null)} />
-                {draftError && (
-                  <p className="text-xs text-red-600 dark:text-red-400">{draftError}</p>
-                )}
-                <button type="button" onClick={() => setDraftStage("review")} className="text-xs font-medium text-muted-foreground hover:text-foreground">
-                  Fill in manually instead
-                </button>
-              </div>
-            ) : draftStage === "generating" ? (
-              <div className="flex justify-center py-4">
-                <PromptPill busy onSend={() => {}} />
-              </div>
-            ) : (
-            <div className="space-y-4 py-2">
+            <div className="space-y-4 py-2 flex-1 overflow-y-auto min-h-0">
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-foreground">Name</label>
                 <input
@@ -521,63 +509,107 @@ export function SchedulingTab() {
                   <label className="text-sm font-semibold text-foreground">
                     Run at
                   </label>
-                  <input
-                    type="datetime-local"
-                    value={createRunAt}
-                    onChange={(e) => setCreateRunAt(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring hover:bg-muted/50 transition-colors"
+                      >
+                        <span className={createRunAt ? "text-foreground" : "text-muted-foreground"}>
+                          {createRunAt
+                            ? new Date(createRunAt).toLocaleString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })
+                            : "Pick a date and time"}
+                        </span>
+                        <Calendar className="size-4 text-muted-foreground" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-3 space-y-3" align="start">
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { label: "Now", minutes: 0 },
+                          { label: "+1h", minutes: 60 },
+                          { label: "Tomorrow", minutes: 1440 },
+                          { label: "+1d", minutes: 1440 },
+                        ].map((opt, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              const d = new Date(Date.now() + opt.minutes * 60_000);
+                              const pad = (n: number) => String(n).padStart(2, "0");
+                              const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                              setCreateRunAt(local);
+                            }}
+                            className="rounded-full px-3 py-1 text-xs font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        type="datetime-local"
+                        value={createRunAt}
+                        onChange={(e) => setCreateRunAt(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
               ) : createKind === "interval" ? (
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-foreground">
                     Repeat every
                   </label>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="grid grid-cols-2 gap-2">
                     {[
-                      { label: "Hour", minutes: 60 },
-                      { label: "Day", minutes: 1440 },
-                      { label: "Week", minutes: 10080 },
-                      { label: "Month", minutes: 43200 },
-                    ].map((opt) => (
-                      <button
-                        key={opt.minutes}
-                        type="button"
-                        onClick={() => setCreateInterval(opt.minutes)}
-                        className={cn(
-                          "rounded-full px-3.5 py-1.5 text-xs font-semibold border transition-colors",
-                          createInterval === opt.minutes
-                            ? "border-primary bg-primary/10 text-foreground"
-                            : "border-border text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                      { label: "Hour", minutes: 60, icon: Clock },
+                      { label: "Day", minutes: 1440, icon: Calendar },
+                      { label: "Week", minutes: 10080, icon: CalendarDays },
+                      { label: "Month", minutes: 43200, icon: CalendarRange },
+                    ].map((opt) => {
+                      const Icon = opt.icon;
+                      return (
+                        <button
+                          key={opt.minutes}
+                          type="button"
+                          onClick={() => setCreateInterval(opt.minutes)}
+                          className={cn(
+                            "flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors",
+                            createInterval === opt.minutes
+                              ? "border-primary bg-primary/10 text-foreground"
+                              : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                          )}
+                        >
+                          <Icon className="size-4 shrink-0" />
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground">Custom (minutes)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={createInterval}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (Number.isFinite(n) && n > 0) setCreateInterval(n);
+                      }}
+                      className="w-24 px-2 py-1 rounded-lg border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring"
+                    />
                   </div>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">No schedule — sits in To do until run from the board or picked up by the next heartbeat.</p>
-              )}
+              ) : null}
 
               {createError && (
                 <p className="text-xs text-red-600 dark:text-red-400">{createError}</p>
               )}
-
-              <Button
-                onClick={handleCreate}
-                disabled={!canCreate || creating}
-                className="w-full rounded-xl"
-              >
-                {creating ? (
-                  <>
-                    <Loader2 className="size-4 mr-1 animate-spin" />
-                    Creating…
-                  </>
-                ) : (
-                  "Create task"
-                )}
-              </Button>
 
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1">
@@ -593,7 +625,6 @@ export function SchedulingTab() {
                 </button>
               </div>
             </div>
-            )}
           </DialogContent>
         </Dialog>
       </motion.div>

@@ -44,7 +44,7 @@ export function createPiAgentTools(ctx: AgentToolsContext): Record<string, any> 
       id: z.string().optional().describe("Task id for get/update/delete/trigger"),
       name: z.string().optional().describe("Task name for create/update"),
       instructions: z.string().optional().describe("What the agent should do when the task runs"),
-      scheduleKind: z.enum(["interval", "once"]).optional().describe("interval=recurring, once=one-shot future run"),
+      scheduleKind: z.enum(["interval", "once", "none"]).optional().describe("interval=recurring, once=one-shot future run, none=manual task with no schedule"),
       intervalMinutes: z.number().optional().describe("Recurring interval in minutes"),
       runAt: z.string().optional().describe("ISO date for once tasks"),
       enabled: z.boolean().optional().describe("Enable/disable (update only)"),

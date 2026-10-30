@@ -7,6 +7,14 @@ import { join } from "node:path";
 process.env.QUBE_DATA_DIR = process.env.QUBE_DATA_DIR || mkdtempSync(join(tmpdir(), "qube-none-test-"));
 
 import { createTask, updateTask, updateTaskRunTime, getTask } from "@/lib/scheduler/task-store";
+import { scheduleTaskTool } from "@/lib/pi/durable-scheduler";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+
+const fakeApi = { taskId: "test-none-tool" } as never;
+
+function outText(result: unknown): string {
+  return (result as { output: Array<{ text?: string }> }).output?.[0]?.text ?? "";
+}
 
 describe("none-schedule tasks", () => {
   it("creates with null nextRunAt and survives a round-trip", async () => {
@@ -29,6 +37,16 @@ describe("none-schedule tasks", () => {
     const task = { enabled: true, nextRunAt: null };
     const due = task.enabled && task.nextRunAt != null && (task.nextRunAt as number) <= Date.now();
     assert.equal(due, false);
+  });
+
+  it("durable schedule_task creates a none task", async () => {
+    const parsed = JSON.parse(outText(await scheduleTaskTool.execute(
+      { action: "create", name: "Remind me", instructions: "Remind me to water the plants", scheduleKind: "none" } as never,
+      fakeApi, BACKGROUND_CONTEXT,
+    )));
+    assert.ok(parsed.task?.id, JSON.stringify(parsed).slice(0, 200));
+    assert.equal(parsed.task.schedule.kind, "none");
+    assert.equal(parsed.task.nextRunAt, null);
   });
 
   it("switching kinds resets nextRunAt correctly", async () => {

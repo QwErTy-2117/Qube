@@ -21,7 +21,7 @@ export const scheduleTaskTool = defineTool({
     id: Type.Optional(Type.String({ description: "Task id for get/update/delete/trigger" })),
     name: Type.Optional(Type.String()),
     instructions: Type.Optional(Type.String()),
-    scheduleKind: Type.Optional(Type.Union([Type.Literal("interval"), Type.Literal("once")])),
+    scheduleKind: Type.Optional(Type.Union([Type.Literal("interval"), Type.Literal("once"), Type.Literal("none")])),
     intervalMinutes: Type.Optional(Type.Number()),
     runAt: Type.Optional(Type.String({ description: "ISO date for once tasks" })),
     enabled: Type.Optional(Type.Boolean()),

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Check, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { PromptPill } from "@/components/shared/prompt-pill";
 import {
   Dialog,
   DialogContent,
@@ -55,11 +56,23 @@ export function SchedulingTab() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createInstructions, setCreateInstructions] = useState("");
-  const [createKind, setCreateKind] = useState<"once" | "interval">("once");
+  const [createKind, setCreateKind] = useState<"once" | "interval" | "none">("once");
   const [createRunAt, setCreateRunAt] = useState("");
   const [createInterval, setCreateInterval] = useState(1440);
+  // Wall-clock fields from AI drafts (hour/minute/weekdays/monthDay) that the
+  // form has no widgets for — carried through to the create body.
+  const [createClock, setCreateClock] = useState<{
+    hour?: number;
+    minute?: number;
+    weekdays?: number[];
+    monthDay?: number;
+  } | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // AI draft flow: prompt -> generating -> review (prefilled form).
+  const [draftStage, setDraftStage] = useState<"prompt" | "generating" | "review">("prompt");
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [drafting, setDrafting] = useState(false);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -212,13 +225,18 @@ export function SchedulingTab() {
     setCreateKind("once");
     setCreateRunAt("");
     setCreateInterval(1440);
+    setCreateClock(null);
     setCreateError(null);
+    setDraftStage("prompt");
+    setDraftError(null);
+    setDrafting(false);
   }
 
   const canCreate =
     createName.trim().length > 0 &&
     createInstructions.trim().length > 0 &&
     (createKind === "interval" ||
+      createKind === "none" ||
       (createRunAt !== "" && new Date(createRunAt).getTime() > Date.now()));
 
   async function handleCreate() {
@@ -235,13 +253,21 @@ export function SchedulingTab() {
               scheduleKind: "once",
               runAt: new Date(createRunAt).toISOString(),
             }
-          : {
-              action: "create",
-              name: createName.trim(),
-              instructions: createInstructions.trim(),
-              scheduleKind: "interval",
-              intervalMinutes: createInterval,
-            };
+          : createKind === "none"
+            ? {
+                action: "create",
+                name: createName.trim(),
+                instructions: createInstructions.trim(),
+                scheduleKind: "none",
+              }
+            : {
+                action: "create",
+                name: createName.trim(),
+                instructions: createInstructions.trim(),
+                scheduleKind: "interval",
+                intervalMinutes: createInterval,
+                ...(createClock ?? {}),
+              };
       const res = await fetch("/api/scheduler/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -258,6 +284,63 @@ export function SchedulingTab() {
       setCreateError(e instanceof Error ? e.message : String(e));
     } finally {
       setCreating(false);
+    }
+  }
+
+  function currentDraftInput() {
+    const base = { name: createName, instructions: createInstructions, scheduleKind: createKind };
+    return createKind === "once"
+      ? { ...base, runAt: createRunAt ? new Date(createRunAt).toISOString() : undefined }
+      : createKind === "none"
+        ? { ...base }
+        : { ...base, intervalMinutes: createInterval, ...(createClock ?? {}) };
+  }
+
+  async function runDraft(prompt: string, current: unknown) {
+    setDrafting(true);
+    setDraftError(null);
+    setDraftStage("generating");
+    try {
+      const res = await fetch("/api/scheduler/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, current }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.draft) throw new Error(data?.error || "Could not draft the task.");
+      applyDraft(data.draft as DraftFromServer);
+      setDraftStage("review");
+    } catch (e) {
+      setDraftError(e instanceof Error ? e.message : String(e));
+      setDraftStage("prompt");
+    } finally {
+      setDrafting(false);
+    }
+  }
+
+  type DraftFromServer = { name: string; instructions: string; scheduleKind: "once" | "interval" | "none"; intervalMinutes?: number; runAt?: string; hour?: number; minute?: number; weekdays?: number[]; monthDay?: number };
+
+  function applyDraft(d: DraftFromServer) {
+    setCreateName(d.name);
+    setCreateInstructions(d.instructions);
+    setCreateKind(d.scheduleKind === "none" ? "none" : d.scheduleKind);
+    if (typeof d.intervalMinutes === "number") setCreateInterval(d.intervalMinutes);
+    if (d.hour !== undefined || d.minute !== undefined || d.weekdays !== undefined || d.monthDay !== undefined) {
+      setCreateClock({
+        ...(d.hour !== undefined ? { hour: d.hour } : {}),
+        ...(d.minute !== undefined ? { minute: d.minute } : {}),
+        ...(d.weekdays !== undefined ? { weekdays: d.weekdays } : {}),
+        ...(d.monthDay !== undefined ? { monthDay: d.monthDay } : {}),
+      });
+    } else {
+      setCreateClock(null);
+    }
+    if (d.runAt) {
+      const t = new Date(d.runAt);
+      if (!Number.isNaN(t.getTime())) {
+        const pad = (n: number) => String(n).padStart(2, "0");
+        setCreateRunAt(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`);
+      }
     }
   }
 
@@ -366,12 +449,27 @@ export function SchedulingTab() {
             <DialogHeader>
               <DialogTitle>New task</DialogTitle>
               <DialogDescription>
-                One-off tasks run once and land in Done. Recurring tasks move
-                to Done for the current period after each run, then return to
-                To do when the next period starts.
+                {createKind === "none"
+                  ? "No schedule: the card sits in To do until you run it from the board, and the next heartbeat picks it up with full task powers. It lands in Done when finished."
+                  : "One-off tasks run once and land in Done. Recurring tasks move to Done for the current period after each run, then return to To do when the next period starts."}
               </DialogDescription>
             </DialogHeader>
 
+            {draftStage === "prompt" ? (
+              <div className="space-y-3 py-2">
+                <PromptPill busy={false} onSend={(t) => runDraft(t, null)} />
+                {draftError && (
+                  <p className="text-xs text-red-600 dark:text-red-400">{draftError}</p>
+                )}
+                <button type="button" onClick={() => setDraftStage("review")} className="text-xs font-medium text-muted-foreground hover:text-foreground">
+                  Fill in manually instead
+                </button>
+              </div>
+            ) : draftStage === "generating" ? (
+              <div className="flex justify-center py-4">
+                <PromptPill busy onSend={() => {}} />
+              </div>
+            ) : (
             <div className="space-y-4 py-2">
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-foreground">Name</label>
@@ -399,12 +497,12 @@ export function SchedulingTab() {
 
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-foreground">Run</label>
-                <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-muted/30 p-1">
-                  {(["once", "interval"] as const).map((kind) => (
+                <div className="grid grid-cols-3 gap-1 rounded-xl border border-border bg-muted/30 p-1">
+                  {(["once", "interval", "none"] as const).map((kind) => (
                     <button
                       key={kind}
                       type="button"
-                      onClick={() => setCreateKind(kind)}
+                      onClick={() => { setCreateKind(kind); setCreateClock(null); }}
                       className={cn(
                         "rounded-lg py-1.5 text-xs font-semibold transition-colors",
                         createKind === kind
@@ -412,7 +510,7 @@ export function SchedulingTab() {
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
-                      {kind === "once" ? "Once" : "Recurring"}
+                      {kind === "once" ? "Once" : kind === "interval" ? "Recurring" : "None"}
                     </button>
                   ))}
                 </div>
@@ -430,7 +528,7 @@ export function SchedulingTab() {
                     className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
                   />
                 </div>
-              ) : (
+              ) : createKind === "interval" ? (
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-foreground">
                     Repeat every
@@ -458,6 +556,8 @@ export function SchedulingTab() {
                     ))}
                   </div>
                 </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No schedule — sits in To do until run from the board or picked up by the next heartbeat.</p>
               )}
 
               {createError && (
@@ -478,7 +578,22 @@ export function SchedulingTab() {
                   "Create task"
                 )}
               </Button>
+
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <PromptPill busy={false} onSend={(t) => runDraft(t, currentDraftInput())} placeholder="Describe an edit…" />
+                </div>
+                <button
+                  onClick={handleCreate}
+                  disabled={!canCreate || creating}
+                  aria-label="Save task"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {creating ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" strokeWidth={3} />}
+                </button>
+              </div>
             </div>
+            )}
           </DialogContent>
         </Dialog>
       </motion.div>

@@ -10,6 +10,7 @@ import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
+import { finishedGroupTitle } from "@/components/assistant-ui/tools/group-title";
 import {
   getConnectorMetaForTool,
   inferConnectorMetasFromArgs,
@@ -1053,6 +1054,24 @@ function ToolGroupWithTitle({
   const labels = visibleParts.map(getToolLabel);
   const connectorIcons = getConnectorIconEntries(visibleParts);
   const visibleCount = visibleParts.length + reasoningParts.length;
+  // A group is connector-only when every visible tool call resolves to a
+  // connector app — direct name match, or a composio/mcp meta-tool whose
+  // args infer only connector metas (same resolution as the icons above).
+  const connectorOnly =
+    visibleParts.length > 0 &&
+    visibleParts.every((p) => {
+      const direct = getConnectorMetaForTool(p.toolName);
+      if (direct && direct.displayId !== "composio") return true;
+      if (direct || INFER_CONNECTOR_META_TOOLS.has(p.toolName)) {
+        try {
+          const inferred = inferConnectorMetasFromArgs(p.args);
+          return inferred.length > 0;
+        } catch {
+          return false;
+        }
+      }
+      return false;
+    });
 
   // While running the title is the live act (playful tool verb, or
   // "Exploring" for pure read/search runs) and deliberately carries no
@@ -1081,12 +1100,14 @@ function ToolGroupWithTitle({
     } else {
       title = labels[labels.length - 1] || "Working on it";
     }
-  } else if (connectorIcons.length > 0) {
-    // When a connector tool finishes, show its own friendly title instead of
-    // the generic "used N tools" — the connector icons sit before it.
-    title = labels[labels.length - 1] || "Working on it";
   } else {
-    title = `used ${visibleCount} ${visibleCount === 1 ? "tool" : "tools"}`;
+    title = finishedGroupTitle({
+      labels,
+      visibleCount,
+      connectorOnly,
+      connectorAppCount: connectorIcons.length,
+      hasConnectorIcons: connectorIcons.length > 0,
+    });
   }
 
 const STACK_TILTS = [-8, 6, -5, 7, -6];

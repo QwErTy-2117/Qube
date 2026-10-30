@@ -20,16 +20,22 @@ export function parseDraftResponse(text: string): ReturnType<typeof validateDraf
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+    const prompt = typeof body?.prompt === "string" ? body.prompt.trim().slice(0, 2000) : "";
     if (!prompt) return NextResponse.json({ error: "prompt is required" }, { status: 400 });
-    const current = (body?.current ?? null) as DraftInput | null;
+    let current: DraftInput | null = null;
+    try {
+      current = body?.current == null ? null : (JSON.parse(JSON.stringify(body.current)) as DraftInput | null);
+    } catch {
+      return NextResponse.json({ error: "current must be JSON-serializable" }, { status: 400 });
+    }
 
     let model: ReturnType<typeof createPiModelClientForRequest>;
     try {
       model = createPiModelClientForRequest(null, req);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : "No model is configured. Set a default model first.";
       return NextResponse.json(
-        { error: e instanceof Error ? e.message : "No model is configured. Set a default model first." },
+        { error: msg.slice(0, 300) },
         { status: 400 },
       );
     }
@@ -43,6 +49,7 @@ export async function POST(req: Request) {
         system: buildDraftSystemPrompt(),
         prompt: buildDraftPrompt(prompt, current),
         maxRetries: 0,
+        maxOutputTokens: 800,
         temperature: 0.3,
         abortSignal: controller.signal,
       });

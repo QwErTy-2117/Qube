@@ -169,15 +169,19 @@ export async function updateTaskRunTime(
   } else if (task.schedule.kind === "once") {
     task.enabled = false;
     // For once tasks, nextRunAt stays as runAt but disabled ensures no repeat
-  } else if (task.schedule.kind === "interval" && task.schedule.intervalMinutes) {
+  } else if (task.schedule.kind === "interval") {
     // Timezone-aware scheduling: if hour/minute set, compute next occurrence in local time
     if (task.schedule.hour !== undefined && task.schedule.minute !== undefined) {
       const next = computeNextDailyOccurrence(task.schedule.hour, task.schedule.minute, task.schedule.weekdays, task.schedule.monthDay);
       task.nextRunAt = next;
-    } else {
+    } else if (task.schedule.intervalMinutes) {
       // Interval-based: nextRunAt = now + interval, but handle missed executions by not drifting
       // If we were very late (missed by > interval), schedule from now, not from old nextRunAt, to avoid burst
       task.nextRunAt = now + task.schedule.intervalMinutes * 60_000;
+    } else {
+      // Interval task with no timing fields: fall back to a default cadence
+      // so the next run is always scheduled (never stuck due).
+      task.nextRunAt = now + 30 * 60_000;
     }
     // On failure, retry sooner? No — keep same interval to avoid hammering; scheduler handles retry via missed logic
     // But we still persist success/failure for observability

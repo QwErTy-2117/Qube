@@ -56,4 +56,14 @@ describe("isTaskDone", () => {
     const t = base({ lastRunAt: NOW - 500, nextRunAt: NOW + 3_599_500 });
     assert.equal(isTaskDone(t, NOW), true);
   });
+
+  it("marks none tasks done once they have run", () => {
+    const t = base({ schedule: { kind: "none" }, lastRunAt: NOW, nextRunAt: null });
+    assert.equal(isTaskDone(t, NOW), true);
+  });
+
+  it("marks none tasks not-done before any run", () => {
+    const t = base({ schedule: { kind: "none" }, lastRunAt: null, nextRunAt: null });
+    assert.equal(isTaskDone(t, NOW), false);
+  });
 });

@@ -82,12 +82,28 @@ export async function POST(req: NextRequest) {
         if (data.enabled !== undefined) patch.enabled = data.enabled;
         if (data.permissions !== undefined)
           patch.permissions = data.permissions;
+        const prevTask = data.scheduleKind !== undefined ? await getTask(data.id) : null;
         const task = await updateTask(data.id, patch);
         if (!task)
           return NextResponse.json(
             { error: "Task not found" },
             { status: 404 },
           );
+        if (data.scheduleKind !== undefined) {
+          try {
+            const { linkManualTaskReminder, unlinkManualTaskReminder } =
+              await import("@/lib/scheduler/manual-tasks");
+            if (data.scheduleKind === "none") {
+              await linkManualTaskReminder(
+                task.id,
+                task.name,
+                task.instructions,
+              );
+            } else if (prevTask?.schedule.kind === "none") {
+              await unlinkManualTaskReminder(task.id);
+            }
+          } catch {}
+        }
         return NextResponse.json({ task });
       }
 

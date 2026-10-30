@@ -11,7 +11,7 @@ export const scheduleTaskTool = defineTool({
   description:
     "Manage scheduled automations. Use ONLY for exact-timing work with an explicit recurring/one-shot-future cue: daily reports, reminders, weekly reviews, one-shot follow-ups. " +
     "One-shot reads ('check the price of X') must run INLINE with web_search/web_fetch — never create a task for them. " +
-    "Actions: create (name, instructions, scheduleKind interval|once, ...), list, get, update, delete, trigger (run now). " +
+    "Actions: create (name, instructions, scheduleKind interval|once|none, ...), list, get, update, delete, trigger (run now). " +
     "Scheduled work runs inside Qube, so it only runs while Qube is open and running. (Never auto-replayed after a crash.)",
   parameters: Type.Object({
     action: Type.Union([

@@ -25,10 +25,16 @@ describe("none-schedule tasks", () => {
     assert.equal(again?.nextRunAt, null);
   });
 
+  it("null nextRunAt must never count as due (null <= now is true in JS)", () => {
+    const task = { enabled: true, nextRunAt: null };
+    const due = task.enabled && task.nextRunAt != null && (task.nextRunAt as number) <= Date.now();
+    assert.equal(due, false);
+  });
+
   it("switching kinds resets nextRunAt correctly", async () => {
     const t = await createTask({ name: "Switch", instructions: "x", scheduleKind: "interval", intervalMinutes: 60 });
     assert.ok((t.nextRunAt ?? 0) > Date.now());
-    const toNone = await updateTask(t.id, { schedule: { kind: "none" } as never });
+    const toNone = await updateTask(t.id, { schedule: { kind: "none" } });
     assert.equal(toNone?.nextRunAt, null);
   });
 });

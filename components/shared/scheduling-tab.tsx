@@ -34,6 +34,7 @@ interface ScheduledTask {
   };
   enabled: boolean;
   lastRunAt: number | null;
+  // null = manual task, never auto-runs (matches lib/scheduler/types.ts).
   nextRunAt: number | null;
 }
 

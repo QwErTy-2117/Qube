@@ -129,7 +129,7 @@ export async function buildHeartbeatBrief(opts?: {
       const scheduled = tasks.filter((t: any) => t.type === "scheduled" && t.enabled);
       if (scheduled.length > 0) {
         const lines = scheduled.slice(0, 5).map((t: any) => {
-          const next = t.nextRunAt ? `next ${timeAgo(t.nextRunAt).replace(" ago", "")} from now`.replace("never", "unknown") : "unscheduled";
+          const next = t.nextRunAt ? `next ${timeAgo(t.nextRunAt).replace(" ago", "")} from now`.replace("never", "unknown") : "manual — runs from the board";
           const last = t.lastRunAt ? `last ${timeAgo(t.lastRunAt)}` : "never ran";
           return `- ${escapePromptData(String(t.name).slice(0, 80))}: ${last}, ${next}`;
         });

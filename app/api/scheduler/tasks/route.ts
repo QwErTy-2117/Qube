@@ -50,6 +50,14 @@ export async function POST(req: NextRequest) {
           monthDay: data.monthDay,
           permissions: data.permissions,
         });
+        if (task.schedule.kind === "none") {
+          try {
+            const { linkManualTaskReminder } = await import(
+              "@/lib/scheduler/manual-tasks"
+            );
+            await linkManualTaskReminder(task.id, task.name, task.instructions);
+          } catch {}
+        }
         return NextResponse.json({ task });
       }
 

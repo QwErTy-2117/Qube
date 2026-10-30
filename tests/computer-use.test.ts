@@ -214,7 +214,7 @@ describe("cua: naming and configuration", () => {
     delete process.env.CUA_DRIVER_COMMAND;
     delete process.env.COMPUTER_USE_COMMAND;
     const resolved = resolveCuaDriverCommand();
-    assert.ok(resolved.command.endsWith("cua-driver") || resolved.command === "cua-driver");
+    assert.ok(/cua-driver(?:\.exe)?$/i.test(resolved.command));
     process.env.CUA_DRIVER_COMMAND = "cua-driver --profile test";
     const custom = resolveCuaDriverCommand();
     assert.equal(custom.command, "cua-driver");

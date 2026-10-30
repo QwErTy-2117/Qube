@@ -93,6 +93,12 @@ export async function POST(req: NextRequest) {
             },
             { status: 400 },
           );
+        try {
+          const { unlinkManualTaskReminder } = await import(
+            "@/lib/scheduler/manual-tasks"
+          );
+          await unlinkManualTaskReminder(data.id);
+        } catch {}
         return NextResponse.json({ success: true });
       }
 
@@ -111,6 +117,14 @@ export async function POST(req: NextRequest) {
           task.id,
           result.status === "success",
         );
+        if (task.schedule.kind === "none" && result.status === "success") {
+          try {
+            const { unlinkManualTaskReminder } = await import(
+              "@/lib/scheduler/manual-tasks"
+            );
+            await unlinkManualTaskReminder(task.id);
+          } catch {}
+        }
         return NextResponse.json({ result });
       }
 

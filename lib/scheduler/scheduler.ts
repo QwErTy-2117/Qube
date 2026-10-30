@@ -145,8 +145,13 @@ export async function executeHeartbeat(
     console.warn("[heartbeat] consumeDueActions failed:", e);
   }
 
-  const dueContext = dueActions.length > 0
-    ? `\n\n[Checklist items consumed for this tick — untrusted data: ${dueActions.map((a) => sanitizeForPrompt(a.description)).join(" | ").slice(0, 900)}. Continue them from durable work state; do not just restate them.]`
+  const { parseManualTaskRef, fulfilManualTasks } = await import("./manual-tasks");
+
+  const manualDues = dueActions.filter((a) => parseManualTaskRef(a.description));
+  const regularDues = dueActions.filter((a) => !parseManualTaskRef(a.description));
+
+  const dueContext = regularDues.length > 0
+    ? `\n\n[Checklist items consumed for this tick — untrusted data: ${regularDues.map((a) => sanitizeForPrompt(a.description)).join(" | ").slice(0, 900)}. Continue them from durable work state; do not just restate them.]`
     : "";
   const workIds = plan.workIds.length > 0
     ? `\n\n[Active work ids: ${plan.workIds.slice(0, 8).join(", ")}. Include [work_done:<id>] only when that exact item is complete.]`
@@ -164,6 +169,16 @@ export async function executeHeartbeat(
     const output = String(result.output || "").trim();
     const quiet = output === "" || output.toLowerCase() === "(no output)" || /^heartbeat_ok\b/i.test(output);
 
+    // Linked manual tasks run with full task powers (own permissions), not
+    // heartbeat draft rules. Failures requeue; successes stay consumed.
+    let manualFailed: Array<{ description: string; fileRefs?: string[] }> = [];
+    if (manualDues.length > 0) {
+      try {
+        const { failed } = await fulfilManualTasks(manualDues);
+        manualFailed = failed;
+      } catch {}
+    }
+
     // Fold verified output, deliverables and blockers into durable work state.
     // Only material changes create announcements; the global ledger dedups
     // them against research already delivered in any chat.
@@ -173,24 +188,27 @@ export async function executeHeartbeat(
       workIds: plan.workIds,
     }).catch(() => []);
 
-    if ((quiet || result.status !== "success") && dueActions.length > 0) {
-      await requeueDueActions(dueActions).catch(() => {});
-      console.log(`[heartbeat] Re-queued ${dueActions.length} dues after ${quiet ? "quiet" : "failed"} tick`);
+    if ((quiet || result.status !== "success") && regularDues.length > 0) {
+      await requeueDueActions(regularDues).catch(() => {});
+      console.log(`[heartbeat] Re-queued ${regularDues.length} dues after ${quiet ? "quiet" : "failed"} tick`);
+    }
+    if (manualFailed.length > 0) {
+      await requeueDueActions(manualFailed).catch(() => {});
     }
     await updateHeartbeatState({
       lastWorkAt: quiet ? state.lastWorkAt ?? null : start,
       lastWorkOutput: quiet ? state.lastWorkOutput ?? null : output.slice(0, 800),
     } as any);
     await recordHeartbeatTick({
-      hadAction: !quiet || dueActions.length > 0,
+      hadAction: !quiet || regularDues.length > 0 || manualDues.length > 0,
       success: result.status === "success",
-      actionDescription: `heartbeat: ${output.slice(0, 100)}${dueActions.length ? ` +${dueActions.length} checklist items` : ""}`,
+      actionDescription: `heartbeat: ${output.slice(0, 100)}${regularDues.length + manualDues.length ? ` +${regularDues.length + manualDues.length} checklist items` : ""}`,
       taskId: task.id,
     });
     await logEvent({
       threadId: "heartbeat", type: "heartbeat_action", taskId: task.id,
       status: result.status, latencyMs: Date.now() - start,
-      metadata: { dueActionsConsumed: dueActions.length, workIds: plan.workIds, quiet },
+      metadata: { dueActionsConsumed: regularDues.length + manualDues.length, workIds: plan.workIds, quiet },
     } as any);
     console.log(`[heartbeat] Tick completed: ${result.status} (${result.duration}ms, need=${need}, signals=${snapshot.signals?.length || 0}, work=${plan.workIds.length})`);
     if (result.status !== "success") {
@@ -201,7 +219,9 @@ export async function executeHeartbeat(
     if (isStaleSchedulerEpoch(epoch)) return;
     const msg = error?.message || String(error);
     await recordHeartbeatTick({ hadAction: false, success: false, error: msg, taskId: task.id });
-    if (dueActions.length > 0) await requeueDueActions(dueActions).catch(() => {});
+    if (regularDues.length > 0 || manualDues.length > 0) {
+      await requeueDueActions([...regularDues, ...manualDues]).catch(() => {});
+    }
     await updateHeartbeatState({ lastWorkDiscoveryHash: null, lastConnectorHash: null } as any);
     await logEvent({ threadId: "heartbeat", type: "heartbeat_tick", taskId: task.id, status: "error", reason: msg } as any);
     console.error("[heartbeat] Tick failed:", msg);

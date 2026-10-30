@@ -38,7 +38,7 @@ async function handleMissedExecutions(epoch = currentSchedulerEpoch()) {
   if (isStaleSchedulerEpoch(epoch)) return;
   const now = Date.now();
   for (const t of tasks) {
-    if (!t.enabled) continue;
+    if (!t.enabled || t.nextRunAt == null) continue;
     // If nextRunAt is far in past (>2*interval), count as missed
     const intervalMs = t.schedule.intervalMinutes ? t.schedule.intervalMinutes * 60_000 : 60_000;
     const missedBy = now - t.nextRunAt;
@@ -280,7 +280,7 @@ async function tick(epoch = currentSchedulerEpoch()) {
     const tasks = await getTasks();
     if (isStaleSchedulerEpoch(epoch)) return;
     const now = Date.now();
-    const dueTasks = tasks.filter((t) => t.enabled && t.nextRunAt <= now);
+    const dueTasks = tasks.filter((t) => t.enabled && t.nextRunAt != null && t.nextRunAt <= now);
 
     if (dueTasks.length === 0) return;
 

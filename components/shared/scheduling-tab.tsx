@@ -28,13 +28,13 @@ interface ScheduledTask {
   name: string;
   instructions: string;
   schedule: {
-    kind: "interval" | "once";
+    kind: "interval" | "once" | "none";
     intervalMinutes?: number;
     runAt?: number;
   };
   enabled: boolean;
   lastRunAt: number | null;
-  nextRunAt: number;
+  nextRunAt: number | null;
 }
 
 export function SchedulingTab() {

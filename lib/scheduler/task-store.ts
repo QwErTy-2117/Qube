@@ -79,8 +79,10 @@ export async function createTask(data: {
 }): Promise<ScheduledTask> {
   const tasks = await getTasks();
   const now = Date.now();
-  let nextRunAt: number;
-  if (data.scheduleKind === "once" && data.runAt) {
+  let nextRunAt: number | null;
+  if (data.scheduleKind === "none") {
+    nextRunAt = null;
+  } else if (data.scheduleKind === "once" && data.runAt) {
     nextRunAt = data.runAt;
   } else {
     const interval = data.intervalMinutes ?? 30;
@@ -128,6 +130,9 @@ export async function updateTask(
   tasks[idx] = { ...tasks[idx], ...patch, updatedAt: Date.now() };
   if (patch.schedule) {
     const s = patch.schedule;
+    if (s.kind === "none") {
+      tasks[idx].nextRunAt = null;
+    }
     if (s.kind === "interval" && s.intervalMinutes) {
       tasks[idx].nextRunAt = Date.now() + s.intervalMinutes * 60_000;
     }
@@ -159,7 +164,9 @@ export async function updateTaskRunTime(
   if (!task) return;
   const now = Date.now();
   task.lastRunAt = now;
-  if (task.schedule.kind === "once") {
+  if (task.schedule.kind === "none") {
+    task.nextRunAt = null;
+  } else if (task.schedule.kind === "once") {
     task.enabled = false;
     // For once tasks, nextRunAt stays as runAt but disabled ensures no repeat
   } else if (task.schedule.kind === "interval" && task.schedule.intervalMinutes) {
@@ -227,7 +234,8 @@ function computeNextDailyOccurrence(hour: number, minute: number, weekdays?: num
   return candidate.getTime();
 }
 
-export function computeNextRunAtForSchedule(schedule: ScheduledTask["schedule"]): number {
+export function computeNextRunAtForSchedule(schedule: ScheduledTask["schedule"]): number | null {
+  if (schedule.kind === "none") return null;
   if (schedule.kind === "once" && schedule.runAt) return schedule.runAt;
   if (schedule.kind === "interval" && schedule.hour !== undefined && schedule.minute !== undefined) {
     return computeNextDailyOccurrence(schedule.hour, schedule.minute, schedule.weekdays, schedule.monthDay);

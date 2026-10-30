@@ -165,7 +165,7 @@ describe("hard reset", () => {
     assert.equal(tasks.length, 1);
     assert.equal(tasks[0].id, "heartbeat");
     assert.equal(tasks.some((t) => t.name === "Old custom task"), false);
-    assert.ok(tasks[0].nextRunAt > Date.now());
+    assert.ok((tasks[0].nextRunAt ?? 0) > Date.now());
     assert.equal(existsSync(join(memoryDir, "scheduled-tasks.json")), false, "fresh task cache must not rewrite the deleted file");
 
     // In-memory singleton caches cannot resurrect deleted state.

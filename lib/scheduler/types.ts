@@ -1,4 +1,4 @@
-export type TaskScheduleKind = "interval" | "once";
+export type TaskScheduleKind = "interval" | "once" | "none";
 
 export type TaskPermissions = {
   runCommands: boolean;
@@ -26,7 +26,8 @@ export type ScheduledTask = {
   createdAt: number;
   updatedAt: number;
   lastRunAt: number | null;
-  nextRunAt: number;
+  // null = manual task, never auto-runs
+  nextRunAt: number | null;
 };
 
 export type TaskLogEntry = {

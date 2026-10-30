@@ -47,8 +47,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       try {
         // Browser visibility is driven by agent browser-tool use only —
         // never persist it, so reloads don't resurrect the browser tab.
-        if (a.kind === "browser") {
-          const docs = tabs.filter((t) => t.kind !== "browser");
+        if (a.kind === "browser" || a.kind === "computer") {
+          const docs = tabs.filter((t) => t.kind !== "browser" && t.kind !== "computer");
           const docArtifact = docs.length > 0 ? { artifact: docs[docs.length - 1], tabs: docs } : null;
           if (docArtifact) localStorage.setItem(OPEN_KEY, JSON.stringify(docArtifact));
           else localStorage.removeItem(OPEN_KEY);
@@ -86,12 +86,30 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set((s) => {
       const tabs = s.tabs.filter((t) => t.id !== id);
       const artifact = s.artifact?.id === id ? (tabs[tabs.length - 1] ?? null) : s.artifact;
+      // If a non-persisted live panel (browser/computer) was closed, keep
+      // the document tab as the persisted/open artifact so reloads do not
+      // resurrect the live panel.
+      try {
+        if (artifact && artifact.kind !== "browser" && artifact.kind !== "computer") {
+          const docs = tabs.filter((t) => t.kind !== "browser" && t.kind !== "computer");
+          localStorage.setItem(
+            OPEN_KEY,
+            JSON.stringify({ artifact, tabs: docs.length > 0 ? docs : tabs }),
+          );
+        } else if (!artifact) {
+          localStorage.removeItem(OPEN_KEY);
+        }
+      } catch {}
       return { tabs, artifact, open: tabs.length > 0 && !!artifact, selections: s.artifact?.id === id ? [] : s.selections };
     }),
 }));
 
 export function openBrowserWorkspace() {
   useWorkspaceStore.getState().openWorkspace({ id: "browser:session", kind: "browser", title: "Browser" });
+}
+
+export function openComputerWorkspace() {
+  useWorkspaceStore.getState().openWorkspace({ id: "computer:session", kind: "computer", title: "Computer" });
 }
 
 export function openDocumentWorkspace(input: { filePath: string; filename?: string; downloadUrl?: string; kind?: WorkspaceArtifact["kind"] }) {  const filename = input.filename || input.filePath.split("/").pop() || input.filePath;

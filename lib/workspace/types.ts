@@ -4,7 +4,7 @@
  * contextual request shape so the agent always knows the source.
  */
 
-export type WorkspaceKind = "browser" | "pdf" | "doc" | "sheet" | "slides" | "code" | "text";
+export type WorkspaceKind = "browser" | "computer" | "pdf" | "doc" | "sheet" | "slides" | "code" | "text";
 
 export type SelectionRef =
   | { kind: "pdf"; page: number; text: string }

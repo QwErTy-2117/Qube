@@ -192,7 +192,9 @@ export function WorkspaceThreadReset() {
     if (prev === undefined || prev === mainId) return;
     try {
       const st = useWorkspaceStore.getState();
-      if (st.open && st.artifact?.kind === "browser") st.closeWorkspace();
+      if (st.open && (st.artifact?.kind === "browser" || st.artifact?.kind === "computer")) {
+        st.closeWorkspace();
+      }
     } catch {}
   }, [mainId]);
 

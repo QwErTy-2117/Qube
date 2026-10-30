@@ -150,10 +150,28 @@ export function classifyLocalTool(
   }
   // Computer Use: OS-level control always pauses except read-only lookups.
   // list_apps / get_app_state / window reads / doctor / capabilities auto-allow.
+  if (toolName === "computer_run_sequence") {
+    const calls = Array.isArray((args as any)?.calls) ? ((args as any).calls as any[]) : [];
+    const observationOnly = new Set([
+      "list_apps",
+      "get_app_state",
+      "list_windows",
+      "get_window",
+      "get_window_state",
+      "get_desktop_state",
+    ]);
+    const allReadOnly =
+      calls.length > 0 &&
+      calls.every(
+        (call) =>
+          call && typeof call === "object" && observationOnly.has(String(call.tool)),
+      );
+    if (allReadOnly) return { sensitive: false, purpose: "" };
+  }
   if (toolName === "computer_list_apps" || toolName === "computer_get_app_state" ||
       toolName === "computer_list_windows" || toolName === "computer_get_window" ||
-      toolName === "computer_get_window_state" || toolName === "computer_doctor" ||
-      toolName === "computer_clipboard_read" ||
+      toolName === "computer_get_window_state" || toolName === "computer_get_desktop_state" ||
+      toolName === "computer_doctor" || toolName === "computer_clipboard_read" ||
       toolName === "computer_capabilities") {
     return { sensitive: false, purpose: "" };
   }

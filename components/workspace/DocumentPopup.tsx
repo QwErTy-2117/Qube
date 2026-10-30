@@ -23,7 +23,7 @@ export function DocumentPopup() {
   const [showBottom, setShowBottom] = useState(false);
   const isRunning = useAuiState((s) => s.thread.isRunning);
 
-  const show = open && artifact && artifact.kind !== "browser";
+  const show = open && artifact && artifact.kind !== "browser" && artifact.kind !== "computer";
 
   const scrollRegion = useCallback((): HTMLElement | null => {
     try {

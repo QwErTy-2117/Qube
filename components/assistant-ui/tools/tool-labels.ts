@@ -108,7 +108,7 @@ export const FRIENDLY_TOOL_LABELS: Record<string, string> = {
   thinking: "Noodling on it",
   reasoning: "Noodling on it",
   chainOfThought: "Connecting the dots",
-  // Computer Use (OS-level control via open-codex-computer-use)
+  // Computer Use (OS-level control via CUA Driver)
   computer_list_apps: "Checking open apps",
   computer_get_app_state: "Looking at the app",
   computer_click: "Clicking something",
@@ -124,6 +124,9 @@ export const FRIENDLY_TOOL_LABELS: Record<string, string> = {
   computer_list_windows: "Checking windows",
   computer_get_window: "Looking at the window",
   computer_get_window_state: "Looking at the window",
+  computer_get_desktop_state: "Looking at your screen",
+  computer_clipboard_read: "Reading the clipboard",
+  computer_clipboard_write: "Copying to the clipboard",
   computer_doctor: "Checking computer access",
   computer_capabilities: "Checking computer access",
 };

@@ -130,7 +130,7 @@ Tauri shell (src-tauri/)            Next.js app (app/, components/, lib/)
   denied, including headless background runs.
 - **The browser is a shared managed Chromium** driven over CDP by the
   auto-MCP service (`lib/browser/auto-mcp/server.mjs`) and mirrored into the
-  side panel. It is separate from optional OS-level computer use (`ocu`).
+  side panel. It is separate from optional OS-level computer use (CUA Driver).
 - **All durable state is local**, under `QUBE_DATA_DIR` (`.memory/`,
   workspace, browser profile). Nothing requires a Qube-operated backend.
 - **System-prompt behavior is tested.** Several test suites lock in the

@@ -109,13 +109,72 @@ export function describeAction(tool: string, args: Record<string, unknown>): Act
     return describeMcpTool(tool, tool, a);
   }
   if (tool.startsWith("computer_")) {
-    if (tool === "computer_clipboard_read") {
+    const readOnly = new Set([
+      "computer_list_apps",
+      "computer_get_app_state",
+      "computer_list_windows",
+      "computer_get_window",
+      "computer_get_window_state",
+      "computer_get_desktop_state",
+      "computer_doctor",
+      "computer_capabilities",
+      "computer_clipboard_read",
+    ]);
+    if (readOnly.has(tool)) {
       const d = base(tool, "desktop", "observe", false);
-      d.summary = summarize(tool, ["clipboard"]);
+      d.summary = summarize(tool, [String(a.app ?? a.query ?? "desktop").slice(0, 60)]);
+      return d;
+    }
+    if (tool === "computer_run_sequence") {
+      const calls = Array.isArray(a.calls) ? a.calls : [];
+      const observationOnly = new Set([
+        "list_apps",
+        "get_app_state",
+        "list_windows",
+        "get_window",
+        "get_window_state",
+        "get_desktop_state",
+      ]);
+      const allReadOnly =
+        calls.length > 0 &&
+        calls.every(
+          (call: any) =>
+            call && typeof call === "object" && observationOnly.has(String(call.tool)),
+        );
+      const d = base(tool, "desktop", allReadOnly ? "observe" : "interact", !allReadOnly);
+      d.summary = summarize(tool, [`${calls.length} step(s)`]);
       return d;
     }
     const d = base(tool, "desktop", "interact", true);
-    d.summary = summarize(tool, [String(a.app ?? a.text ?? a.key ?? "").slice(0, 60)]);
+    // Coordinates are window-local screenshot pixels when an app/window is
+    // named, and desktop pixels only for an explicit desktop scope.
+    if (a.scope === "desktop" || a.coordinate_frame === "desktop") {
+      d.targetText = "desktop";
+    }
+    const x = Number(a.x);
+    const y = Number(a.y);
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      d.points.push({ x: Math.round(x), y: Math.round(y) });
+    }
+    const fromX = Number(a.from_x);
+    const fromY = Number(a.from_y);
+    const toX = Number(a.to_x);
+    const toY = Number(a.to_y);
+    if (Number.isFinite(fromX) && Number.isFinite(fromY)) {
+      d.points.push({ x: Math.round(fromX), y: Math.round(fromY) });
+    }
+    if (Number.isFinite(toX) && Number.isFinite(toY)) {
+      d.points.push({ x: Math.round(toX), y: Math.round(toY) });
+    }
+    const text = String(a.text ?? a.value ?? "");
+    if (text) d.typed.push(text.slice(0, 200));
+    const key =
+      typeof a.key === "string" ? a.key : Array.isArray(a.keys) ? a.keys.join("+") : "";
+    if (key) d.keys.push(key.slice(0, 40));
+    d.targetText = String(a.app ?? a.element_index ?? a.element_token ?? "").slice(0, 80);
+    d.summary = summarize(tool, [
+      String(a.app ?? a.text ?? a.key ?? a.value ?? a.element_index ?? "").slice(0, 60),
+    ]);
     return d;
   }
   return base(tool, "other", "meta", false);

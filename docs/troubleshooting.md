@@ -101,20 +101,27 @@ to fifteen minutes.
 
 ### Actions return an install hint
 
-The `ocu` driver isn't installed. Install Node.js, then:
+CUA Driver isn't installed. Install it with:
 
 ```bash
-npm i -g open-computer-use
-ocu doctor
+curl -fsSL https://cua.ai/driver/install.sh | bash
+cua-driver doctor
 ```
 
 Full instructions in [Computer use](./computer-use.md).
 
-### On macOS, `ocu doctor` or actions report permission errors
+### On macOS, `cua-driver doctor` or actions report permission errors
 
-Grant **Accessibility** and **Screen Recording** to the host application in
+Grant **Accessibility** and **Screen Recording** to CUA Driver in
 **System Settings → Privacy & Security**, then restart Qube. Read-only app
 listing works without these; seeing and controlling windows does not.
+
+### The Computer panel stays empty or says "offline"
+
+The panel needs a real graphical desktop and the CUA Driver daemon. Check
+that `DISPLAY` or `WAYLAND_DISPLAY` is set for the process running Qube, run
+`cua-driver doctor`, and start the daemon with `cua-driver serve` if Qube
+could not start it automatically.
 
 ### Clicks land in the wrong place
 

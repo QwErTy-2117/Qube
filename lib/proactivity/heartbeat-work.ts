@@ -234,7 +234,25 @@ export function isFinalOrDestructiveAction(
     return DESTRUCTIVE_COMMAND_RE.test(cmd);
   }
   if (name.startsWith("computer_")) {
-    return !/^computer_(list_apps|get_app_state|list_windows|get_window|get_window_state|doctor|capabilities|clipboard_read)$/.test(name);
+    if (name === "computer_run_sequence") {
+      const calls = Array.isArray(args.calls) ? args.calls : [];
+      const readOnly = new Set([
+        "list_apps",
+        "get_app_state",
+        "list_windows",
+        "get_window",
+        "get_window_state",
+        "get_desktop_state",
+      ]);
+      return !(
+        calls.length > 0 &&
+        calls.every(
+          (call: any) =>
+            call && typeof call === "object" && readOnly.has(String(call.tool)),
+        )
+      );
+    }
+    return !/^computer_(list_apps|get_app_state|list_windows|get_window|get_window_state|get_desktop_state|doctor|capabilities|clipboard_read)$/.test(name);
   }
   // Connector tools are usually uppercase, underscore-separated names. Read
   // tools are never final actions, even when their nouns contain "sent" or

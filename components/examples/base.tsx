@@ -98,8 +98,8 @@ import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
 import { ChatErrorTopPopup, pushChatError, parseChatGPTError, isAgentErrorText, notifyAgentError } from "@/components/chat/chat-error-popup";
 import { DocumentPopup } from "@/components/workspace";
-import { BrowserPanel } from "@/components/workspace";
-import { openBrowserWorkspace, useWorkspaceStore } from "@/lib/workspace/store";
+import { BrowserPanel, ComputerPanel } from "@/components/workspace";
+import { openBrowserWorkspace, openComputerWorkspace, useWorkspaceStore } from "@/lib/workspace/store";
 
 const baseToolGroupBy = groupPartByType({
   reasoning: ["group-tool", "group-chainOfThought"],
@@ -1466,6 +1466,72 @@ const BrowserAutoOpener: FC = () => {
   return null;
 };
 
+// Opens the computer panel when the agent uses OS-level computer tools.
+// Same once-per-call discipline as BrowserAutoOpener: closing the panel
+// dismisses it until a NEW computer call arrives.
+const openedComputerCallIds = new Set<string>();
+const ComputerAutoOpener: FC = () => {
+  const messages = useAuiState((s) => s.thread.messages);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    try {
+      const ids: string[] = [];
+      for (const m of messages as unknown as Array<{
+        content?: Array<{ type?: string; toolName?: string; toolCallId?: string }>;
+        parts?: Array<{ type?: string; toolName?: string; toolCallId?: string }>;
+      }>) {
+        const parts = m?.content || m?.parts || [];
+        for (const p of parts) {
+          if (
+            p?.type === "tool-call" &&
+            typeof p?.toolName === "string" &&
+            [
+              "computer_list_apps",
+              "computer_get_app_state",
+              "computer_list_windows",
+              "computer_get_window",
+              "computer_get_window_state",
+              "computer_get_desktop_state",
+              "computer_click",
+              "computer_secondary_action",
+              "computer_scroll",
+              "computer_drag",
+              "computer_type_text",
+              "computer_press_key",
+              "computer_set_value",
+              "computer_launch_app",
+              "computer_activate_window",
+              "computer_run_sequence",
+            ].includes(p.toolName)
+          ) {
+            ids.push(typeof p.toolCallId === "string" && p.toolCallId ? p.toolCallId : `${p.toolName}`);
+          }
+        }
+      }
+      if (!mountedRef.current) {
+        mountedRef.current = true;
+        ids.forEach((id) => openedComputerCallIds.add(id));
+        if (ids.length > 0) {
+          const st = useWorkspaceStore.getState();
+          if (!st.open || st.artifact?.kind !== "computer") openComputerWorkspace();
+          return;
+        }
+      }
+      const fresh = ids.filter((id) => !openedComputerCallIds.has(id));
+      if (fresh.length > 0) {
+        fresh.forEach((id) => openedComputerCallIds.add(id));
+        if (openedComputerCallIds.size > 200) {
+          const arr = [...openedComputerCallIds];
+          arr.slice(0, arr.length - 200).forEach((id) => openedComputerCallIds.delete(id));
+        }
+        const st = useWorkspaceStore.getState();
+        if (!st.open || st.artifact?.kind !== "computer") openComputerWorkspace();
+      }
+    } catch {}
+  }, [messages]);
+  return null;
+};
+
 // TEMPORARY live-test handle (removed before release).
 const DebugSend: FC = () => {
   const aui = useAui();
@@ -1484,6 +1550,7 @@ export const Base: FC = () => {
       <ChatErrorTopPopup />
       <ChatErrorWatcher />
       <BrowserAutoOpener />
+      <ComputerAutoOpener />
       <ThreadUrlSync />
       <WorkspaceThreadReset />
       <DebugSend />
@@ -1501,6 +1568,7 @@ export const Base: FC = () => {
             </main>
           </div>
           <BrowserPanel />
+          <ComputerPanel />
         </div>
       </div>
       <DocumentPopup />

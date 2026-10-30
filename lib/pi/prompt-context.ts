@@ -207,28 +207,21 @@ export function browserUseInstructions(pageBrowserAllowed: boolean): string {
 export const computerUseInstructions = browserUseInstructions;
 
 /**
- * Computer-control instruction block (open-codex-computer-use, OS-level).
- * Appended to the system prompt so the model knows when OS control applies
- * vs the managed browser window, workspace files, and shell.
+ * Computer-control instruction block (CUA Driver, OS-level).
  */
 export function computerControlInstructions(): string {
   return (
-    `Computer Use (OS-level control via open-codex-computer-use): you can operate the user's real computer — ` +
-    `list running apps with computer_list_apps, read an app's accessibility tree + screenshot with computer_get_app_state. ` +
-    `To ACT, ALWAYS use computer_run_sequence with observe + act steps in ONE call ` +
-    `([{tool:'get_app_state',args:{app}},{tool:'click',args:{app,element_index}},…]): ocu keeps element_index state ` +
-    `PER PROCESS, so a get_app_state from any other call CANNOT be reused — piecemeal computer_click/type/press_key calls ` +
-    `WILL fail with 'No app state is available'. Never call single element-action tools with indexes from another call. ` +
-    `Rules: list_apps first for valid app names; indexes go stale fast, so re-run the sequence (not a lone get_app_state) ` +
-    `after navigation, modals, page reloads, or failures; prefer app names or bundle ids from list_apps; use coordinate ` +
-    `click only when the tree has no target; web-only work belongs to the managed browser tools instead. ` +
-    `Mutating computer actions pause for user approval in chat and refuse headless — never loop a denied call, continue ` +
-    `with read-only findings or a draft. ` +
-    `Setup: if a computer_* call reports not installed, tell the user once to run \`npm i -g open-computer-use\` then \`ocu doctor\` ` +
-    `(macOS: grant Accessibility + Screen Recording, macOS 14+), and offer the closest workspace/browser alternative meanwhile. ` +
-    `Window tools: computer_launch_app launches + verifies everywhere (native on Windows, ` +
-    `verified session spawn on macOS/Linux); computer_activate_window brings a RUNNING app forward ` +
-    `(native on Windows, relaunch-to-focus elsewhere — Shell focus APIs deny third parties, so confirm ` +
-    `frontmost with get_app_state or a screenshot). Activate never starts an app — launch first.`
+    `Computer Use (OS-level control via CUA Driver): you can operate the user's real computer — ` +
+    `list apps/windows with computer_list_apps/computer_list_windows, then read an app's accessibility tree + screenshot with computer_get_app_state. ` +
+    `Prefer computer_run_sequence for multi-step work: [{tool:'get_app_state',args:{app}},{tool:'click',args:{app,element_index}},…] runs observe + act in one CUA batch. ` +
+    `Single actions (computer_click/type_text/press_key/set_value/scroll/drag) also work with element_index/element_token from a recent app state; re-read after navigation, modals, reloads, or any UI change because indexes go stale. ` +
+    `Use window-local screenshot x/y (or element indexes) rather than guessing; CUA defaults to background input and only uses foreground when an app refuses it. ` +
+    `Rules: list_apps first for exact names; use set_value for settable fields, type_text for rich editors, press_key/hotkey for shortcuts; ` +
+    `use coordinates only when the tree has no target; web-only work belongs to the managed browser tools. ` +
+    `Mutating computer actions pause for user approval in chat and refuse in background work — never loop a denied call; continue with read-only findings or a draft. ` +
+    `Setup: if a computer_* call reports not installed, tell the user once to run \`curl -fsSL https://cua.ai/driver/install.sh | bash\` then \`cua-driver doctor\` ` +
+    `(macOS: grant Accessibility + Screen Recording), and offer the closest workspace/browser alternative meanwhile. ` +
+    `Window tools: computer_launch_app launches + verifies a window appears; computer_activate_window brings a RUNNING app forward (launch first if needed). ` +
+    `Every action is mirrored to the Computer panel from the real CUA screenshot, so keep coordinates grounded in the latest observation.`
   );
 }

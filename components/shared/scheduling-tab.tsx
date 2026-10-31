@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { Loader2, Check, Plus, Trash2, Clock, Calendar, CalendarDays, CalendarRange } from "lucide-react";
+import { Loader2, Check, Plus, Trash2, Clock, Calendar as CalendarIcon, CalendarDays, CalendarRange } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PromptPill } from "@/components/shared/prompt-pill";
@@ -18,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
 import {
   Column,
@@ -453,8 +454,8 @@ export function SchedulingTab() {
           <DialogContent className="sm:max-w-md rounded-3xl h-[640px] flex flex-col overflow-hidden">
             <DialogHeader>
               <DialogTitle>New task</DialogTitle>
-              <DialogDescription>
-                One-off tasks run once and land in Done. Recurring tasks move to Done for the current period after each run, then return to To do when the next period starts.
+              <DialogDescription className="sr-only">
+                Schedule a task.
               </DialogDescription>
             </DialogHeader>
 
@@ -494,7 +495,7 @@ export function SchedulingTab() {
                       className={cn(
                         "rounded-lg py-1.5 text-xs font-semibold transition-colors",
                         createKind === kind
-                          ? "bg-background text-foreground shadow-sm"
+                          ? "bg-background text-foreground"
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
@@ -525,38 +526,38 @@ export function SchedulingTab() {
                               })
                             : "Pick a date and time"}
                         </span>
-                        <Calendar className="size-4 text-muted-foreground" />
+                        <CalendarIcon className="size-4 text-muted-foreground" />
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-80 p-3 space-y-3" align="start">
-                      <div className="flex flex-wrap gap-1.5">
-                        {[
-                          { label: "Now", minutes: 0 },
-                          { label: "+1h", minutes: 60 },
-                          { label: "Tomorrow", minutes: 1440 },
-                          { label: "+1d", minutes: 1440 },
-                        ].map((opt, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => {
-                              const d = new Date(Date.now() + opt.minutes * 60_000);
-                              const pad = (n: number) => String(n).padStart(2, "0");
-                              const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                              setCreateRunAt(local);
-                            }}
-                            className="rounded-full px-3 py-1 text-xs font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                      <input
-                        type="datetime-local"
-                        value={createRunAt}
-                        onChange={(e) => setCreateRunAt(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={createRunAt ? new Date(createRunAt) : undefined}
+                        onSelect={(d) => {
+                          if (!d) return;
+                          const pad = (n: number) => String(n).padStart(2, "0");
+                          const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                          setCreateRunAt(local);
+                        }}
+                        initialFocus
                       />
+                      <div className="p-3 border-t border-border">
+                        <input
+                          type="time"
+                          value={createRunAt ? createRunAt.slice(11, 16) : ""}
+                          onChange={(e) => {
+                            if (!createRunAt) {
+                              const d = new Date();
+                              const pad = (n: number) => String(n).padStart(2, "0");
+                              const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${e.target.value}`;
+                              setCreateRunAt(local);
+                            } else {
+                              setCreateRunAt(`${createRunAt.slice(0, 11)}${e.target.value}`);
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
+                        />
+                      </div>
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -591,39 +592,27 @@ export function SchedulingTab() {
                       );
                     })}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-muted-foreground">Custom (minutes)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={createInterval}
-                      onChange={(e) => {
-                        const n = Number(e.target.value);
-                        if (Number.isFinite(n) && n > 0) setCreateInterval(n);
-                      }}
-                      className="w-24 px-2 py-1 rounded-lg border border-border bg-background text-xs outline-none focus:ring-1 focus:ring-ring"
-                    />
-                  </div>
+
                 </div>
               ) : null}
 
               {createError && (
                 <p className="text-xs text-red-600 dark:text-red-400">{createError}</p>
               )}
+            </div>
 
-              <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <PromptPill busy={false} onSend={(t) => runDraft(t, currentDraftInput())} placeholder="Describe an edit…" />
-                </div>
-                <button
-                  onClick={handleCreate}
-                  disabled={!canCreate || creating}
-                  aria-label="Save task"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {creating ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" strokeWidth={3} />}
-                </button>
+            <div className="shrink-0 pt-3 border-t border-border/60 flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <PromptPill busy={false} onSend={(t) => runDraft(t, currentDraftInput())} placeholder="Describe an edit…" />
               </div>
+              <button
+                onClick={handleCreate}
+                disabled={!canCreate || creating}
+                aria-label="Save task"
+                className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {creating ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" strokeWidth={3} />}
+              </button>
             </div>
           </DialogContent>
         </Dialog>

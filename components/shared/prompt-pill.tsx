@@ -30,8 +30,8 @@ export function PromptPill({
       transition={{ duration: 0.25, ease: "easeOut" }}
       className={
         busy
-          ? "flex h-9 w-auto min-w-[68px] items-center justify-center rounded-full border border-border bg-popover/85 px-4 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.3)] backdrop-blur-xl dark:shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)]"
-          : "flex w-full items-center gap-2.5 rounded-full border border-border bg-popover/85 py-2 pr-2 pl-4 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.3)] backdrop-blur-xl transition-[border-color] focus-within:border-ring/50 dark:shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)]"
+          ? "flex h-9 w-auto min-w-[68px] items-center justify-center rounded-full border border-border bg-popover/85 px-4 backdrop-blur-xl"
+          : "flex w-full items-center gap-2.5 rounded-full border border-border bg-popover/85 py-2 pr-2 pl-4 backdrop-blur-xl transition-[border-color] focus-within:border-ring/50"
       }
     >
       {busy ? (

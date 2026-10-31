@@ -2,7 +2,7 @@
 
 **Last updated: September 9, 2026**
 
-This Policy should be read together with the [Terms of Service](TERMS.md). Terms such as **Service, AI Agent, Browser Use, Model Provider, Connector, Workspace, and User Content** have the same meanings as in the Terms.
+This Policy should be read together with the [Terms of Service](TERMS.md). Terms such as **Service, AI Agent, Qube Computer, Model Provider, Connector, Workspace, and User Content** have the same meanings as in the Terms.
 
 ---
 
@@ -81,7 +81,7 @@ When you ask the Agent to do something, this may include, for example:
 * downloads and screenshots saved into the computer;
 * activity entries (what ran, when, and whether it succeeded), which the panel shows you.
 
-Access is limited to what the runtime and your permissions actually make available. Moving a file across the boundary is a separate, visible step: `computer_import` copies from your machine into the computer and `computer_export` copies out, and both use the approval card unless the path is inside the Workspace or an Allowed directory you already approved. Qube does not grant the Agent access to your desktop applications, your screen, or your other browser profiles. Files and page content the harness includes as model context may be transmitted to the Model Provider you configured (see Section 6), so avoid importing material you do not want processed and consider a local model when stricter controls are needed.
+Access is limited to what the runtime and your permissions actually make available. Moving a file across the boundary is a separate, visible step: `computer_import` copies from your machine into the computer and `computer_export` copies out, and every one of those transfers shows the approval card first. Qube does not grant the Agent access to your desktop applications, your screen, or your other browser profiles. Files and page content the harness includes as model context may be transmitted to the Model Provider you configured (see Section 6), so avoid importing material you do not want processed and consider a local model when stricter controls are needed.
 
 The computer persists until you reset it: closing Qube, restarting it, or upgrading it does not delete its files or browser profile. Resetting the computer from its panel (or through the Agent, at your explicit request) deletes them.
 

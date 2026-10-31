@@ -26,7 +26,7 @@ If you use Qube on behalf of an organization, you represent that you have author
 
 * **"Qube" / "Service"** — The Qube desktop application, its local server/sidecar, shell, and any updates or documentation we provide.
 * **"AI Agent" / "Agent"** — The autonomous system in Qube that interprets your messages, plans tasks, calls tools, and interacts with files, your computer, browser sessions, desktop applications, and connected services on your behalf using a third-party AI model you configure.
-* **"Qube Computer"** — The persistent runtime Qube owns and the Agent works in: its own home directory, shell, attachments, downloads and browser profile. The Agent can read, write and run commands inside it, and open, read and act on pages in its browser, which keeps cookies and logins across restarts. Moving files between the Qube Computer and the rest of your machine is a separate action that requires your approval outside the Workspace and your Allowed directories. The Qube Computer does not observe or control your desktop applications, screen or other browser profiles.
+* **"Qube Computer"** — The persistent runtime Qube owns and the Agent works in: its own home directory, shell, attachments, downloads and browser profile. The Agent can read, write and run commands inside it, and open, read and act on pages in its browser, which keeps cookies and logins across restarts. Moving files between the Qube Computer and the rest of your machine is a separate action: every such transfer asks for your approval first. The Qube Computer does not observe or control your desktop applications, screen or other browser profiles.
 * **"Model Provider" / "Provider"** — The third-party provider of the AI model that powers the Agent (for example, a commercial API provider or a local model you run yourself). You choose and configure the Provider; we do not operate the model unless we expressly state otherwise.
 * **"Connector"** — An integration you authorize that lets the Agent interact with an external service on your behalf (for example, email, calendar, drive, chat, or project tools), typically via an integration partner that facilitates OAuth and tool execution.
 * **"Workspace"** — The sandboxed folder on your device where the Agent works with files and commands by default. Access outside this folder requires your permission where applicable.
@@ -41,7 +41,7 @@ Qube provides a chat interface to an autonomous agent that can, depending on how
 * search the web and fetch page content;
 * generate formatted documents, presentations, spreadsheets, and other files;
 * work inside the Qube Computer — creating, editing and running files and shell commands in a runtime Qube owns, and browsing websites in its own browser profile, using an observe → decide → act → verify loop on page content;
-* move files between the Qube Computer and your machine only through the import/export tools, which block on a permission prompt unless the path is inside the Workspace or an Allowed directory;
+* move files between the Qube Computer and your machine only through the import/export tools, each of which blocks on a permission prompt;
 * delegate parts of a task to subagents that operate with the same tool access and report back to the main Agent;
 * remember context across conversations through session history and persistent memory stored locally (which you can switch off in Advanced settings — see Section 3A);
 * connect to external services you explicitly authorize and perform actions in those services on your behalf;

@@ -32,10 +32,10 @@ An approval card appears and the run pauses until you decide:
 - **Destructive shell commands** — patterns such as `rm -rf`, `sudo`, piped
   remote install scripts, disk formatting.
 - **Moving files across the Qube Computer boundary** — `computer_import`
-  (your machine → computer) and `computer_export` (computer → your machine)
-  when the path is outside the workspace and outside your Allowed directories.
-  Everything the agent does *inside* the computer is not a host action and
-  does not pause; resetting the computer always asks.
+  (your machine → computer) and `computer_export` (computer → your machine).
+  Every transfer asks, whatever the path, because the crossing itself is the
+  action. Everything the agent does *inside* the computer is not a host action
+  and does not pause; resetting the computer always asks.
 
 If you deny, or don't respond within five minutes, the action is cancelled and
 Qube continues with an in-workspace alternative. Sensitive connector calls

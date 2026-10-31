@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { XIcon, ArrowDownIcon } from "lucide-react";
+import { ArrowDownIcon, PresentationIcon, XIcon } from "lucide-react";
 import { useAuiState } from "@assistant-ui/react";
 import { DownloadButton } from "@/components/assistant-ui/tools/download-button";
 import { useWorkspaceStore } from "@/lib/workspace/store";
+import { cn } from "@/lib/utils";
 import { DocumentWorkspace } from "./DocumentWorkspace";
 import { DocComposer } from "./DocComposer";
 
@@ -23,7 +24,8 @@ export function DocumentPopup() {
   const [showBottom, setShowBottom] = useState(false);
   const isRunning = useAuiState((s) => s.thread.isRunning);
 
-  const show = open && artifact && artifact.kind !== "browser" && artifact.kind !== "computer";
+  const show = open && artifact && artifact.kind !== "browser";
+  const isSlides = artifact?.kind === "slides";
 
   const scrollRegion = useCallback((): HTMLElement | null => {
     try {
@@ -66,7 +68,7 @@ export function DocumentPopup() {
   useEffect(() => {
     if (!show) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeWorkspace();
+      if (e.key === "Escape" && !document.fullscreenElement) closeWorkspace();
     };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -117,8 +119,11 @@ export function DocumentPopup() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 10 }}
             transition={{ duration: dur, ease: "easeOut" }}
-            style={{ height: "min(720px, 92vh)" }}
-            className="relative flex w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-border bg-background shadow-2xl"
+            style={{ height: isSlides ? "min(860px, 94vh)" : "min(720px, 92vh)" }}
+            className={cn(
+              "relative flex w-full flex-col overflow-hidden rounded-[28px] border border-border bg-background shadow-2xl",
+              isSlides ? "max-w-[1120px]" : "max-w-4xl",
+            )}
           >
             {/* Header */}
             <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2.5">
@@ -126,7 +131,15 @@ export function DocumentPopup() {
                 className="rounded-full p-2 text-muted-foreground transition hover:bg-black/[0.06] hover:text-foreground dark:hover:bg-white/10">
                 <XIcon className="size-4" />
               </button>
+              {isSlides && (
+                <PresentationIcon className="size-4 shrink-0 text-orange-600 dark:text-orange-400" aria-hidden="true" />
+              )}
               <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{artifact.title}</span>
+              {isSlides && (
+                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  PPTX
+                </span>
+              )}
               {artifact.downloadUrl && (
                 <DownloadButton filename={artifact.title} downloadUrl={artifact.downloadUrl} />
               )}

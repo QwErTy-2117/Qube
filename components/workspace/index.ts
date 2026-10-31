@@ -4,4 +4,3 @@ export { DocComposer } from "./DocComposer";
 export { WorkspaceQuote } from "./WorkspaceQuote";
 export { BrowserToolUI } from "./BrowserToolUI";
 export { BrowserPanel } from "./BrowserPanel";
-export { ComputerPanel } from "./ComputerPanel";

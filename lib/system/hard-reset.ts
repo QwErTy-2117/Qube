@@ -170,12 +170,6 @@ async function clearRuntimeCaches(warnings: string[]): Promise<void> {
     const { StateTracker } = await import("@/lib/computer-use/state");
     StateTracker.resetForHardReset();
   }, warnings);
-  await attempt("CUA Driver mirror", async () => {
-    const { resetCuaRuntimeForHardReset } = await import("@/lib/cua/events");
-    const { resetCuaDaemonReady } = await import("@/lib/cua/driver");
-    resetCuaRuntimeForHardReset();
-    resetCuaDaemonReady();
-  }, warnings);
   await attempt("pending permissions", async () => {
     const { clearPendingPermissionsForHardReset } = await import("@/lib/middleware/permission-middleware");
     clearPendingPermissionsForHardReset();

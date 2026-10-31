@@ -647,12 +647,12 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     console.error("[pi-harness] MCP load failed (non-fatal):", e.message);
   }
 
-  // Computer Use: OS-level control via CUA Driver (`cua-driver`).
+  // Computer Use: OS-level control via open-codex-computer-use (`ocu`).
   // Native wrapper tools (computer_* prefix, no MCP collision). Failures are
   // isolated — a missing binary yields a helpful install hint per call.
   try {
     const { createComputerTools } = await import("./computer-tools");
-    const { isComputerUseDisabled } = await import("@/lib/cua/config");
+    const { isComputerUseDisabled } = await import("./computer-use-mcp");
     if (!isComputerUseDisabled()) {
       const computerTools = createComputerTools(config.threadId, { includeAskUser: true });
       console.log(`[pi-harness] Merging ${Object.keys(computerTools).length} computer-use tools for thread ${config.threadId}`);

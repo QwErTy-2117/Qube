@@ -261,7 +261,7 @@ async function runPiTaskInternal(
   // computer_* tools refuse without an interactive user (see computer-tools gate).
   try {
     const { createComputerTools } = await import("./computer-tools");
-    const { isComputerUseDisabled } = await import("@/lib/cua/config");
+    const { isComputerUseDisabled } = await import("./computer-use-mcp");
     if (!isComputerUseDisabled()) {
       const computerTools = createComputerTools(threadId, { includeAskUser: false });
       for (const [name, t] of Object.entries(computerTools)) {

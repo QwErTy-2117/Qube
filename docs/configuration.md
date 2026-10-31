@@ -43,10 +43,8 @@ for the full feature context.
 | `BROWSER_MCP_COMMAND` / `BROWSER_MCP_ARGS_JSON` | built-in service | Replace the built-in browser service with a custom command. |
 | `PLAYWRIGHT_BROWSERS_PATH` | OS cache | Override where Playwright-bundled Chromium is looked for. |
 | `COMPUTER_USE_DISABLED` | off | Set to `1` to disable OS-level computer control entirely. |
-| `CUA_DRIVER_COMMAND` | auto-resolved `cua-driver` | Override the CUA Driver command (a full command line is allowed). `COMPUTER_USE_COMMAND` is a legacy alias. |
-| `COMPUTER_USE_TIMEOUT_MS` | `60000` | Timeout for a CUA Driver call. |
-| `CUA_DRIVER_AUTOSTART` | on | Set to `0` to stop Qube from starting the CUA Driver daemon automatically. |
-| `CUA_CURSOR_STYLE` / `CUA_CURSOR_TIMING` / `CUA_CURSOR_EFFECTS` | `adaptive` / `fitts` / `trail,glow,magnet,ripple,squish` | Tune CUA's native agent cursor (set effects to `off` to disable). |
+| `COMPUTER_USE_COMMAND` | `ocu`/`open-computer-use` | Override the computer-use driver command. |
+| `COMPUTER_USE_TIMEOUT_MS` | `60000` | Timeout for a driver call. |
 | `COMPUTER_TAKEOVER_TTL_MS` | `900000` (15 min) | How long a browser takeover request waits for you. |
 | `COMPUTER_USE_KERNEL` | on | The describe → permission → verify kernel wrapper; set to `0` to disable. |
 

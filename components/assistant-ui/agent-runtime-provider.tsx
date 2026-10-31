@@ -112,7 +112,7 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "composio_multi_execute_tool", render: ConnectorToolUI });
   // Generative UI (OpenIntelligentUI pattern, Qube-styled sandbox)
   useAssistantToolUI({ toolName: "generate_ui", render: GenerativeUIToolUI });
-  // Computer Use (OS-level control via CUA Driver) — same
+  // Computer Use (OS-level control via open-codex-computer-use) — same
   // shared ToolRow card as every other tool call.
   useAssistantToolUI({ toolName: "computer_list_apps", render: ComputerToolUI });
   useAssistantToolUI({ toolName: "computer_get_app_state", render: ComputerToolUI });
@@ -128,9 +128,6 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "computer_list_windows", render: ComputerToolUI });
   useAssistantToolUI({ toolName: "computer_get_window", render: ComputerToolUI });
   useAssistantToolUI({ toolName: "computer_get_window_state", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_get_desktop_state", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_clipboard_read", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_clipboard_write", render: ComputerToolUI });
   useAssistantToolUI({ toolName: "computer_doctor", render: ComputerToolUI });
   useAssistantToolUI({ toolName: "computer_capabilities", render: ComputerToolUI });
   useAssistantToolUI({ toolName: "computer_run_sequence", render: ComputerToolUI });

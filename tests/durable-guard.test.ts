@@ -24,8 +24,13 @@ describe("durable guard", () => {
     assert.equal(isSensitiveDurableTool("read_memory"), false);
     assert.equal(isSensitiveDurableTool("TodoWrite"), false);
     assert.equal(isSensitiveDurableTool("delete_file"), true);
-    assert.equal(isSensitiveDurableTool("computer_click"), true);
-    assert.equal(isSensitiveDurableTool("computer_list_apps"), false);
+    // Qube Computer tools run inside Qube's own runtime: not host effects.
+    assert.equal(isSensitiveDurableTool("computer_run"), false);
+    assert.equal(isSensitiveDurableTool("computer_write"), false);
+    assert.equal(isSensitiveDurableTool("computer_status"), false);
+    assert.equal(isSensitiveDurableTool("computer_import"), true);
+    assert.equal(isSensitiveDurableTool("computer_export"), true);
+    assert.equal(isSensitiveDurableTool("computer_reset"), true);
     assert.equal(isSensitiveDurableTool("gmail_send_email"), true);
     assert.equal(isSensitiveDurableTool("gmail_search"), false);
   });

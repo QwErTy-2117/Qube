@@ -1,6 +1,6 @@
 {
   "name": "xulux-base-demo",
-"version": "0.0.96",
+  "version": "0.0.96",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,10 @@
     "openui:spec": "npx --yes @openuidev/cli@latest generate lib/openui/library.ts --spec --out lib/openui/openui.spec.json",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "predev": "node scripts/sync-pdf-worker.mjs",
+    "prebuild": "node scripts/sync-pdf-worker.mjs",
+    "postinstall": "node scripts/sync-pdf-worker.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",
@@ -62,12 +65,13 @@
     "motion": "^12.42.2",
     "next": "^16.2.9",
     "next-themes": "^0.4.6",
+    "pdfjs-dist": "^5.7.284",
     "pptx-preview": "^1.0.7",
-    "pptxgenjs": "^4.0.1",
     "radix-ui": "^1.6.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-icons": "^5.7.0",
+    "react-markdown": "^10.1.0",
     "react-shiki": "^0.10.1",
     "remark-gfm": "^4.0.1",
     "rough-notation": "^0.5.1",

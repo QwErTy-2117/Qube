@@ -1,45 +1,42 @@
 import { readFile, stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { resolvePathInWorkspace, relativePathInWorkspace } from "@/lib/middleware/workspace";
+import { detectArtifactKind } from "@/lib/artifact/kinds";
+import { parseDelimited } from "@/lib/artifact/delimited";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TEXT_EXTS = new Set([".txt", ".md", ".markdown", ".json", ".js", ".ts", ".tsx", ".jsx", ".py", ".rs", ".go", ".java", ".c", ".cpp", ".h", ".css", ".html", ".xml", ".yml", ".yaml", ".toml", ".sh", ".sql", ".csv", ".log"]);
-const MAX_TEXT_BYTES = 1_000_000;
+const MAX_PREVIEW_BYTES = 25_000_000;
+const MAX_TEXT_BYTES = 1_500_000;
+const MAX_DOC_HTML_BYTES = 6_000_000;
 
-function kindFor(ext: string): "pdf" | "doc" | "sheet" | "slides" | "code" | "text" | "csv" | "unknown" {
-  if (ext === ".pdf") return "pdf";
-  if (ext === ".doc" || ext === ".docx" || ext === ".odt" || ext === ".rtf") return "doc";
-  if (ext === ".xls" || ext === ".xlsx" || ext === ".ods") return "sheet";
-  if (ext === ".csv") return "csv";
-  if (ext === ".ppt" || ext === ".pptx" || ext === ".odp") return "slides";
-  if ([".js", ".ts", ".tsx", ".jsx", ".py", ".rs", ".go", ".java", ".c", ".cpp", ".h", ".css", ".html", ".json", ".yml", ".yaml", ".toml", ".sh", ".sql"].includes(ext)) return "code";
-  if ([".txt", ".md", ".markdown", ".log", ".xml"].includes(ext)) return "text";
-  return "unknown";
+async function extractDocxHtml(resolved: string): Promise<string> {
+  const buf = await readFile(resolved);
+  if (buf.length > MAX_PREVIEW_BYTES) throw new Error("Document too large to preview (25MB max)");
+  const mammoth = await import("mammoth");
+  const { value } = await mammoth.convertToHtml({ buffer: buf });
+  const html = (value || "").slice(0, MAX_DOC_HTML_BYTES);
+  if (!html.replace(/<[^>]+>/g, "").trim()) throw new Error("No readable text found in this document");
+  return html;
 }
 
-async function extractDocxText(resolved: string, ext: string): Promise<string> {
-  if (ext !== ".docx") throw new Error(`.${ext.slice(1)} needs conversion — ask the AI to convert it`);
+async function extractDocxText(resolved: string): Promise<string> {
   const buf = await readFile(resolved);
-  if (buf.length > MAX_TEXT_BYTES * 5) throw new Error("Document too large to preview");
+  if (buf.length > MAX_PREVIEW_BYTES) throw new Error("Document too large to preview (25MB max)");
   const mammoth = await import("mammoth");
   const { value } = await mammoth.extractRawText({ buffer: buf });
   const text = (value || "").replace(/\r/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-  if (!text) throw new Error("No readable text found in document");
+  if (!text) throw new Error("No readable text found in this document");
   return text;
 }
 
-async function extractPptxSlides(
-  resolved: string,
-  ext: string,
-): Promise<Array<{ title: string; body: string }>> {
-  if (ext !== ".pptx") throw new Error(`.${ext.slice(1)} needs conversion — ask the AI to convert it`);
+/** Presentation order comes from the slide ID list, not from filenames. */
+async function extractPptxSlides(resolved: string): Promise<Array<{ title: string; body: string }>> {
   const buf = await readFile(resolved);
-  if (buf.length > 25_000_000) throw new Error("Presentation too large to preview");
+  if (buf.length > MAX_PREVIEW_BYTES) throw new Error("Presentation too large to preview (25MB max)");
   const JSZip = (await import("jszip")).default;
   const zip = await JSZip.loadAsync(buf);
-  // Presentation order comes from the slide ID list, not filenames.
   const order: string[] = [];
   try {
     const presXml = await zip.file("ppt/presentation.xml")?.async("string");
@@ -58,10 +55,10 @@ async function extractPptxSlides(
     const rest = files.filter((n) => !ordered.includes(n)).sort();
     files = [...ordered, ...rest];
   } else {
-    files.sort();
+    files.sort((a, b) => Number(a.match(/\d+/)?.[0]) - Number(b.match(/\d+/)?.[0]));
   }
   const slides: Array<{ title: string; body: string }> = [];
-  for (const name of files.slice(0, 100)) {
+  for (const name of files.slice(0, 200)) {
     try {
       const xml = await zip.file(name)?.async("string");
       if (!xml) continue;
@@ -70,89 +67,181 @@ async function extractPptxSlides(
       slides.push({ title: texts[0].slice(0, 200), body: texts.slice(1).join("\n").slice(0, 4000) });
     } catch {}
   }
-  if (slides.length === 0) throw new Error("No readable slides found in presentation");
+  if (slides.length === 0) throw new Error("No readable slides found in this presentation");
   return slides;
+}
+
+const MAX_SHEET_ROWS = 5000;
+const MAX_SHEET_COLS = 60;
+
+function readWorkbook(buffer: Buffer) {
+  return import("xlsx").then(async (XLSX) => {
+    const wb = XLSX.read(buffer, { type: "buffer", cellFormula: true, cellNF: true });
+    // Agent scripts (openpyxl) write formulas WITHOUT cached values; fill them
+    // in so the viewer and the CLI agree on what Excel would show.
+    try {
+      const { fillFormulaValues } = await import("@/lib/workspace/spreadsheet-formulas");
+      for (const name of wb.SheetNames.slice(0, 20)) fillFormulaValues(wb.Sheets[name]);
+    } catch {}
+    const sheets = wb.SheetNames.slice(0, 20).map((name) => {
+      const ws = wb.Sheets[name];
+      const ref = ws["!ref"] || "A1";
+      const range = XLSX.utils.decode_range(ref);
+      const rowCount = Math.min(MAX_SHEET_ROWS, range.e.r + 1);
+      const colCount = Math.min(MAX_SHEET_COLS, range.e.c + 1);
+      const rows: string[][] = [];
+      const formulas: Record<string, string> = {};
+      for (let r = 0; r < rowCount; r++) {
+        const row: string[] = [];
+        for (let c = 0; c < colCount; c++) {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })] as
+            | { v?: unknown; w?: string; f?: string; t?: string }
+            | undefined;
+          if (!cell) {
+            row.push("");
+            continue;
+          }
+          const formatted =
+            cell.w !== undefined && cell.w !== ""
+              ? String(cell.w)
+              : cell.v === undefined || cell.v === null
+                ? ""
+                : String(cell.v);
+          row.push(formatted.slice(0, 1000));
+          if (typeof cell.f === "string" && cell.f && cell.f !== "undefined") {
+            formulas[`${r}:${c}`] = cell.f.startsWith("=") ? cell.f : `=${cell.f}`;
+          }
+        }
+        rows.push(row);
+      }
+      // Trim fully empty trailing rows so the grid does not look padded.
+      while (rows.length > 0 && rows[rows.length - 1].every((cell) => cell === "")) rows.pop();
+      return { name, rowCount: rows.length, colCount, rows, formulas };
+    });
+    return sheets;
+  });
 }
 
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const rel = url.searchParams.get("path") || "";
+    const wantedFormat = url.searchParams.get("format");
     if (!rel) return Response.json({ ok: false, error: "path required" }, { status: 400 });
+
     let resolved: string;
     try {
       resolved = resolvePathInWorkspace(rel);
-    } catch (e) {
+    } catch {
       return Response.json({ ok: false, error: "Path escapes workspace" }, { status: 403 });
     }
-    const s = await stat(resolved).catch(() => null);
-    if (!s || !s.isFile()) return Response.json({ ok: false, error: "File not found" }, { status: 404 });
-    if (s.size > 25_000_000) return Response.json({ ok: false, error: "File too large to preview (25MB max)" }, { status: 413 });
+    const info = await stat(resolved).catch(() => null);
+    if (!info || !info.isFile()) {
+      return Response.json({ ok: false, error: "File not found" }, { status: 404 });
+    }
     const ext = extname(resolved).toLowerCase();
-    const kind = kindFor(ext);
+    const kind = detectArtifactKind(resolved);
     const relativePath = relativePathInWorkspace(resolved);
     const filename = relativePath.split("/").pop() || relativePath;
-
-    if (kind === "sheet" || kind === "csv") {
-      try {
-        const buf = await readFile(resolved);
-        const XLSX = await import("xlsx");
-        const wb = XLSX.read(buf, { type: "buffer" });
-        // Agent scripts (openpyxl) write formulas WITHOUT cached values, so
-        // SheetJS would surface them as blanks. Evaluate the missing ones
-        // server-side so the preview matches what Excel computes on open.
-        try {
-          const { fillFormulaValues } = await import("@/lib/workspace/spreadsheet-formulas");
-          for (const name of wb.SheetNames.slice(0, 20)) fillFormulaValues(wb.Sheets[name]);
-        } catch {}
-        const sheets = wb.SheetNames.slice(0, 20).map((name) => {
-          const ws = wb.Sheets[name];
-          const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", blankrows: false });
-          const trimmed = rows.slice(0, 200).map((r) => (Array.isArray(r) ? r.slice(0, 26).map((c) => String(c ?? "").slice(0, 300)) : []));
-          return { name, rowCount: rows.length, colCount: Math.max(0, ...rows.map((r) => (Array.isArray(r) ? r.length : 0))), rows: trimmed };
-        });
-        return Response.json({ ok: true, kind, filename, relativePath, size: s.size, sheets });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return Response.json({ ok: false, error: `Spreadsheet parse failed: ${msg.slice(0, 300)}` }, { status: 422 });
-      }
-    }
-
-    if (TEXT_EXTS.has(ext) || kind === "code" || kind === "text") {
-      const buf = await readFile(resolved);
-      if (buf.length > MAX_TEXT_BYTES) return Response.json({ ok: false, error: "Text file too large to preview (1MB max)" }, { status: 413 });
-      const text = buf.toString("utf-8");
-      const lines = text.split("\n");
-      return Response.json({ ok: true, kind, filename, relativePath, size: s.size, lineCount: lines.length, content: text.slice(0, 200_000), truncated: text.length > 200_000 });
-    }
-
-    // Word documents: extract real text server-side so it renders.
-    if (kind === "doc") {
-      try {
-        const text = await extractDocxText(resolved, ext);
-        const lines = text.split("\n");
-        return Response.json({ ok: true, kind, filename, relativePath, size: s.size, lineCount: lines.length, content: text.slice(0, 200_000), truncated: text.length > 200_000 });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return Response.json({ ok: false, error: `Document parse failed: ${msg.slice(0, 300)}` }, { status: 422 });
-      }
-    }
-
-    // Presentations: extract per-slide text server-side so slides render.
-    if (kind === "slides") {
-      try {
-        const slides = await extractPptxSlides(resolved, ext);
-        return Response.json({ ok: true, kind, filename, relativePath, size: s.size, slides });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return Response.json({ ok: false, error: `Presentation parse failed: ${msg.slice(0, 300)}` }, { status: 422 });
-      }
-    }
-
-    // Remaining binaries (e.g. pdf): preview via /api/files iframe + metadata.
     const encodePath = (p: string) => p.split("/").map((x) => encodeURIComponent(x)).join("/");
     const downloadUrl = `/api/files/${encodePath(relativePath)}`;
-    return Response.json({ ok: true, kind, filename, relativePath, size: s.size, downloadUrl, note: "Binary preview — use Open to view, select text to quote, and Ask AI to modify via the agent." });
+    const base = { ok: true, kind, filename, relativePath, size: info.size, downloadUrl };
+
+    if (kind === "sheet") {
+      if (info.size > MAX_PREVIEW_BYTES) {
+        return Response.json({ ok: false, error: "Spreadsheet too large to preview (25MB max)" }, { status: 413 });
+      }
+      try {
+        const buf = await readFile(resolved);
+        if (ext === ".csv" || ext === ".tsv") {
+          const delimiter = ext === ".tsv" ? "\t" : ",";
+          const text = buf.toString("utf-8");
+          const rows = parseDelimited(text, delimiter).slice(0, MAX_SHEET_ROWS);
+          const colCount = Math.max(1, ...rows.map((r) => r.length));
+          return Response.json({
+            ...base,
+            sheets: [{ name: filename.replace(/\.[^.]+$/, "") || "Sheet1", rowCount: rows.length, colCount, rows, formulas: {} }],
+          });
+        }
+        const sheets = await readWorkbook(buf);
+        return Response.json({ ...base, sheets });
+      } catch (e) {
+        return Response.json(
+          { ok: false, error: `Spreadsheet parse failed: ${(e as Error).message.slice(0, 300)}` },
+          { status: 422 },
+        );
+      }
+    }
+
+    if (kind === "slides") {
+      try {
+        const slides = await extractPptxSlides(resolved);
+        return Response.json({ ...base, slides, note: "Rendered with the presentation viewer." });
+      } catch (e) {
+        return Response.json(
+          { ok: false, error: `Presentation parse failed: ${(e as Error).message.slice(0, 300)}` },
+          { status: 422 },
+        );
+      }
+    }
+
+    if (kind === "doc" && (ext === ".docx" || ext === ".dotx")) {
+      if (wantedFormat === "html") {
+        try {
+          const html = await extractDocxHtml(resolved);
+          return Response.json({ ...base, html });
+        } catch (e) {
+          return Response.json(
+            { ok: false, error: `Document parse failed: ${(e as Error).message.slice(0, 300)}` },
+            { status: 422 },
+          );
+        }
+      }
+      try {
+        const content = await extractDocxText(resolved);
+        return Response.json({ ...base, content: content.slice(0, 400_000), lineCount: content.split("\n").length });
+      } catch (e) {
+        return Response.json(
+          { ok: false, error: `Document parse failed: ${(e as Error).message.slice(0, 300)}` },
+          { status: 422 },
+        );
+      }
+    }
+
+    if (kind === "doc" && [".doc", ".odt", ".rtf"].includes(ext)) {
+      return Response.json(
+        {
+          ok: false,
+          error: `Legacy .${ext.slice(1)} files can’t be read directly. Ask Qube to convert this file to .docx first.`,
+        },
+        { status: 422 },
+      );
+    }
+
+    if (kind === "html") {
+      if (info.size > 2_000_000) {
+        return Response.json({ ok: false, error: "HTML file too large to preview (2MB max)" }, { status: 413 });
+      }
+      const content = (await readFile(resolved)).toString("utf-8");
+      return Response.json({ ...base, content });
+    }
+
+    if (kind === "pdf") {
+      return Response.json(base);
+    }
+
+    // code / text / markdown
+    if (info.size > MAX_TEXT_BYTES) {
+      return Response.json({ ok: false, error: "File too large to preview (1.5MB max)" }, { status: 413 });
+    }
+    const buf = await readFile(resolved);
+    const text = buf.toString("utf-8");
+    return Response.json({
+      ...base,
+      content: text.slice(0, 500_000),
+      lineCount: text.split("\n").length,
+      truncated: text.length > 500_000,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[workspace/document] failed:", msg.slice(0, 300));
@@ -166,7 +255,7 @@ const EDITABLE_EXTS = new Set([
   ".xml", ".yml", ".yaml", ".toml", ".sh", ".sql", ".csv", ".log",
 ]);
 
-/** Direct in-popup editing for plain-text files (workspace-scoped). */
+/** Direct in-popup editing for plain-text files and spreadsheet grids. */
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -183,7 +272,7 @@ export async function POST(req: Request) {
     const ext = extOf(resolved).toLowerCase();
     const { mkdir, writeFile } = await import("node:fs/promises");
 
-    // Spreadsheets: full grid round-trip (same view, inline cell edits).
+    // Spreadsheets: full grid round-trip (formulas persist as formulas).
     if (Array.isArray((body as { sheets?: unknown }).sheets)) {
       const sheets = (body as { sheets: Array<{ name?: string; rows?: unknown[][] }> }).sheets;
       if (ext === ".csv") {
@@ -200,19 +289,19 @@ export async function POST(req: Request) {
         return Response.json({ ok: true });
       }
       if (ext !== ".xls" && ext !== ".xlsx") {
-        return Response.json({ ok: false, error: "This file type can't be edited directly — ask the AI" }, { status: 415 });
+        return Response.json({ ok: false, error: "This file type can’t be edited directly — ask the AI" }, { status: 415 });
       }
       const XLSX = await import("xlsx");
       const wb = XLSX.utils.book_new();
       const list = sheets.slice(0, 20);
       if (list.length === 0) return Response.json({ ok: false, error: "No sheets to save" }, { status: 400 });
       for (const [i, sh] of list.entries()) {
-        const rows = Array.isArray(sh?.rows) ? sh.rows.slice(0, 500).map((r) => (Array.isArray(r) ? r.slice(0, 50).map((c) => String(c ?? "")) : [])) : [];
+        const rows = Array.isArray(sh?.rows)
+          ? sh.rows.slice(0, 5000).map((r) => (Array.isArray(r) ? r.slice(0, 60).map((c) => String(c ?? "")) : []))
+          : [];
+        // Drop trailing empty rows so the saved file stays tidy.
+        while (rows.length > 0 && (rows[rows.length - 1] as string[]).every((c) => c === "")) rows.pop();
         const ws = XLSX.utils.aoa_to_sheet(rows);
-        // Cells typed as =FORMULA(...) must persist as real formula cells —
-        // aoa_to_sheet would otherwise store them as literal text strings
-        // that Excel never computes. Cached values are left empty: Excel
-        // calculates on open and the preview evaluator fills them in.
         for (const key of Object.keys(ws)) {
           if (key.startsWith("!")) continue;
           const cell = (ws as Record<string, { v?: unknown; f?: string; t?: string }>)[key];
@@ -232,21 +321,25 @@ export async function POST(req: Request) {
     // Word documents: paragraph round-trip (text preserved, styling reset).
     if (Array.isArray((body as { paragraphs?: unknown }).paragraphs)) {
       if (ext !== ".docx") {
-        return Response.json({ ok: false, error: "This file type can't be edited directly — ask the AI" }, { status: 415 });
+        return Response.json({ ok: false, error: "This file type can’t be edited directly — ask the AI" }, { status: 415 });
       }
       const paragraphs = (body as { paragraphs: unknown[] }).paragraphs.map((p) => String(p ?? ""));
-      if (paragraphs.join("\n").length > 1_000_000) return Response.json({ ok: false, error: "Content too large (1MB max)" }, { status: 413 });
+      if (paragraphs.join("\n").length > 1_000_000) {
+        return Response.json({ ok: false, error: "Content too large (1MB max)" }, { status: 413 });
+      }
       const { Document, Packer, Paragraph, TextRun } = await import("docx");
       const doc = new Document({
-        sections: [{
-          children: paragraphs.flatMap((p) => {
-            const lines = p.split("\n");
-            return lines.map((line, i) => new Paragraph({
-              children: [new TextRun(line)],
-              spacing: i === lines.length - 1 ? { after: 200 } : undefined,
-            }));
-          }),
-        }],
+        sections: [
+          {
+            children: paragraphs.flatMap((p) => {
+              const lines = p.split("\n");
+              return lines.map((line, i) => new Paragraph({
+                children: [new TextRun(line)],
+                spacing: i === lines.length - 1 ? { after: 200 } : undefined,
+              }));
+            }),
+          },
+        ],
       });
       const buf = await Packer.toBuffer(doc);
       await mkdir(dirname(resolved), { recursive: true });
@@ -255,9 +348,11 @@ export async function POST(req: Request) {
     }
 
     if (content === null) return Response.json({ ok: false, error: "content required" }, { status: 400 });
-    if (content.length > 1_000_000) return Response.json({ ok: false, error: "Content too large (1MB max)" }, { status: 413 });
-    if (!EDITABLE_EXTS.has(ext.toLowerCase())) {
-      return Response.json({ ok: false, error: "This file type can't be edited directly — ask the AI" }, { status: 415 });
+    if (content.length > 1_000_000) {
+      return Response.json({ ok: false, error: "Content too large (1MB max)" }, { status: 413 });
+    }
+    if (!EDITABLE_EXTS.has(ext)) {
+      return Response.json({ ok: false, error: "This file type can’t be edited directly — ask the AI" }, { status: 415 });
     }
     await mkdir(dirname(resolved), { recursive: true });
     await writeFile(resolved, content, "utf-8");

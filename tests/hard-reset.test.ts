@@ -41,7 +41,6 @@ const { mcpStore } = await import("@/lib/pi/mcp-store");
 const { skillStore } = await import("@/lib/skills/store");
 const { allowedDirsStore } = await import("@/lib/permissions/allowed-dirs");
 const { composioKeyStore } = await import("@/lib/connectors/composio-key-store");
-const { browserStore } = await import("@/lib/agent/browser/browser-store");
 
 const memoryDir = join(dataDir, ".memory");
 const fact = "Hard reset test: the quarterly budget report has a verified remaining variance of twelve percent and needs a new owner.";
@@ -114,7 +113,6 @@ async function seedLiveState(): Promise<void> {
   skillStore.upsert({ name: "custom-reset-skill", description: "Old custom skill", instructions: "Do old work." } as any);
   allowedDirsStore.add(dataDir, "read", "settings");
   composioKeyStore.setCustomKey("sk-reset-test");
-  browserStore.setUrl("https://example.com/private-page");
 }
 
 after(() => {
@@ -176,8 +174,7 @@ describe("hard reset", () => {
     assert.equal(skillStore.getByName("custom-reset-skill"), null);
     assert.deepEqual(allowedDirsStore.getAll(), []);
     assert.equal(composioKeyStore.getActiveCustomKey(), null);
-    assert.equal(browserStore.get().url, "");
-
+  
     // A genuinely new fact after reset is not suppressed by old fingerprints.
     const freshAnnouncement = await announcements.recordAnnouncement({
       taskId: "scheduled-reset-after",

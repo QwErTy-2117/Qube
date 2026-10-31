@@ -260,10 +260,6 @@ export async function runSubagent(opts: {
 
     let result: any;
     try {
-      try {
-        const { applyKernel, kernelEnabled } = await import("@/lib/computer-use/index");
-        if (kernelEnabled()) applyKernel(childTools as Record<string, any>, { threadId: `subagent_${runId}`, interactive: false });
-      } catch {}
       result = streamText({
         model,
         system: systemPrompt,

@@ -103,9 +103,9 @@ async function abortBackgroundWork(warnings: string[]): Promise<void> {
     const { clearAcpSessionsForHardReset } = await import("@/lib/acp/sessions");
     clearAcpSessionsForHardReset();
   }, warnings);
-  await attempt("managed browser", async () => {
-    const { stopManagedChromeForHardReset } = await import("@/lib/browser/managed-chrome");
-    await stopManagedChromeForHardReset();
+  await attempt("computer browser", async () => {
+    const { stopComputerBrowser } = await import("@/lib/computer/browser");
+    await stopComputerBrowser();
   }, warnings);
 }
 
@@ -150,26 +150,10 @@ async function clearRuntimeCaches(warnings: string[]): Promise<void> {
     const { resetChatGPTClientVersionForHardReset } = await import("@/lib/chatgpt/client-version");
     resetChatGPTClientVersionForHardReset();
   }, warnings);
-  await attempt("browser page state", async () => {
-    const { browserStore } = await import("@/lib/agent/browser/browser-store");
-    browserStore.resetForHardReset();
-  }, warnings);
-  await attempt("browser cookies", async () => {
-    const { clearCookieJar } = await import("@/lib/browser/cookie-jar");
-    clearCookieJar();
-  }, warnings);
-  await attempt("durable browser runtime", async () => {
-    const { resetDurableBrowserForHardReset } = await import("@/lib/pi/durable-browser");
-    resetDurableBrowserForHardReset();
-  }, warnings);
-  await attempt("computer-use runtime", async () => {
-    const { resetComputerUseRuntimeForHardReset } = await import("@/lib/pi/computer-use");
-    resetComputerUseRuntimeForHardReset();
-  }, warnings);
-  await attempt("computer-use state", async () => {
-    const { StateTracker } = await import("@/lib/computer-use/state");
-    StateTracker.resetForHardReset();
-  }, warnings);
+  // NOTE: the Qube Computer's files, browser profile and logs are NOT part
+  // of an app hard reset — they only go away through an explicit
+  // computer reset, so a reset of Qube never silently destroys the user's
+  // computer state.
   await attempt("pending permissions", async () => {
     const { clearPendingPermissionsForHardReset } = await import("@/lib/middleware/permission-middleware");
     clearPendingPermissionsForHardReset();

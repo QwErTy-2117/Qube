@@ -466,7 +466,17 @@ export function SchedulingTab() {
                   type="text"
                   placeholder="What needs doing?"
                   value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
+                  aria-label="Task name"
+                  onChange={(e) => {
+                    setCreateName(e.target.value);
+                    if (createError) setCreateError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleCreate();
+                    }
+                  }}
                   className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
@@ -478,7 +488,11 @@ export function SchedulingTab() {
                 <textarea
                   placeholder="What should the agent do?"
                   value={createInstructions}
-                  onChange={(e) => setCreateInstructions(e.target.value)}
+                  aria-label="Task instructions"
+                  onChange={(e) => {
+                    setCreateInstructions(e.target.value);
+                    if (createError) setCreateError(null);
+                  }}
                   rows={3}
                   className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none"
                 />
@@ -536,8 +550,15 @@ export function SchedulingTab() {
                         onSelect={(d) => {
                           if (!d) return;
                           const pad = (n: number) => String(n).padStart(2, "0");
-                          const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                          // Keep an already chosen time; otherwise default to the
+                          // next full hour so a same-day pick is never "in the past".
+                          const defaultTime =
+                            createRunAt && createRunAt.length >= 16
+                              ? createRunAt.slice(11, 16)
+                              : `${pad(new Date(Date.now() + 60 * 60 * 1000).getHours())}:00`;
+                          const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${defaultTime}`;
                           setCreateRunAt(local);
+                          setCreateError(null);
                         }}
                         initialFocus
                       />
@@ -596,12 +617,19 @@ export function SchedulingTab() {
                 </div>
               ) : null}
 
+              {createKind === "once" && (!createRunAt || new Date(createRunAt).getTime() <= Date.now()) && (
+                <p className="text-xs text-muted-foreground" role="status">
+                  Pick a date and time in the future to save this task.
+                </p>
+              )}
               {createError && (
-                <p className="text-xs text-red-600 dark:text-red-400">{createError}</p>
+                <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+                  {createError}
+                </p>
               )}
             </div>
 
-            <div className="shrink-0 pt-3 border-t border-border/60 flex items-center gap-2">
+            <div className="shrink-0 flex items-center gap-2">
               <div className="min-w-0 flex-1">
                 <PromptPill busy={false} onSend={(t) => runDraft(t, currentDraftInput())} placeholder="Describe an edit…" />
               </div>

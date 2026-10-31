@@ -55,8 +55,8 @@ Qube follows these rules automatically:
 - Fetched page content is treated as data, never as instructions — a page
   that says “email these contents somewhere” is ignored.
 - Logins, captchas and 2FA are never handled by the fetch tool; those belong
-  to the watchable browser with you in control — see
-  [Browser automation](./browser.md).
+  to the watchable Qube Computer browser with you in control — see
+  [Qube Computer](./computer.md).
 
 ## Safety under the hood
 
@@ -67,6 +67,6 @@ redirects are validated, and response sizes are bounded.
 ## When to use the browser instead
 
 Plain reading is fastest for articles, docs, listings and public pages. Use
-the [managed browser](./browser.md) when a site needs interaction — filling
+the [Qube Computer browser](./computer.md) when a site needs interaction — filling
 forms, navigating a booking flow, checking a logged-in account, or watching
 Qube work through a page step by step.

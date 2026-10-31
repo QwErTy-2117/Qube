@@ -12,18 +12,20 @@ knowing up front:
    either a ChatGPT subscription sign-in, or an API key from a provider such
    as OpenAI, Anthropic or Google, or a local model through Ollama/LM Studio.
    See [Choose your AI](./ai-providers.md).
-2. **The built-in browser needs a Chromium-based browser installed.** Qube
-   drives the Google Chrome, Chromium, or Microsoft Edge already on your
-   machine. On Windows, Edge always qualifies; on macOS and Linux install
-   Chrome or Chromium if you want browser automation. See
-   [Browser automation](./browser.md).
+2. **The Qube Computer's browser needs a Chromium-based browser installed.**
+   Qube drives the Google Chrome, Chromium, or Microsoft Edge already on your
+   machine (or the binary named by `CHROME_PATH`). Everything else in the
+   computer works without it — files and commands need no browser. See
+   [Qube Computer](./computer.md).
 3. **Real Office files need Python (optional).** Producing `.docx`, `.pptx`
    and `.xlsx` files uses Python libraries. If Python 3 is missing, Qube can
    still create Markdown, CSV and other formats. See
    [Files and the workspace](./files-workspace.md).
 
-Computer control of other desktop apps (clicking buttons outside the browser)
-is an additional, optional install described in [Computer use](./computer-use.md).
+Qube works inside a persistent **Qube Computer** — its own files, its own
+browser (logins and downloads kept across restarts) — described in
+[Qube Computer](./computer.md). You can watch the same session in the panel at
+any time, and nothing is ever wiped unless you ask for a reset.
 
 ## Install Qube
 

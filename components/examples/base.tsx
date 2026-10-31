@@ -97,9 +97,10 @@ import { useTheme } from "next-themes";
 import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
 import { ChatErrorTopPopup, pushChatError, parseChatGPTError, isAgentErrorText, notifyAgentError } from "@/components/chat/chat-error-popup";
-import { DocumentPopup } from "@/components/workspace";
-import { BrowserPanel } from "@/components/workspace";
-import { openBrowserWorkspace, useWorkspaceStore } from "@/lib/workspace/store";
+import { QubeComputerCard, QubeComputerPanel } from "@/components/workspace";
+import { ArtifactPopup } from "@/components/artifact/ArtifactPopup";
+import { HtmlPanel } from "@/components/artifact/HtmlPanel";
+import { openComputerWorkspace, useWorkspaceStore } from "@/lib/workspace/store";
 
 const baseToolGroupBy = groupPartByType({
   reasoning: ["group-tool", "group-chainOfThought"],
@@ -402,7 +403,6 @@ const Thread: FC = () => {
             <ThreadPrimitive.ViewportFooter
               className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-2 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
             >
-              <ThreadScrollToBottom />
               <QuestionPanel />
               {/* On send the bar glides center → bottom; on navigation it is
                   simply there (mount-only initial, never traps the UI). */}
@@ -427,33 +427,6 @@ const Thread: FC = () => {
 
       <SelectionToolbar />
     </ThreadPrimitive.Root>
-  );
-};
-
-const ThreadScrollToBottom: FC = () => {
-  const isRunning = useAuiState((s) => s.thread.isRunning);
-  return (
-    <ThreadPrimitive.ScrollToBottom asChild>
-      <button
-        aria-label="Scroll to bottom"
-        title="Scroll to bottom"
-        className={
-          isRunning
-            ? "absolute -top-12 z-10 flex h-9 w-auto min-w-9 cursor-pointer items-center justify-center self-center rounded-full border border-border bg-popover/85 px-3 text-foreground shadow-lg backdrop-blur-xl transition hover:bg-popover disabled:invisible"
-            : "absolute -top-12 z-10 flex size-9 cursor-pointer items-center justify-center self-center rounded-full border border-border bg-popover/85 text-foreground shadow-lg backdrop-blur-xl transition hover:bg-popover disabled:invisible"
-        }
-      >
-        {isRunning ? (
-          <span className="typing-dots" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </span>
-        ) : (
-          <ArrowUpIcon className="size-4 rotate-180 text-muted-foreground/70" />
-        )}
-      </button>
-    </ThreadPrimitive.ScrollToBottom>
   );
 };
 
@@ -1416,13 +1389,12 @@ const ChatErrorWatcher: FC = () => {
 
 // Opens the browser side panel when the agent uses browser tools.
 // Never closes it automatically — the window stays open after the run;
-// only the panel X (or app shutdown) ends the session.
-// Opens the browser side panel when the agent uses browser tools.
-// Opens ONCE per tool call (tracked by toolCallId): closing the panel
-// dismisses it until a NEW browser call arrives — it never reopens
-// itself on re-renders, and nothing auto-closes the window.
-const openedBrowserCallIds = new Set<string>();
-const BrowserAutoOpener: FC = () => {
+// Opens the Qube Computer panel when the agent uses a computer tool. Opens
+// ONCE per tool call (tracked by toolCallId): closing the panel dismisses it
+// until a NEW computer call arrives — it never reopens on re-renders, and
+// nothing auto-closes the session.
+const openedComputerCallIds = new Set<string>();
+const ComputerAutoOpener: FC = () => {
   const messages = useAuiState((s) => s.thread.messages);
   const mountedRef = useRef(false);
   useEffect(() => {
@@ -1434,32 +1406,29 @@ const BrowserAutoOpener: FC = () => {
       }>) {
         const parts = m?.content || m?.parts || [];
         for (const p of parts) {
-          if (p?.type === "tool-call" && typeof p?.toolName === "string" && (p.toolName.startsWith("browser_") || ["open_tab","navigate","tabs","user_tabs","page_info","cdp","move_mouse","run_action_plan","wait_load","claim_tab","finalize_tabs","ping","info"].includes(p.toolName))) {
+          if (p?.type === "tool-call" && typeof p?.toolName === "string" && p.toolName.startsWith("computer_")) {
             ids.push(typeof p.toolCallId === "string" && p.toolCallId ? p.toolCallId : `${p.toolName}`);
           }
         }
       }
-      // On (re)mount, follow an already browser-active thread: the panel
-      // shows the shared live browser, so reopen to keep following it.
       if (!mountedRef.current) {
         mountedRef.current = true;
-        ids.forEach((id) => openedBrowserCallIds.add(id));
+        ids.forEach((id) => openedComputerCallIds.add(id));
         if (ids.length > 0) {
           const st = useWorkspaceStore.getState();
-          if (!st.open || st.artifact?.kind !== "browser") openBrowserWorkspace();
+          if (!st.open || st.artifact?.kind !== "computer") openComputerWorkspace();
           return;
         }
       }
-      const fresh = ids.filter((id) => !openedBrowserCallIds.has(id));
+      const fresh = ids.filter((id) => !openedComputerCallIds.has(id));
       if (fresh.length > 0) {
-        fresh.forEach((id) => openedBrowserCallIds.add(id));
-        // Bound memory: forget calls from long-finished threads.
-        if (openedBrowserCallIds.size > 200) {
-          const arr = [...openedBrowserCallIds];
-          arr.slice(0, arr.length - 200).forEach((id) => openedBrowserCallIds.delete(id));
+        fresh.forEach((id) => openedComputerCallIds.add(id));
+        if (openedComputerCallIds.size > 200) {
+          const arr = [...openedComputerCallIds];
+          arr.slice(0, arr.length - 200).forEach((id) => openedComputerCallIds.delete(id));
         }
         const st = useWorkspaceStore.getState();
-        if (!st.open || st.artifact?.kind !== "browser") openBrowserWorkspace();
+        if (!st.open || st.artifact?.kind !== "computer") openComputerWorkspace();
       }
     } catch {}
   }, [messages]);
@@ -1483,7 +1452,7 @@ export const Base: FC = () => {
     <div className="bg-muted text-foreground relative flex h-full w-full pl-2">
       <ChatErrorTopPopup />
       <ChatErrorWatcher />
-      <BrowserAutoOpener />
+      <ComputerAutoOpener />
       <ThreadUrlSync />
       <WorkspaceThreadReset />
       <DebugSend />
@@ -1500,10 +1469,12 @@ export const Base: FC = () => {
               <Thread />
             </main>
           </div>
-          <BrowserPanel />
+          <QubeComputerPanel />
+          <HtmlPanel />
         </div>
       </div>
-      <DocumentPopup />
+      <QubeComputerCard />
+      <ArtifactPopup />
       <ConnectorConnectDialog />
     </div>
   );

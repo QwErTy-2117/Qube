@@ -68,60 +68,48 @@ why Qube runs a chat probe during validation.
 - Small local models may fail multi-step tool tasks; try a larger model or a
   cloud provider for complex jobs.
 
-## Browser automation
+## Qube Computer
 
-### Browser tasks fail with “no browser” or launch errors
+### “No Chrome/Chromium found”
 
-Qube needs a Chromium-based browser on the system. Install Google Chrome or
-Chromium (on Windows, the built-in Edge is detected automatically). If your
-browser is in a non-standard location, set `CHROME_PATH` to its binary — see
-[Environment variables](./configuration.md).
+The computer's browser needs a Chromium-based browser on the system. Install
+Google Chrome, Chromium or Microsoft Edge, or point `CHROME_PATH` at the binary
+— see [Environment variables](./configuration.md). Files and `computer_run`
+keep working without a browser; only `computer_browser` needs it.
 
-### “Browser Use (connection closed)” appears in chat
+### The browser opens but a page looks empty or stale
 
-The built-in browser service could not start. In a source checkout, ensure the
-repository is complete (the service script lives at
-`lib/browser/auto-mcp/server.mjs`) and dependencies are installed. In a
-desktop install, this normally means an incomplete or corrupted bundle —
-reinstall the app. You can silence the service with `BROWSER_MCP_DISABLED=1`
-while troubleshooting.
+Read the page again (`computer_browser` action `read`) before acting: a
+navigation or a form submit may still have been in flight. If the window was
+closed by hand, the next `open`/`navigate` starts a new instance with the same
+profile (cookies and logins are kept).
 
-### The browser panel says it's temporarily busy
+### A command fails or times out
 
-Only one agent can drive the browser at a time. Wait for the current run to
-finish; file and shell tools keep working in the meantime.
+`computer_run` has a bounded timeout (120 s by default, 600 s maximum) and
+capped output, and the process tree is killed when the timeout fires. Read the
+stderr in the result and the activity journal in the Qube Computer panel. For a
+long-running process, start a dev server instead of blocking a command.
 
-### A login, captcha or 2FA stops the task
+### “Path escapes the computer”
 
-That's intended — Qube requests a takeover. Click into the Browser panel,
-complete the human step yourself, and confirm to resume. The request waits up
-to fifteen minutes.
+Paths are relative to the computer's home, and `..`, absolute paths and
+symlinks that leave the runtime are refused. Move the file in with
+`computer_import` (which asks for approval) or write it to a path inside the
+computer.
 
-## Computer use
+### Attachments do not appear
 
-### Actions return an install hint
+Stage them again from chat: files are copied into `.computer/attachments/` and
+the tool result carries the absolute path inside the computer. Duplicate names
+get a ` (2)` suffix rather than overwriting.
 
-The `ocu` driver isn't installed. Install Node.js, then:
+### Resetting
 
-```bash
-npm i -g open-computer-use
-ocu doctor
-```
-
-Full instructions in [Computer use](./computer-use.md).
-
-### On macOS, `ocu doctor` or actions report permission errors
-
-Grant **Accessibility** and **Screen Recording** to the host application in
-**System Settings → Privacy & Security**, then restart Qube. Read-only app
-listing works without these; seeing and controlling windows does not.
-
-### Clicks land in the wrong place
-
-Window state changes invalidate element references quickly. Qube normally
-re-reads the app state and retries; if it keeps missing, stop the run, ask it
-to observe the app again, and prefer `computer_run_sequence` over single
-clicks.
+**Reset** in the panel header deletes the computer's files, downloads, browser
+profile and logs and starts a fresh session (attachments are kept unless you
+uncheck that). Resetting Qube itself does not touch the computer's files. See
+[Qube Computer](./computer.md).
 
 ## Files, documents and the workspace
 

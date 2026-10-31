@@ -14,7 +14,7 @@
 
 ## 1. Introduction and acceptance
 
-Welcome to Qube. Qube is a desktop AI agent application that helps you get things done through an autonomous, chat-based assistant that — depending on your configuration and permissions — can work with files, run commands, search the web, generate documents, operate your computer's applications, browser sessions, and desktop interfaces through server-side browser automation, connect to external services you authorize, and delegate work to subagents.
+Welcome to Qube. Qube is a desktop AI agent application that helps you get things done through an autonomous, chat-based assistant that — depending on your configuration and permissions — can work with files, run commands, search the web, generate documents, work inside the Qube Computer (its own files and browser profile), connect to external services you authorize, and delegate work to subagents.
 
 These Terms of Service ("**Terms**") govern your access to and use of Qube, including the desktop application, its bundled local server, and any related documentation or services (together, the "**Service**").
 
@@ -26,8 +26,7 @@ If you use Qube on behalf of an organization, you represent that you have author
 
 * **"Qube" / "Service"** — The Qube desktop application, its local server/sidecar, shell, and any updates or documentation we provide.
 * **"AI Agent" / "Agent"** — The autonomous system in Qube that interprets your messages, plans tasks, calls tools, and interacts with files, your computer, browser sessions, desktop applications, and connected services on your behalf using a third-party AI model you configure.
-* **"Browser Use" / "Browser Agent"** — When you enable browser automation functionality, the Agent's ability to browse websites through the server-side browser engine, including navigating pages, reading content, filling forms, and extracting information. Browsing runs server-side and is visible in the Browser Workspace.
-* **"Computer Use"** — When you install the open-codex-computer-use driver (`open-computer-use` / `ocu`) and ask the Agent to work outside the browser, its ability to list running applications, read an application's visible state (accessibility information and screenshots), and — only after your approval — click, type, press keys, scroll, drag, set values, launch, or foreground applications on your computer. Read-only observation never pauses; every mutating action blocks on a permission prompt in interactive sessions and refuses in background runs.
+* **"Qube Computer"** — The persistent runtime Qube owns and the Agent works in: its own home directory, shell, attachments, downloads and browser profile. The Agent can read, write and run commands inside it, and open, read and act on pages in its browser, which keeps cookies and logins across restarts. Moving files between the Qube Computer and the rest of your machine is a separate action that requires your approval outside the Workspace and your Allowed directories. The Qube Computer does not observe or control your desktop applications, screen or other browser profiles.
 * **"Model Provider" / "Provider"** — The third-party provider of the AI model that powers the Agent (for example, a commercial API provider or a local model you run yourself). You choose and configure the Provider; we do not operate the model unless we expressly state otherwise.
 * **"Connector"** — An integration you authorize that lets the Agent interact with an external service on your behalf (for example, email, calendar, drive, chat, or project tools), typically via an integration partner that facilitates OAuth and tool execution.
 * **"Workspace"** — The sandboxed folder on your device where the Agent works with files and commands by default. Access outside this folder requires your permission where applicable.
@@ -41,14 +40,14 @@ Qube provides a chat interface to an autonomous agent that can, depending on how
 * work with files and folders (read, create, edit, delete, and list) and run shell commands, scoped to the Workspace by default, and — where you authorize external access — with absolute paths including Windows drives (e.g. `C:\Users\...`), UNC paths, and folders containing spaces or Unicode;
 * search the web and fetch page content;
 * generate formatted documents, presentations, spreadsheets, and other files;
-* operate your computer via browser automation when you enable that capability and grant the required system permissions — interacting with native applications, browser sessions and websites, windows, desktop interfaces, clipboard, and other computer state exposed through the driver, using an observe → decide → act → observe → verify loop;
-* operate your computer's desktop applications directly via Computer Use (open-codex-computer-use driver) when you install it, grant the OS permissions it needs (Accessibility and Screen Recording on macOS; the desktop accessibility session on Linux; no special grant on Windows), and ask for something outside the browser — read-only observation runs freely, while every click, keystroke, or change pauses for your explicit approval;
+* work inside the Qube Computer — creating, editing and running files and shell commands in a runtime Qube owns, and browsing websites in its own browser profile, using an observe → decide → act → verify loop on page content;
+* move files between the Qube Computer and your machine only through the import/export tools, which block on a permission prompt unless the path is inside the Workspace or an Allowed directory;
 * delegate parts of a task to subagents that operate with the same tool access and report back to the main Agent;
 * remember context across conversations through session history and persistent memory stored locally (which you can switch off in Advanced settings — see Section 3A);
 * connect to external services you explicitly authorize and perform actions in those services on your behalf;
 * run scheduled and recurring tasks, including a periodic heartbeat task, with permissions you control.
 
-Qube runs primarily on your device. AI reasoning is performed by the Model Provider you select; Qube orchestrates tools, memory, permissions, and integrations around it. Browser capabilities run server-side via the browser engine and are visible in the Browser Workspace.
+Qube runs primarily on your device. AI reasoning is performed by the Model Provider you select; Qube orchestrates tools, memory, permissions, and integrations around it. The Qube Computer is a persistent runtime on your device, and its session is visible in the Qube Computer panel.
 
 We may add, change, or remove capabilities over time as described in Section 16.
 
@@ -81,14 +80,14 @@ Qube can retain facts across conversations ("persistent memory") so the Agent ha
 
 * The Agent is an **autonomous tool that acts on your instructions, approvals, and configuration**. It interprets natural language, makes plans, calls tools, and produces outputs, often taking multiple steps before reporting back — intentionally, so it can handle complex, multi-step work.
 * The Agent is **not a human, not your legal representative, and not a substitute for professional advice**. It has no independent legal authority.
-* What the Agent can do depends on the model you selected and the tools, connectors, and permissions you have enabled. Enabling additional capabilities (browser automation, connectors, or broader task permissions) expands what the Agent can affect on your behalf. When browser automation is enabled and you grant the requested system permissions (e as accessibility, screen recording/input permissions), the Agent may be able to observe and interact with information available on or through your computer.
+* What the Agent can do depends on the model you selected and the tools, connectors, and permissions you have enabled. Enabling additional capabilities (the Qube Computer, connectors, or broader task permissions) expands what the Agent can affect on your behalf. Inside the Qube Computer the Agent may be able to read and act on the files it holds and the pages its browser opens.
 * We provide the Agent's orchestration, sandboxing, and permission prompts, but **we do not control the underlying model**. Model behavior, availability, pricing, and data handling are governed by the Provider you choose.
 
 ## 6. Your responsibility for the Agent's actions
 
 **Please read this section carefully. It is central to your use of Qube.**
 
-* **You authorize the Agent to act for you.** When you give the Agent an instruction (for example, "organize my files," "draft and send the email," "open the website, sign in and download the file," or "find the file I downloaded yesterday and organize it"), approve a permission prompt, enable browser automation functionality and grant the associated system permissions, authorize a Connector, or configure scheduled tasks or system permissions, you are authorizing the Agent to take the steps it infers are needed to carry out that request. A short or general instruction may cause the Agent to take broad actions. Depending on the permissions and configuration you provide, those steps may include interacting with your computer and its contents — including files and folders, applications, browser sessions, websites visible to the agent, information displayed on screen, and other data accessible through the browser automation environment.
+* **You authorize the Agent to act for you.** When you give the Agent an instruction (for example, "organize my files," "draft and send the email," "open the website, sign in and download the file," or "find the file I downloaded yesterday and organize it"), approve a permission prompt, use the Qube Computer, authorize a Connector, or configure scheduled tasks, you are authorizing the Agent to take the steps it infers are needed to carry out that request. A short or general instruction may cause the Agent to take broad actions. Depending on the permissions and configuration you provide, those steps may include working with files and folders, running commands, and reading pages in the Qube Computer, plus actions in the services you connected.
 
 * **To the maximum extent permitted by applicable law, you are responsible for the Agent's actions taken on your behalf.** This includes, without limitation, responsibility for:
   * instructions you give to Qube;
@@ -98,15 +97,15 @@ Qube can retain facts across conversations ("persistent memory") so the Agent ha
   * ensuring that the Agent's use of your computer and any connected services, websites, or systems is appropriate, authorized, and lawful for your environment.
   This applies even when the result is unintended, unexpected, or not individually reviewed by you before the Agent acts. Examples include without limitation files the Agent creates, edits, moves, renames, or deletes; commands it runs; messages it sends through connected services; browser, application, or desktop actions it performs; and changes it makes to data or systems you have given it access to.
 
-* **We do not undertake to supervise or reverse Agent actions.** Qube provides permission prompts and other safeguards where implemented (see Section 7), but **Qube is not responsible for supervising, approving, or reversing actions the Agent takes on your behalf**. Your review and supervision are the primary controls. You should not enable browser automation or grant broad permissions unless you accept this responsibility.
+* **We do not undertake to supervise or reverse Agent actions.** Qube provides permission prompts and other safeguards where implemented (see Section 7), but **Qube is not responsible for supervising, approving, or reversing actions the Agent takes on your behalf**. Your review and supervision are the primary controls. You should not grant broad permissions unless you accept this responsibility.
 
-* **You must review, supervise, and validate.** The Agent may act extensively before showing you a summary and works through an observe → decide → act → verify loop that still depends on your ultimate oversight. You are responsible for reviewing tool calls, file changes, and outputs displayed in the chat thread; checking diffs and command results rather than assuming success; verifying that a browser automation action achieved its intended result (e.g., the correct window is active, information was entered correctly, a file was created at the expected location); and validating that generated code, documents, emails, messages, and other outputs are correct **before** you rely on, publish, send, share, or execute them.
+* **You must review, supervise, and validate.** The Agent may act extensively before showing you a summary and works through an observe → decide → act → verify loop that still depends on your ultimate oversight. You are responsible for reviewing tool calls, file changes, and outputs displayed in the chat thread; checking diffs and command results rather than assuming success; verifying that an action inside the Qube Computer achieved its intended result (e.g., the correct page is open, a field was filled correctly, a file was created at the expected path); and validating that generated code, documents, emails, messages, and other outputs are correct **before** you rely on, publish, send, share, or execute them.
 
-* **Real-world consequences.** Agent actions — including browser automation interactions — can affect files on your device, data in connected applications and accounts, and systems reachable from your computer or browser sessions. You are responsible for anticipating that scope, limiting the Agent's access and permissions to what you intend (including whether browser automation is enabled, which applications and folders it can reach, and which connectors are connected), and maintaining backups and version control for important data.
+* **Real-world consequences.** Agent actions — including work inside the Qube Computer — can affect files on your device, data in connected applications and accounts, and systems reachable from your computer or the sites its browser visits. You are responsible for anticipating that scope, limiting the Agent's access and permissions to what you intend (including which files you import and which connectors are connected), and maintaining backups and version control for important data.
 
-* **You are responsible for lawful and authorized use.** You are responsible for ensuring that your use of Qube — including instructions you give, content you provide, and actions the Agent takes on your behalf (including via browser automation) — is lawful and does not violate the rights, terms, policies, or rules of any third party or service you interact with (including any website, API, connected service, application, or employer or organizational policy governing the computer).
+* **You are responsible for lawful and authorized use.** You are responsible for ensuring that your use of Qube — including instructions you give, content you provide, and actions the Agent takes on your behalf (including inside the Qube Computer) — is lawful and does not violate the rights, terms, policies, or rules of any third party or service you interact with (including any website, API, connected service, application, or employer or organizational policy governing the computer).
 
-* **Safeguards are aids, not guarantees.** Qube surfaces confirmations for certain higher-risk actions where detected, but **we cannot guarantee that every risky action will be gated**. Permission prompts, sandboxing, driver-level permission policies, and other safeguards are provided as safety aids. Your supervision remains the primary control. Do not proceed with high-stakes actions unless you are prepared to review and accept the consequences, particularly when browser automation is enabled.
+* **Safeguards are aids, not guarantees.** Qube surfaces confirmations for certain higher-risk actions where detected, but **we cannot guarantee that every risky action will be gated**. Permission prompts, path confinement, and other safeguards are provided as safety aids. Your supervision remains the primary control. Do not proceed with high-stakes actions unless you are prepared to review and accept the consequences, particularly with a broad Qube Computer working area.
 
 * **AI limitations.** To the extent permitted by applicable law, you acknowledge that AI agents can make mistakes, misunderstand instructions, misinterpret screen content or tool outputs, take unexpected or undesired actions, or fail to achieve the intended outcome, even when they appear confident and even after verification steps. See Section 12. You remain responsible for the consequences as described in this Section 6.
 
@@ -119,15 +118,15 @@ Qube includes safeguards that depend on your configuration and do not replace yo
 * Scheduled tasks enforce per-task permission flags you set. A task that lacks a permission cannot perform the gated action.
 * Browser capabilities fetch only the URLs needed for your task and block private/internal network targets (SSRF protection). Qube maps its permission model onto the capabilities it exposes and does not allow the Agent or a skill to silently escalate its permissions beyond what you have configured.
 
-You may tighten or loosen these controls in settings. Looser settings and enabling browser automation let the Agent do more — and increase the risk that you are responsible for under Section 6.
+You may tighten or loosen these controls in settings. Looser settings and a broad Qube Computer working area let the Agent do more — and increase the risk that you are responsible for under Section 6.
 
 ## 8. Third-party services and AI providers
 
 Qube relies on third parties you choose:
 
-* **Model Providers** — When you send a message, Qube transmits your prompt and relevant context to the Provider you selected so the model can generate a response and decide which tools to call. This may include conversation history, excerpts of files the Agent has read, tool outputs, attachments, and profile or memory context the Agent includes. Where browser automation is enabled, this may also include observations from the browser automation environment (such as accessibility information, window state, or screen-derived context the harness includes) to the extent necessary for the model to reason about the computer task. If you use Login with ChatGPT, requests are forwarded through a local proxy using your signed session.
+* **Model Providers** — When you send a message, Qube transmits your prompt and relevant context to the Provider you selected so the model can generate a response and decide which tools to call. This may include conversation history, excerpts of files the Agent has read, tool outputs, attachments, and profile or memory context the Agent includes. This may also include content the Agent read inside the Qube Computer (file excerpts and page text) to the extent necessary for the model to reason about the task. If you use Login with ChatGPT, requests are forwarded through a local proxy using your signed session.
 * **Connectors and integration partners** — When you connect a service, an integration partner facilitates OAuth and forwards tool inputs and results between Qube and the external service.
-* **External websites and services** — When the Agent uses web search, web fetch, browser automation browsing, or a Connector, it interacts directly with those websites or services under your device's network identity.
+* **External websites and services** — When the Agent uses web search, web fetch, the Qube Computer browser, or a Connector, it interacts directly with those websites or services under your device's network identity.
 
 Each third party's handling of your data, availability, and security is governed by **that party's terms and privacy policy**, not ours. We do not control those third parties. By selecting a Provider or authorizing a Connector, you accept that its terms will apply to that portion of the processing.
 
@@ -135,7 +134,7 @@ Each third party's handling of your data, availability, and security is governed
 
 We try to send only what is needed for the feature you invoked, but in practice this can be broad:
 
-* **To a Model Provider** — prompt text, conversation history, file excerpts and tool outputs the Agent chooses to include as context, attachments or referenced file content, profile information and relevant memory entries, and technical parameters such as model name and settings. Where browser automation is involved, this may include browser automation observations (e.g., window or accessibility information, or other state the harness includes as context) where necessary for the model to decide the next computer action.
+* **To a Model Provider** — prompt text, conversation history, file excerpts and tool outputs the Agent chooses to include as context, attachments or referenced file content, profile information and relevant memory entries, and technical parameters such as model name and settings. Content the Agent read inside the Qube Computer (file excerpts and page text) may be included where necessary for the model to decide the next action.
 * **To a Connector/integration partner and then to the external service** — the specific inputs for the action (for example, an email draft or query), authentication data needed to perform the action, and the service's response.
 
 **Why this happens:** without it, the model could not reason about your request (including, where applicable, the state of your computer) and the integration could not perform the requested action.
@@ -167,17 +166,17 @@ We may update these rules or take steps to prevent misuse, including limiting fe
 
 ## 12. AI limitations — do not rely without review
 
-**AI outputs and agent actions may be incorrect, incomplete, unexpected, or harmful, even when they appear confident.** The Agent may hallucinate facts or file contents, misinterpret instructions or screen content, produce code or documents with errors, security issues, or formatting problems, take unexpected browser automation actions (including clicking the wrong control, typing into the wrong field, or misreading window state), or fail to notice consequences that would be obvious to a person. Verification steps reduce but do not eliminate this risk.
+**AI outputs and agent actions may be incorrect, incomplete, unexpected, or harmful, even when they appear confident.** The Agent may hallucinate facts or file contents, misinterpret instructions or screen content, produce code or documents with errors, security issues, or formatting problems, take unexpected actions inside the Qube Computer (including clicking the wrong control, typing into the wrong field, or misreading a page), or fail to notice consequences that would be obvious to a person. Verification steps reduce but do not eliminate this risk.
 
 **We do not guarantee that the Agent will behave correctly, accurately, safely, or as you intended, or that verification will catch every error.** Qube is provided without guarantees of accuracy, completeness, reliability, fitness for a particular purpose, or availability. Verify important information from authoritative sources. Do not use Qube as the sole basis for financial, legal, medical, or other high-stakes decisions without independent professional review.
 
-You should maintain backups of important data, use version control for code and documents, review diffs before accepting file edits, and test code before deploying. **Where the consequences of an action matter, do not rely on the Agent — including its browser automation capabilities — without appropriate human review.**
+You should maintain backups of important data, use version control for code and documents, review diffs before accepting file edits, and test code before deploying. **Where the consequences of an action matter, do not rely on the Agent — including its work inside the Qube Computer — without appropriate human review.**
 
 ## 13. Disclaimers
 
 To the fullest extent permitted by law, the Service is provided **"as is" and "as available"** without warranties of any kind, whether express, implied, or statutory, including warranties of merchantability, fitness for a particular purpose, title, and non-infringement. We do not warrant that Qube will be uninterrupted, error-free, secure, or free of harmful components, or that defects will be corrected.
 
-Model Providers, Connectors, browsers, websites, browser automation targets, and external services are operated by third parties or depend on your local environment; we make no warranties about them.
+Model Providers, Connectors, browsers, websites, and external services are operated by third parties or depend on your local environment; we make no warranties about them.
 
 ## 14. Limitation of liability
 
@@ -195,15 +194,15 @@ Nothing in these Terms is intended to limit liability in a way that is not permi
 You agree to indemnify, defend, and hold harmless Qube, its contributors, maintainers, and affiliates, and their respective officers, directors, employees, and agents, from and against any claims, liabilities, damages, losses, and expenses (including reasonable attorneys' fees) arising out of or related to:
 
 * your use of the Service;
-* your instructions to the Agent and your configuration of providers, permissions, browser automation enablement, Connectors, and scheduled tasks;
-* actions the Agent takes on your behalf as described in Section 6, including unintended or unexpected actions (including via browser automation);
+* your instructions to the Agent and your configuration of providers, permissions, the Qube Computer, Connectors, and scheduled tasks;
+* actions the Agent takes on your behalf as described in Section 6, including unintended or unexpected actions (including inside the Qube Computer);
 * your User Content or your violation of these Terms, applicable law, or any third-party rights, terms, policies, or rules.
 
 We may, at our option, assume the exclusive defense and control of any matter subject to indemnification by you, at your expense, and you agree to cooperate with us in that defense.
 
 ## 16. Termination
 
-* You may stop using Qube at any time by uninstalling it and, if you wish, deleting local data and revoking any OAuth grants you made in connected services and revoking system permissions granted for browser automation.
+* You may stop using Qube at any time by uninstalling it and, if you wish, deleting local data and revoking any OAuth grants you made in connected services and resetting the Qube Computer if you want its files and browser profile gone.
 * We may suspend or discontinue Qube, a feature, or your access if we reasonably believe you have violated these Terms, if needed for security or legal reasons, or if we decide to retire the product. Where practicable, we will provide notice.
 * Upon termination, your right to use Qube ends. Provisions that by their nature should survive (including Sections 6, 10–15, and 17–19) will continue to apply.
 
@@ -237,7 +236,7 @@ We expect to select a single governing law and a proportionate dispute-resolutio
 * **Assignment.** You may not assign these Terms without our prior written consent. We may assign them in connection with a merger, acquisition, reorganization, or sale of assets.
 * **Notices.** We may provide notices by posting them with the application, on the distribution page, or by other reasonable means. You may contact us through the repository or the contact method listed in Section 21.
 * **Language.** These Terms may be translated. The English version governs if there is a conflict.
-* **Compliance with law.** You are responsible for complying with all laws that apply to your use of Qube, including export-control, data-protection, AI-use, and sector-specific rules. Do not use Qube to process personal or regulated data in a way that violates applicable law. Do not use browser automation to access or process information you are not authorized to access.
+* **Compliance with law.** You are responsible for complying with all laws that apply to your use of Qube, including export-control, data-protection, AI-use, and sector-specific rules. Do not use Qube to process personal or regulated data in a way that violates applicable law. Do not use the Qube Computer to access or process information you are not authorized to access.
 
 ## 21. Contact
 
@@ -247,6 +246,6 @@ Questions about these Terms may be directed to the maintainers through the proje
 
 ### Scope note
 
-We have drafted these Terms to track the actual product — a local-first desktop agent that orchestrates third-party models and, where you enable it, browser automation automation via browser engine, sandboxed by default, gated by permission prompts where implemented, and storing sensitive material locally. Descriptions are kept intentionally broad so they remain accurate as the product evolves, and implementation details are avoided where not needed for the legal document. Areas that depend on your Provider, deployment, and jurisdiction — notably governing law, consumer disclosures, and any required data-processing or AI transparency addenda — are flagged for attorney review rather than asserted as compliant.
+We have drafted these Terms to track the actual product — a local-first desktop agent that orchestrates third-party models, works inside a path-confined persistent Qube Computer, is gated by permission prompts where implemented, and stores sensitive material locally. Descriptions are kept intentionally broad so they remain accurate as the product evolves, and implementation details are avoided where not needed for the legal document. Areas that depend on your Provider, deployment, and jurisdiction — notably governing law, consumer disclosures, and any required data-processing or AI transparency addenda — are flagged for attorney review rather than asserted as compliant.
 
-To the extent legally permissible, responsibility and liability for use of Qube and for actions the Agent takes on your behalf — including via browser automation — remain with you, as detailed in Sections 6, 12–15.
+To the extent legally permissible, responsibility and liability for use of Qube and for actions the Agent takes on your behalf — including inside the Qube Computer — remain with you, as detailed in Sections 6, 12–15.

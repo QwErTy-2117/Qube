@@ -20,8 +20,7 @@ viewer. No documentation website required.
 | --- | --- |
 | [Files and the workspace](./files-workspace.md) | Where Qube puts files, built-in viewers, real Office documents, folders outside the workspace |
 | [Web research](./web-research.md) | Sourced answers, reading links and attachments, research briefs |
-| [Browser automation](./browser.md) | The watchable browser window, logins and captchas, Chrome requirements |
-| [Computer use](./computer-use.md) | Letting Qube click and type in your other desktop apps (optional setup) |
+| [Qube Computer](./computer.md) | The persistent runtime Qube works in: its files, its browser (logins kept), attachments, reset |
 | [Connected apps (connectors)](./connectors.md) | Gmail, Drive, Calendar, Slack, GitHub, Notion and more, with approval rules |
 | [Memory and skills](./memory-and-skills.md) | What Qube remembers across chats, past conversations, reusable playbooks |
 | [Automations](./automations.md) | Scheduled tasks, the periodic check-in, and what runs while you're away |

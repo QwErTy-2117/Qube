@@ -34,3 +34,6 @@ agent.sqlite-*
 # Source of truth stays TERMS.md / PRIVACY.md at the repo root.
 /public/legal/
 .superpowers/
+
+# Generated pdf.js runtime assets (scripts/sync-pdf-worker.mjs)
+/public/pdf/

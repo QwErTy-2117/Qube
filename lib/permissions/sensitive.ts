@@ -148,28 +148,25 @@ export function classifyLocalTool(
     const p = (args.path as string) || (args.filepath as string) || "this file";
     return { sensitive: true, kind: "delete_file", purpose: `Delete file "${String(p).slice(0, 160)}" — this cannot be undone` };
   }
-  // Computer Use: OS-level control always pauses except read-only lookups.
-  // list_apps / get_app_state / window reads / doctor / capabilities auto-allow.
-  if (toolName === "computer_list_apps" || toolName === "computer_get_app_state" ||
-      toolName === "computer_list_windows" || toolName === "computer_get_window" ||
-      toolName === "computer_get_window_state" || toolName === "computer_doctor" ||
-      toolName === "computer_clipboard_read" ||
-      toolName === "computer_capabilities") {
-    return { sensitive: false, purpose: "" };
-  }
-  if (toolName.startsWith("computer_")) {
-    const a = (args || {}) as Record<string, any>;
-    const app = typeof a.app === "string" && a.app ? ` in ${a.app.slice(0, 80)}` : "";
-    const detail =
-      (typeof a.text === "string" && a.text ? ` — "${a.text.slice(0, 80)}"` : "") ||
-      (typeof a.key === "string" && a.key ? ` — "${a.key.slice(0, 40)}"` : "") ||
-      (typeof a.value === "string" && a.value ? ` — "${a.value.slice(0, 80)}"` : "");
+  // Qube Computer: everything the agent does INSIDE the runtime is not a
+  // host side effect, so it runs without pausing. The boundary crossings
+  // (import/export) and the destructive reset do pause.
+  if (toolName === "computer_import" || toolName === "computer_export") {
+    const p = (args.path as string) || "this path";
     return {
       sensitive: true,
-      kind: "computer_control",
-      purpose: `Control your computer${app}${detail} — moves the mouse, clicks, or types outside Qube`.slice(0, 220),
+      kind: "outside_workspace",
+      purpose: `Move a file between your machine and the Qube Computer: "${String(p).slice(0, 160)}"`.slice(0, 220),
     };
   }
+  if (toolName === "computer_reset") {
+    return {
+      sensitive: true,
+      kind: "delete_file",
+      purpose: "Reset the Qube Computer — deletes its files, downloads and browser profile (logins)".slice(0, 220),
+    };
+  }
+  if (toolName.startsWith("computer_")) return { sensitive: false, purpose: "" };
   if (toolName === "run_command") {
     const cmd = String((args.command as string) || "");
     // Destructive shell always pauses; other commands are covered by

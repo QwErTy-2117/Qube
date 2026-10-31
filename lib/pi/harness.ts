@@ -655,35 +655,16 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     console.error("[pi-harness] MCP load failed (non-fatal):", e.message);
   }
 
-  // Computer Use: OS-level control via open-codex-computer-use (`ocu`).
-  // Native wrapper tools (computer_* prefix, no MCP collision). Failures are
-  // isolated — a missing binary yields a helpful install hint per call.
+  // Qube Computer: Qube-owned persistent runtime. Tools execute inside the
+  // runtime by default; only computer_import/computer_export touch host
+  // paths and those go through the usual permission prompt.
   try {
-    const { createComputerTools } = await import("./computer-tools");
-    const { isComputerUseDisabled } = await import("./computer-use-mcp");
-    if (!isComputerUseDisabled()) {
-      const computerTools = createComputerTools(config.threadId, { includeAskUser: true });
-      console.log(`[pi-harness] Merging ${Object.keys(computerTools).length} computer-use tools for thread ${config.threadId}`);
-      tools = { ...tools, ...computerTools };
-    }
+    const { createComputerTools } = await import("@/lib/computer/tools");
+    const computerTools = createComputerTools(config.threadId);
+    console.log(`[pi-harness] Merging ${Object.keys(computerTools).length} computer tools for thread ${config.threadId}`);
+    tools = { ...tools, ...computerTools };
   } catch (e: any) {
-    console.warn("[pi-harness] Computer-use tools load failed (non-fatal):", e?.message || String(e));
-  }
-
-  // Computer-use kernel: uniform describe → repeat-guard → permission →
-  // execute → verify → recover → log pipeline for browser/computer tools.
-  // Wraps BEFORE the observer below so lastToolError sees kernel results.
-  try {
-    const { applyKernel, kernelEnabled, StateTracker } = await import("@/lib/computer-use/index");
-    if (kernelEnabled()) {
-      applyKernel(tools as Record<string, any>, { threadId: config.threadId, interactive: true });
-      try {
-        const resume = StateTracker.forThread(config.threadId).resumeContext();
-        if (resume) systemPrompt += `\n\n${resume}`;
-      } catch {}
-    }
-  } catch (e: any) {
-    console.warn("[pi-harness] Kernel wrap failed (non-fatal):", (e?.message || String(e)).slice(0, 200));
+    console.warn("[pi-harness] Computer tools load failed (non-fatal):", e?.message || String(e));
   }
 
   // NOTE: Do NOT patch tool schemas here. Pi built-in tools already carry Zod
@@ -737,12 +718,6 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
 
   // Ensure MCP clients are closed when streaming ends or aborts — attach to signal and finally
   const closeMcp = async () => {
-    // Snapshot open browser tabs FIRST: MCP teardown closes the agent's
-    // pages, and the snapshot restores them next launch (stored session).
-    try {
-      const { snapshotBrowserTabs } = await import("@/lib/browser/tabs");
-      await snapshotBrowserTabs();
-    } catch {}
     if (mcpClients.length > 0) {
       try {
         await closeMcpClients(mcpClients);

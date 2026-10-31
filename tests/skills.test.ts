@@ -207,7 +207,7 @@ describe("self-created skills", () => {
       instructions: "# Expense report\n1. List receipts.\n2. Sum by category.\n3. Present the workbook.",
       source: "user",
     });
-    assert.equal(res.ok, true, res.error);
+    assert.equal(res.ok, true, res.error ?? "upsert failed");
     const md = join(skillRootDir(), "expense-report", "SKILL.md");
     assert.ok(existsSync(md));
     assert.match(readFileSync(md, "utf-8"), /Expense report/);
@@ -276,7 +276,7 @@ describe("bundled upgrades", () => {
     skillStore.reload();
     const all = skillStore.getAll();
     const res = skillStore.sync(all);
-    assert.equal(res.ok, true, res.error);
+    assert.equal(res.ok, true, res.error ?? "upsert failed");
     for (const bundled of BUNDLED_SKILLS) {
       assert.ok(!existsSync(join(skillRootDir(), bundled.name)), `${bundled.name} must not be shadowed by an identical copy`);
     }

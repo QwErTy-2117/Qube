@@ -29,24 +29,17 @@ can be set in the app.
 | `LWC_CLIENT_VERSION` | Pins the Codex client version used for ChatGPT model discovery. By default Qube tracks the latest `@openai/codex` release automatically; only pin it if discovery misbehaves. |
 | `LWC_DEFAULT_MODEL` | Fallback ChatGPT model for requests that don't name one. |
 
-## Browser and computer use
+## Qube Computer
 
-See [Browser automation](./browser.md) and [Computer use](./computer-use.md)
-for the full feature context.
+See [Qube Computer](./computer.md) for the full feature context: the
+persistent runtime, its browser profile, attachments and reset.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CHROME_PATH` | — | Absolute path to the Chrome/Chromium/Edge binary to launch. |
-| `BROWSER_HEADED` (or `BROWSER_HEADLESS=0`) | headless | Set to `1` to show a real OS browser window in addition to the side panel. |
-| `BROWSER_CDP_PORT` | `9222` | Chrome DevTools Protocol port for the managed browser. |
-| `BROWSER_MCP_DISABLED` | off | Set to `1` to disable the built-in browser automation service. |
-| `BROWSER_MCP_COMMAND` / `BROWSER_MCP_ARGS_JSON` | built-in service | Replace the built-in browser service with a custom command. |
-| `PLAYWRIGHT_BROWSERS_PATH` | OS cache | Override where Playwright-bundled Chromium is looked for. |
-| `COMPUTER_USE_DISABLED` | off | Set to `1` to disable OS-level computer control entirely. |
-| `COMPUTER_USE_COMMAND` | `ocu`/`open-computer-use` | Override the computer-use driver command. |
-| `COMPUTER_USE_TIMEOUT_MS` | `60000` | Timeout for a driver call. |
-| `COMPUTER_TAKEOVER_TTL_MS` | `900000` (15 min) | How long a browser takeover request waits for you. |
-| `COMPUTER_USE_KERNEL` | on | The describe → permission → verify kernel wrapper; set to `0` to disable. |
+| `QUBE_DATA_DIR` | app data dir | Where the `.computer/` runtime directory lives. |
+| `CHROME_PATH` | auto-detect | Absolute path to the Chrome/Chromium/Edge binary used by the computer browser. |
+| `QUBE_COMPUTER_BROWSER_PORT` | `9223` | DevTools port for the computer browser. |
+| `QUBE_COMPUTER_BROWSER_HEADED` | off (headless) | Set to `1` to show the browser window. |
 
 ## Agent execution limits
 

@@ -257,246 +257,6 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     },
   });
 
-  // Browser-only automation (Rakazo parity: browser_screenshot /
-  // browser_pixel_act / browser_navigate / browser_snapshot / browser_act /
-  // request_takeover). Backed by the managed browser window via CDP.
-  // NOT OS desktop control. Vision: screenshots reach the MODEL via
-  // toModelOutput (image-data parts) backed by the frame cache in
-  // computer-use — never as base64 inside the JSON text.
-  async function modelOutputWithFrame(output: unknown): Promise<any> {
-    try {
-      const { recallFrame } = await import("./computer-use");
-      const parsed = typeof output === "string" ? JSON.parse(output) : (output as any);
-      const fid = (parsed as any)?.frameId as string | undefined;
-      const bytes = fid ? recallFrame(fid) : undefined;
-      const text = typeof output === "string" ? output : JSON.stringify(output);
-      if (bytes) {
-        return {
-          type: "content",
-          value: [
-            { type: "text", text: text.slice(0, 2000) },
-            { type: "image-data", data: bytes, mediaType: "image/jpeg" },
-          ],
-        };
-      }
-      return { type: "text", value: text.slice(0, 4000) };
-    } catch {
-      return { type: "text", value: String(output).slice(0, 4000) };
-    }
-  }
-  async function runBrowserScreenshot(): Promise<string> {
-    try {
-      const { browserScreenshot, screenClaim } = await import("./computer-use");
-      try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
-      const obs = await browserScreenshot("browser observed");
-      pokeBrowserPanel();
-      if (obs.error && !obs.imageBase64) return JSON.stringify({ error: obs.error, text: obs.text });
-      return JSON.stringify({ text: obs.text, frameId: obs.frameId, unchanged: !!obs.unchanged, imageChars: obs.imageBase64?.length || 0 });
-    } catch (e: any) {
-      return JSON.stringify({ error: e?.message || String(e) });
-    }
-  }
-  /** Nudge the side-panel screencast to repaint now: agent CDP sessions
-   * never touch the panel pipe, so without this the live view only caught
-   * up on the next idle snapshot or on user input. Fire-and-forget. */
-  function pokeBrowserPanel(): void {
-    try {
-      void import("@/lib/browser/screencast").then((m) => {
-        try { m.pokeFrames(); } catch {}
-      }).catch(() => {});
-    } catch {}
-  }
-  async function runBrowserPixelAct(actions: unknown, observe?: boolean, settle_ms?: number): Promise<string> {
-    return withPerm("browser_pixel_act", { actions }, async () => {
-      try {
-        const { browserPixelAct, screenClaim } = await import("./computer-use");
-        try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
-        const res = await browserPixelAct(actions as any, { observe, settleMs: settle_ms });
-        pokeBrowserPanel();
-        // Keep base64 out of the transcript text — the model gets the real
-        // bytes via toModelOutput. Report the byte count instead.
-        const { imageBase64, ...rest } = res as any;
-        void imageBase64;
-        return JSON.stringify({ ...rest, imageChars: (res as any)?.imageBase64?.length || 0 }).slice(0, 12000);
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e) });
-      }
-    });
-  }
-  const BROWSER_SCREENSHOT_DESC =
-    "Screenshot the managed browser window (NOT the OS desktop). Returns frame metadata and an image. Use before x/y coordinate actions and whenever the page may have changed. Identical consecutive frames omit image bytes.";
-  const BROWSER_PIXEL_ACT_DESC =
-    "Perform up to 24 ordered x/y actions inside the managed browser window and return the resulting screenshot. NOT OS desktop control. Batch only predictable actions; stop before an outcome you need to inspect. " +
-    "Valid kinds ONLY: click {x,y}, move {x,y}, down {x,y}, up {x,y}, type {text}, key {key, modifiers?}, scroll {direction,amount}, wait {ms}. " +
-    "Key modifiers allowed: Ctrl, Shift, Alt (no Meta/Super/Win). Examples: {kind:\"click\",x:640,y:450}, {kind:\"type\",text:\"hello\"}, {kind:\"key\",key:\"Enter\"}. " +
-    "There is no OS Start menu/launcher — NEVER try to open local apps like calculator or text editor with coordinates or Super/Meta keys. " +
-    "For workspace files/URLs use open_path; for shell work use run_command. Max 2 attempts per action — on failure inspect state and switch methods, never replay the same failing call.";
-  const pixelActSchema = {
-    actions: z.array(z.record(z.string(), z.any())).describe("Ordered actions (max 24)"),
-    observe: z.boolean().optional().describe("Screenshot after acting (default true)"),
-    settle_ms: z.number().optional().describe("Ms to wait before the screenshot (0-5000)"),
-  };
-  extraTools.browser_screenshot = tool({
-    description: BROWSER_SCREENSHOT_DESC,
-    inputSchema: z.object({}),
-    execute: runBrowserScreenshot,
-    toModelOutput: async ({ output }: any) => modelOutputWithFrame(output),
-  });
-  extraTools.browser_pixel_act = tool({
-    description: BROWSER_PIXEL_ACT_DESC,
-    inputSchema: z.object(pixelActSchema),
-    execute: async ({ actions, observe, settle_ms }: { actions: unknown; observe?: boolean; settle_ms?: number }) =>
-      runBrowserPixelAct(actions, observe, settle_ms),
-    toModelOutput: async ({ output }: any) => modelOutputWithFrame(output),
-  });
-  // Deprecated aliases — kept so old sessions keep working. The model must
-  // use the browser_* names above; these only exist for back-compat.
-  extraTools.computer_observe = tool({
-    description: `[DEPRECATED alias of browser_screenshot — use browser_screenshot instead.] ${BROWSER_SCREENSHOT_DESC}`,
-    inputSchema: z.object({}),
-    execute: runBrowserScreenshot,
-    toModelOutput: async ({ output }: any) => modelOutputWithFrame(output),
-  });
-  extraTools.computer_act = tool({
-    description: `[DEPRECATED alias of browser_pixel_act — use browser_pixel_act instead.] ${BROWSER_PIXEL_ACT_DESC}`,
-    inputSchema: z.object(pixelActSchema),
-    execute: async ({ actions, observe, settle_ms }: { actions: unknown; observe?: boolean; settle_ms?: number }) =>
-      runBrowserPixelAct(actions, observe, settle_ms),
-    toModelOutput: async ({ output }: any) => modelOutputWithFrame(output),
-  });
-  // open_path: open a workspace file in its OS default app (outside the
-  // browser — the agent CANNOT see that app), or an http(s) URL in the
-  // managed browser (visible via browser_screenshot).
-  extraTools.open_path = tool({
-    description:
-      "Open a workspace file in its OS default app, or an http(s) URL in the managed browser. " +
-      "NOTE: OS apps open outside the browser and are NOT visible to the agent — for files this returns only an open confirmation, not a screenshot of the file. " +
-      "For URLs it navigates the managed browser and returns a browser screenshot. " +
-      "It cannot open or control OS apps like calculator or text editor for the agent to see. " +
-      "Use for visual/binary files that read_file cannot show (images, PDFs, decks), knowing the agent sees only browser URLs, never OS app windows.",
-    inputSchema: z.object({
-      path: z.string().describe("Workspace-relative file path or http(s) URL to open"),
-    }),
-    execute: async ({ path }: { path: string }) => {
-      return withPerm("open_path", { path }, async () => {
-        try {
-          const target = String(path || "").trim();
-          if (!target) return JSON.stringify({ error: "path is required" });
-          const { browserScreenshot, browserNavigate, screenClaim } = await import("./computer-use");
-          try { screenClaim.claim(threadId); } catch (e: any) { return JSON.stringify({ error: e?.message || String(e) }); }
-          if (/^https?:\/\//i.test(target)) {
-            const nav = await browserNavigate(target);
-            // Surface navigation failures (e.g. blocked targets) instead of
-            // screenshotting whatever page happens to be open.
-            if ((nav as any).error) {
-              return JSON.stringify({ url: target, title: "", error: (nav as any).error, fallback: (nav as any).fallback }).slice(0, 2000);
-            }
-            const obs = await browserScreenshot(`open_path ${target}`);
-            pokeBrowserPanel();
-            return JSON.stringify({ url: (nav as any).url || target, title: (nav as any).title || "", screen: obs.text }).slice(0, 6000);
-          }
-          const resolved = resolveAgentPath(target, "read");
-          const { execFile } = await import("node:child_process");
-          const plat = process.platform;
-          const cmd = plat === "darwin" ? "open" : plat === "win32" ? "cmd" : "xdg-open";
-          const args = plat === "darwin" ? [resolved] : plat === "win32" ? ["/c", "start", "", resolved] : [resolved];
-          await new Promise<void>((resolve, reject) => {
-            const child = execFile(cmd, args, { timeout: 10000, windowsHide: true }, (err) => {
-              if (err) reject(err);
-              else resolve();
-            });
-            // Don't keep the agent waiting on the opened app: detach the timer.
-            try { child.unref(); } catch {}
-          });
-          // OS apps open outside the managed browser: no screenshot can show
-          // them. Return an honest confirmation instead of a browser frame.
-          return JSON.stringify({
-            path: resolved,
-            status: "opened",
-            visibleToAgent: false,
-            note: "Opened in the OS default app, outside the managed browser. The agent cannot see or control OS app windows — use read_file/list_directory/run_command to work with the file's contents.",
-          }).slice(0, 2000);
-        } catch (e: any) {
-          return JSON.stringify({ error: e?.message || String(e) });
-        }
-      });
-    },
-  });
-  extraTools.browser_navigate = tool({
-    description:
-      'Open a URL in the managed browser and return the document title. Prefer this over pixel clicks for web pages. If the result includes fallback:"browser_pixel_act", use browser_pixel_act in the same browser window instead.',
-    inputSchema: z.object({ url: z.string().describe("http(s) URL to open") }),
-    execute: async ({ url }: { url: string }) => {
-      try {
-        const { browserNavigate } = await import("./computer-use");
-        const res = await browserNavigate(String(url || ""));
-        pokeBrowserPanel();
-        return JSON.stringify(res).slice(0, 4000);
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act" });
-      }
-    },
-  });
-  extraTools.browser_snapshot = tool({
-    description:
-      "Capture a bounded snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over browser_screenshot for web pages. If fallback is browser_pixel_act, use pixel/coordinate tools in the same browser window instead.",
-    inputSchema: z.object({}),
-    execute: async () => {
-      try {
-        const { browserSnapshot } = await import("./computer-use");
-        const res = await browserSnapshot();
-        const out = { url: res.url, title: res.title, tree: res.tree?.slice(0, 8000), elements: res.elements, fallback: (res as any).fallback, error: (res as any).error, note: (res as any).note };
-        return JSON.stringify(out).slice(0, 12000);
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act" });
-      }
-    },
-  });
-  extraTools.browser_act = tool({
-    description:
-      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type). Prefer this over browser_pixel_act for web pages. If the result includes fallback:"browser_pixel_act", use browser_pixel_act instead. Never replay completed or uncertain actions.',
-    inputSchema: z.object({
-      actions: z.array(z.record(z.string(), z.any())).describe("Page actions by ref (max 24)"),
-    }),
-    execute: async ({ actions }: { actions: unknown }) => {
-      try {
-        const { browserAct } = await import("./computer-use");
-        const res = await browserAct(actions as any);
-        pokeBrowserPanel();
-        return JSON.stringify(res).slice(0, 6000);
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act", uncertain: true });
-      }
-    },
-  });
-  extraTools.request_takeover = tool({
-    description:
-      "Ask the user to take control for protected input or human judgment (site login, captcha, 2FA, payment). The run pauses as waiting_takeover; the user acts in the Browser panel, then the run continues. Use when browser tools cannot operate or credentials must stay with the user.",
-    inputSchema: z.object({ reason: z.string().describe("Why human input is needed") }),
-    execute: async ({ reason }: { reason: string }) => {
-      if (!interactive) {
-        return JSON.stringify({ queued: false, error: "No interactive user in this run (background/subagent). Proceed autonomously or report the blocker." });
-      }
-      return withPerm("request_takeover", { reason }, async () => {
-        try {
-          const { normalizeQuestions, createQuestionnaire } = await import("@/lib/agent/tools/ask-user-tool");
-          const { takeoverLeaseMs } = await import("./computer-use");
-          const normalized = normalizeQuestions([{ id: "takeover", question: `Takeover needed: ${String(reason || "protected input")}. Take control in the Browser panel, then confirm to continue.` }]);
-          if ("error" in normalized) return JSON.stringify({ error: normalized.error });
-          const { promise } = createQuestionnaire(threadId, normalized);
-          // Takeover lease TTL (Rakazo parity: 15 min — logins/captchas take
-          // longer than a permission click), not the generic approval timeout.
-          const timeoutMs = takeoverLeaseMs();
-          const answers = await Promise.race([promise, new Promise<null>((r) => setTimeout(() => r(null), timeoutMs))]);
-          if (answers === null) return JSON.stringify({ timedOut: true, status: "waiting_takeover", note: "User did not respond. Re-observe and continue or ask again once." });
-          return JSON.stringify({ status: "takeover_complete", answers });
-        } catch (e: any) {
-          return JSON.stringify({ error: e?.message || String(e) });
-        }
-      });
-    },
-  });
-
   return {
     ...extraTools,
     generate_ui: tool({
@@ -677,7 +437,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
                 } catch {}
   extraTools.dev_server = tool({
     description:
-      "Start (or reuse) a local dev server for the edit→run→observe→test loop: spawns the command in the workspace, waits until the URL responds, and navigates the managed browser there for UI testing. Reuses a running server for the same command. Use dev_server_log to read output, browser_snapshot/browser_act to test the UI, and request_takeover never applies to localhost. Stop with dev_server stop:true.",
+      "Start (or reuse) a local dev server for the edit→run→observe→test loop: spawns the command in the workspace, waits until the URL responds, and opens it in the Qube Computer browser for UI testing. Reuses a running server for the same command. Use dev_server_log to read output and computer_browser (read/click/type) to test the UI. Stop with dev_server stop:true.",
     inputSchema: z.object({
       command: z.string().describe("Dev command, e.g. 'npm run dev -- -p 3010'"),
       url: z.string().describe("URL to wait for, e.g. 'http://localhost:3010'"),
@@ -686,7 +446,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     }),
     execute: async ({ command, url, timeoutMs, stop }: { command: string; url: string; timeoutMs?: number; stop?: boolean }) => {
       return withPerm("dev_server", { command, url }, async () => {
-        const { startDevServer, stopDevServer, waitForHttp, devServerLog } = await import("@/lib/computer-use/devloop");
+        const { startDevServer, stopDevServer, waitForHttp, devServerLog } = await import("@/lib/dev-server/devloop");
         const cwd = getWorkspacePath();
         if (stop === true) {
           const stopped = stopDevServer(cwd, String(command || ""));
@@ -698,13 +458,12 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
         }
         const srv = startDevServer(cwd, String(command), String(url));
         const wait = await waitForHttp(String(url), Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 120000));
-        // Open the app in the managed browser so UI testing follows in-turn.
+        // Open the app in the Qube Computer browser so UI testing follows in-turn.
         let opened = "";
         try {
-          const { browserNavigate, screenClaim } = await import("./computer-use");
-          try { screenClaim.claim(threadId); } catch {}
-          const nav = await browserNavigate(String(url));
-          opened = (nav as any).url || String(url);
+          const { openInComputerBrowser } = await import("@/lib/computer/browser");
+          const nav = await openInComputerBrowser(String(url));
+          opened = nav.url;
         } catch (e: any) { opened = `browser open failed: ${e?.message || String(e)}`; }
         const tail = devServerLog(cwd, String(command), 15);
         return JSON.stringify({
@@ -712,7 +471,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           browser: opened,
           logTail: tail,
           note: wait.ok
-            ? "Server ready and open in the managed browser. Test with browser_snapshot/browser_act; read dev_server_log for errors; iterate edit→run→observe."
+            ? "Server ready and open in the Qube Computer browser. Test with computer_browser; read dev_server_log for errors; iterate edit→run→observe."
             : "Server did not respond in time — read dev_server_log for the crash/error, fix, and retry.",
         }).slice(0, 6000);
       });
@@ -726,7 +485,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     }),
     execute: async ({ command, tail }: { command: string; tail?: number }) => {
       try {
-        const { devServerLog } = await import("@/lib/computer-use/devloop");
+        const { devServerLog } = await import("@/lib/dev-server/devloop");
         const lines = devServerLog(getWorkspacePath(), String(command || ""), tail ?? 60);
         return JSON.stringify({ command, lines }).slice(0, 12000);
       } catch (e: any) {

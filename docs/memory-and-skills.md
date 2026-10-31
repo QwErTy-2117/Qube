@@ -66,18 +66,27 @@ particular kind of task, including which tools it may use.
 
 ### Built-in skills
 
-Four skills ship with Qube, always available and not deletable:
+Seven skills ship with Qube, always available and not deletable:
 
 | Skill | When it applies |
 | --- | --- |
-| `research` | Sourced research and comparison briefs with citations |
-| `developing` | Writing, editing, verifying and demoing code in the workspace |
-| `creating-documents` | Polished documents, presentations, spreadsheets and images |
-| `trip-planning` | Travel itineraries with live-verified prices, hours and availability |
+| `docx` | Creating and editing Word documents |
+| `pptx` | Building slide decks |
+| `xlsx` | Spreadsheets, formulas and recalculation |
+| `pdf` | Reading, extracting from and producing PDFs |
+| `software-delivery` | Implementing, testing and shipping code |
+| `frontend-design` | UI, layout and typography work |
+| `skill-authoring` | Writing or improving a skill |
 
-Qube picks the relevant skill automatically. You can force one by starting a
-message with its name, for example `/research compare PostgreSQL and SQLite
-for an embedded app`.
+Skills are folders with a `SKILL.md`. Qube lists their names and descriptions
+in the prompt and loads a body only when the work actually calls for it, so a
+large skill library costs nothing until it is used. Qube picks the relevant
+skill automatically; you can force one by starting a message with its name, for
+example `/docx turn these notes into a report`.
+
+Every skill records its licence and provenance, and you can see them in
+**Settings → Skills**. The provenance and licence audit of the Anthropic Skills
+repository is documented in [Skills](./skills.md).
 
 ### The skills marketplace
 
@@ -96,11 +105,12 @@ software that can call tools on your behalf.
 
 ### Your own skills
 
-You can create a custom skill in the same screen: give it a name, description,
-instructions, and the tools it is allowed to use. Qube can also learn skills
-by itself — after repeated successful procedures it proposes a reusable
-playbook, which starts as a candidate and is only promoted once it proves
-itself. Unused or failing skills can be deprecated or deleted.
+You can create a custom skill in the same screen or by writing a `SKILL.md`
+folder under `.memory/skills/`. Qube can also create and improve skills itself
+through `manage_skill`, and it is instructed to prefer improving an existing
+skill over adding a near-duplicate. Your skills win over bundled skills with
+the same name and survive app upgrades; unused skills can be deprecated or
+deleted. The full format and precedence rules are in [Skills](./skills.md).
 
 ## Related reading
 

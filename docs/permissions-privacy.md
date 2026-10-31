@@ -31,8 +31,11 @@ An approval card appears and the run pauses until you decide:
 - **Purchases, payments, sharing private data.**
 - **Destructive shell commands** — patterns such as `rm -rf`, `sudo`, piped
   remote install scripts, disk formatting.
-- **Any computer-use action** that clicks, types, presses keys, scrolls,
-  drags or launches an app outside Qube.
+- **Moving files across the Qube Computer boundary** — `computer_import`
+  (your machine → computer) and `computer_export` (computer → your machine).
+  Every transfer asks, whatever the path, because the crossing itself is the
+  action. Everything the agent does *inside* the computer is not a host action
+  and does not pause; resetting the computer always asks.
 
 If you deny, or don't respond within five minutes, the action is cancelled and
 Qube continues with an in-workspace alternative. Sensitive connector calls
@@ -40,9 +43,10 @@ time out rather than executing silently.
 
 ### Handled by you in person
 
-Logins, captchas, two-factor prompts and payments in the browser are never
-automated — Qube requests a takeover, you act in the Browser panel, and the
-task resumes. See [Browser automation](./browser.md).
+Logins, captchas, two-factor prompts and payments in the Qube Computer
+browser are never automated — Qube asks you to complete the human step
+yourself in the Qube Computer panel, then continues. See
+[Qube Computer](./computer.md).
 
 ### Background runs have stricter rules
 
@@ -73,7 +77,9 @@ Inside it you will find:
   (`providers.json`), long-term memory, chat sessions and titles, scheduled
   tasks and run logs, MCP server configs, skills, ChatGPT sign-in session,
   and the local signing secret.
-- `.browser-profile/` — the managed browser's profile, cookies and sessions.
+- `.computer/` — the Qube Computer runtime: its files (`home/`), staged
+  attachments, downloads, browser profile (cookies and logins) and activity
+  log. It persists across restarts and is only deleted by an explicit reset.
 - `sidecar.log` — the local server's diagnostic log.
 - `agent.sqlite` — only present when the experimental durable storage flag is
   enabled; the default installation uses the JSON files above.

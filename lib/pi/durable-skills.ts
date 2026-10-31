@@ -2,7 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { defineExtension, section } from "@earendil-works/pi-durable";
 import { getDataDir } from "@/lib/data-dir";
-import { toSkillMd, type SkillConfig } from "@/lib/skills/types";
+import { renderSkillMd } from "@/lib/skills/registry";
+import type { SkillConfig } from "@/lib/skills/types";
 
 export type SkillRef = Pick<SkillConfig, "name" | "description"> & { path: string };
 
@@ -32,7 +33,7 @@ export function materializeSkills(skills?: SkillConfig[], baseDir?: string): Ski
     if (!s?.name || !s?.description) continue;
     const skillDir = join(dir, s.name);
     mkdirSync(skillDir, { recursive: true });
-    writeFileSync(join(skillDir, "SKILL.md"), toSkillMd(s), "utf-8");
+    writeFileSync(join(skillDir, "SKILL.md"), renderSkillMd(s), "utf-8");
     refs.push({ name: s.name, description: s.description, path: skillDir });
   }
   return refs;

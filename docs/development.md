@@ -76,8 +76,8 @@ npx tsc --noEmit  # type checking (strict TypeScript)
 The test runner creates an isolated temporary `QUBE_DATA_DIR` per run, so
 tests never touch your real data and work identically on Windows, macOS and
 Linux. The CI additionally builds the sidecar, boots the exact bundled
-artifact with the packaged Node binary, and smoke-tests the browser MCP
-service on all three operating systems.
+artifact with the packaged Node binary, and asserts the Qube Computer API
+answers on all three operating systems.
 
 ## Architecture at a glance
 
@@ -94,23 +94,25 @@ Tauri shell (src-tauri/)            Next.js app (app/, components/, lib/)
                               40-step loop · continuation · compaction
                  ┌────────────┬───────────────┬───────────────┬───────────┐
                  ▼            ▼               ▼               ▼           ▼
-           file/shell     web + browser   connectors      memory +     scheduler
-           tools          (managed Chrome, (Composio)       skills       (tasks +
-           (workspace)     CDP + MCP)                      (.memory)     heartbeat)
+           file tools     web + browser   connectors      memory +     scheduler
+           (workspace)    (Qube Computer: (Composio)       skills       (tasks +
+                           runtime + CDP)                  (.memory)    heartbeat)
 ```
 
 ### Key directories
 
 | Path | Responsibility |
 | --- | --- |
-| `app/` | Next.js App Router: chat streaming route, settings/connector/scheduler/browser APIs, onboarding pages |
-| `components/` | React UI: chat shell, settings dialogs, file/browser workspaces, tool activity cards |
+| `app/` | Next.js App Router: chat streaming route, settings/connector/scheduler/computer APIs, onboarding pages |
+| `components/` | React UI: chat shell, settings dialogs, artifact viewers, the Qube Computer panel, tool activity cards |
 | `lib/pi/` | The authoritative agent harness, system prompt, tool definitions, subagents, scheduling tools, model clients, compaction |
+| `lib/dev-server/` | Workspace dev-server registry for the edit → run → observe loop |
 | `lib/agent/` | Shared agent helpers: observability, vision/thinking capability detection, SSRF guards |
-| `lib/browser/` | Managed Chromium launch, CDP screencast, cookie jar, the built-in browser MCP service |
-| `lib/computer-use/` | OS-level control pipeline (describe → permission → execute → verify → recover) |
+| `lib/computer/` | Qube Computer runtime: confined paths/commands, persistent Chromium profile, attachments, tools |
 | `lib/connectors/` | Composio integration, connector metadata and branding, key storage |
-| `lib/memory/`, `lib/skills/`, `lib/learning/`, `lib/proactivity/` | Persistent memory, skills marketplace and learning, proactive-suggestion engine |
+| `lib/artifact/` | Artifact kinds and pure helpers shared by the shell, chat cards and tests |
+| `lib/workspace/` | Workspace file access, sheet operations, in-browser formula engine, xlsx formula recovery |
+| `lib/memory/`, `lib/skills/`, `lib/learning/`, `lib/proactivity/` | Persistent memory, bundled skills (SKILL.md format), skills marketplace and learning, proactive-suggestion engine |
 | `lib/scheduler/` | 60-second tick scheduler, task store, heartbeat state, announcements |
 | `lib/middleware/`, `lib/permissions/` | Workspace resolution and the approval/permission classifier |
 | `lib/acp/` | Agent Client Protocol stdio adapter for editors |
@@ -128,9 +130,11 @@ Tauri shell (src-tauri/)            Next.js app (app/, components/, lib/)
   stay generic; `lib/middleware/permission-middleware.ts` and
   `lib/permissions/sensitive.ts` decide whether a call runs, prompts, or is
   denied, including headless background runs.
-- **The browser is a shared managed Chromium** driven over CDP by the
-  auto-MCP service (`lib/browser/auto-mcp/server.mjs`) and mirrored into the
-  side panel. It is separate from optional OS-level computer use (`ocu`).
+- **The computer is one persistent runtime.** `lib/computer/` owns the
+  directory tree, the confined command environment, the Chromium profile and
+  the tool surface; `app/api/computer` is only a read-mostly view of it. There
+  is no second browser bridge or OS-automation driver. Resetting the computer
+  is explicit — an app hard reset never deletes its files.
 - **All durable state is local**, under `QUBE_DATA_DIR` (`.memory/`,
   workspace, browser profile). Nothing requires a Qube-operated backend.
 - **System-prompt behavior is tested.** Several test suites lock in the

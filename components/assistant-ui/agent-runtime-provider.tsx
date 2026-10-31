@@ -27,10 +27,8 @@ import {
   GoalToolUI,
   GenerativeUIToolUI,
   ShowFileToolUI,
-  ComputerToolUI,
 } from "@/components/assistant-ui/tools";
 import { ConnectorToolUI, ConnectServiceToolUI, CompactionNoticeDataUI } from "@/components/assistant-ui/tools";
-import { BrowserToolUI } from "@/components/workspace";
 import { useChatGPTProviderSync } from "@/components/chatgpt/chatgpt-provider-sync";
 import { type ReactNode, useEffect, useState } from "react";
 
@@ -65,37 +63,8 @@ function ToolUIRegistrar() {
   // Pi automation tools — schedules, heartbeat
   useAssistantToolUI({ toolName: "schedule_task", render: ScheduleTaskToolUI });
   useAssistantToolUI({ toolName: "update_heartbeat", render: UpdateHeartbeatToolUI });
-  // open-browser-use (obu mcp) — live Chrome via extension, panel mirrors it
-  useAssistantToolUI({ toolName: "open_tab", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "navigate", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "tabs", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "user_tabs", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "page_info", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "snapshot", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "act", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "click", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "type", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "press_key", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "cdp", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "move_mouse", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "run_action_plan", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "wait_load", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "claim_tab", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "finalize_tabs", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "name_session", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "turn_ended", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "ping", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "info", render: BrowserToolUI });
-  // Pi managed-browser tools — same clickable panel UI (click reopens sidebar)
-  useAssistantToolUI({ toolName: "browser_navigate", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_snapshot", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_act", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_screenshot", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "browser_pixel_act", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "computer_observe", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "computer_act", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "open_path", render: BrowserToolUI });
-  useAssistantToolUI({ toolName: "request_takeover", render: BrowserToolUI });
+  // Qube Computer tools — the shared ToolRow card renders their results;
+  // the persistent session itself is shown in the Qube Computer panel.
   // Legacy Codex native events kept for forward compat (if old sessions contain them)
   useAssistantToolUI({ toolName: "command_execution", render: RunCommandToolUI });
   useAssistantToolUI({ toolName: "file_change", render: WriteFileToolUI });
@@ -112,26 +81,6 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "composio_multi_execute_tool", render: ConnectorToolUI });
   // Generative UI (OpenIntelligentUI pattern, Qube-styled sandbox)
   useAssistantToolUI({ toolName: "generate_ui", render: GenerativeUIToolUI });
-  // Computer Use (OS-level control via open-codex-computer-use) — same
-  // shared ToolRow card as every other tool call.
-  useAssistantToolUI({ toolName: "computer_list_apps", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_get_app_state", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_click", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_secondary_action", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_scroll", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_drag", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_type_text", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_press_key", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_set_value", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_launch_app", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_activate_window", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_list_windows", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_get_window", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_get_window_state", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_doctor", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_capabilities", render: ComputerToolUI });
-  useAssistantToolUI({ toolName: "computer_run_sequence", render: ComputerToolUI });
-
   return null;
 }
 

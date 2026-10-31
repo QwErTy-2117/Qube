@@ -167,7 +167,7 @@ describe("extractToolError", () => {
     assert.match(denied || "", /not permitted/i);
   });
   it("treats any string error without explicit ok:true as failure", () => {
-    const blocked = extractToolError("browser_navigate", JSON.stringify({ url: "http://169.254.169.254/", title: "", error: "Blocked cloud instance-metadata address" }));
+    const blocked = extractToolError("computer_browser", JSON.stringify({ url: "http://169.254.169.254/", title: "", error: "Blocked cloud instance-metadata address" }));
     assert.match(blocked || "", /Blocked cloud/);
     assert.equal(extractToolError("t", JSON.stringify({ ok: true, error: "" })), null);
     assert.equal(extractToolError("t", JSON.stringify({ ok: true, note: "fine" })), null);

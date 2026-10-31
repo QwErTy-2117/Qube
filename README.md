@@ -88,7 +88,7 @@ GitHub — no documentation website required.
 
 **Guides**
 
-- [Files and the workspace](docs/files-workspace.md) · [Web research](docs/web-research.md) · [Browser automation](docs/browser.md) · [Computer use](docs/computer-use.md)
+- [Files and the workspace](docs/files-workspace.md) · [Web research](docs/web-research.md) · [Qube Computer](docs/computer.md)
 - [Connected apps](docs/connectors.md) · [Memory and skills](docs/memory-and-skills.md) · [Automations](docs/automations.md)
 - [Permissions and privacy](docs/permissions-privacy.md) · [Desktop app details](docs/desktop.md) · [Troubleshooting](docs/troubleshooting.md)
 

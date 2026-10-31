@@ -11,7 +11,7 @@ describe("durable prompt", () => {
   it("names exactly the tools that exist, nothing else", () => {
     const out = buildQubePromptSection();
     for (const t of DURABLE_TOOLS) assert.match(out, new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), t);
-    assert.doesNotMatch(out, /browser_navigate/);
+    assert.doesNotMatch(out, /computer_browser/);
     assert.doesNotMatch(out, /ask_question/);
   });
 

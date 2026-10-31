@@ -1,10 +1,14 @@
 /**
  * Unified workspace / artifact model.
- * Browser + Document + Spreadsheet + Presentation + Code share one
- * contextual request shape so the agent always knows the source.
+ *
+ * A "browser" artifact is the Qube Computer browser side panel and a
+ * "computer" artifact is the Qube Computer panel itself; everything else is
+ * a file artifact whose inner viewer comes from components/artifact.
  */
 
-export type WorkspaceKind = "browser" | "pdf" | "doc" | "sheet" | "slides" | "code" | "text";
+import { detectArtifactKind, type ArtifactKind } from "@/lib/artifact/kinds";
+
+export type WorkspaceKind = "browser" | "computer" | ArtifactKind;
 
 export type SelectionRef =
   | { kind: "pdf"; page: number; text: string }
@@ -13,7 +17,8 @@ export type SelectionRef =
   | { kind: "slides"; slide: number; text: string }
   | { kind: "code"; startLine: number; endLine: number; text: string }
   | { kind: "text"; startLine: number; endLine: number; text: string }
-  | { kind: "browser"; url: string; text: string };
+  | { kind: "browser"; url: string; text: string }
+  | { kind: "computer"; text: string };
 
 export type WorkspaceSelection = SelectionRef & { id: string; at: number };
 
@@ -60,13 +65,7 @@ export function buildContextMessage(input: { message: string; artifact: Workspac
   return `${header}\nContext selections:\n${refs}\n\nInstruction:\n${message}`;
 }
 
-export function kindForFilename(filename: string): WorkspaceKind {
-  const ext = filename.split(".").pop()?.toLowerCase() || "";
-  if (ext === "pdf") return "pdf";
-  if (["doc", "docx", "odt", "rtf"].includes(ext)) return "doc";
-  if (["xls", "xlsx", "ods"].includes(ext)) return "sheet";
-  if (ext === "csv") return "sheet";
-  if (["ppt", "pptx", "odp"].includes(ext)) return "slides";
-  if (["js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "json", "yml", "yaml", "toml", "sh", "sql", "xml"].includes(ext)) return "code";
-  return "text";
+/** File name/path → artifact kind (single source of truth). */
+export function kindForFilename(filename: string): ArtifactKind {
+  return detectArtifactKind(filename);
 }

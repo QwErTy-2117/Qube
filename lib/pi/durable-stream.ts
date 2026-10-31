@@ -159,13 +159,6 @@ export async function streamDurableToWriter(
     { modelName: opts?.modelName ?? null, reasoningEffort: opts?.reasoningEffort },
     context,
   );
-  // Record this turn's foreground-ness for the durable browser extension
-  // (process-global registry): tool executes resolve their chat thread via
-  // the ThreadMap and read interactivity from here. Best-effort, never fatal.
-  try {
-    const { setBrowserTurnContext } = await import("@/lib/pi/durable-browser");
-    setBrowserTurnContext(threadId, { interactive: opts?.interactive ?? false });
-  } catch {}
   // Load this turn's MCP + connector tools into the process registry
   // before generation resolves the tool set. Non-fatal and cleaned up
   // after the turn so stdio MCP clients never leak.

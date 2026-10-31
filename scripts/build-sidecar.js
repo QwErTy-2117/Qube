@@ -189,51 +189,9 @@ try {
     copySync(publicSrc, path.join(sidecarDistDir, 'public'));
   }
 
-  // Built-in Browser Use MCP is spawned as `node <cwd>/lib/browser/auto-mcp/server.mjs`
-  // (see lib/pi/browser-mcp.ts). It is referenced only as a path string, so Next's
-  // standalone trace never includes it — without this copy the child exits instantly
-  // in production and every chat shows "Browser Use (Connection closed)".
-  // On Windows this is the #1 production failure (ENOENT / missing script),
-  // so fail the build loudly instead of shipping a broken bundle.
-  console.log('Copying built-in Browser Use MCP server...');
-  {
-    const src = path.join(rootDir, 'lib', 'browser', 'auto-mcp', 'server.mjs');
-    const dest = path.join(sidecarDistDir, 'lib', 'browser', 'auto-mcp', 'server.mjs');
-    if (fs.existsSync(src)) {
-      copySync(src, dest);
-      console.log('  Copied lib/browser/auto-mcp/server.mjs');
-    } else {
-      console.error('  ERROR: lib/browser/auto-mcp/server.mjs not found — Browser Use MCP will fail in production. Failing build.');
-      process.exit(1);
-    }
-    if (!fs.existsSync(dest)) {
-      console.error(`  ERROR: MCP copy verification failed — ${dest} missing after copy. Failing build.`);
-      process.exit(1);
-    }
-    // server.mjs needs `ws` at runtime via dynamic import("ws"). Next's
-    // standalone trace may omit it on some platforms (Windows), so ensure
-    // it exists in sidecar-dist/node_modules regardless of trace output.
-    const wsInSidecar = path.join(sidecarDistDir, 'node_modules', 'ws', 'package.json');
-    if (!fs.existsSync(wsInSidecar)) {
-      const wsSrc = path.join(rootDir, 'node_modules', 'ws');
-      const wsDest = path.join(sidecarDistDir, 'node_modules', 'ws');
-      if (fs.existsSync(path.join(wsSrc, 'package.json'))) {
-        console.log('  ws missing from standalone trace — copying from root node_modules...');
-        copySync(wsSrc, wsDest);
-      }
-      if (!fs.existsSync(wsInSidecar)) {
-        console.error('  ERROR: ws package missing in sidecar-dist/node_modules — MCP server.mjs will crash on CDP calls. Failing build.');
-        process.exit(1);
-      } else {
-        console.log('  Ensured ws in sidecar-dist/node_modules');
-      }
-    } else {
-      console.log('  ws present in sidecar-dist/node_modules');
-    }
-  }
-
-  // Browser workspace runs server-side via fetch/jsdom + optional Playwright;
-  // no native driver binaries to chmod.
+  // The Qube Computer runtime is plain Node code inside the standalone trace
+  // (fs/path/child_process only), so there is no separate server script to
+  // copy. Its state lives in the app data dir at runtime, never in the bundle.
 
   // Ensure Codex binaries are executable (auto-installed with Qube)
   const codexCandidates = [

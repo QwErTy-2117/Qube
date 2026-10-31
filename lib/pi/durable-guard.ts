@@ -4,7 +4,12 @@ import { isSensitiveConnectorTool } from "@/lib/permissions/sensitive";
 import { isDestructiveCommand } from "@/lib/middleware/workspace";
 import { Approvals } from "@/lib/pi/durable-docs";
 
-const COMPUTER_READONLY = new Set(["computer_list_apps", "computer_get_app_state", "computer_clipboard_read"]);
+/**
+ * Qube Computer tools run inside Qube's own runtime, so they are not host
+ * side effects. Only the boundary crossings and the destructive reset
+ * need a decision.
+ */
+const COMPUTER_HOST_TOOLS = new Set(["computer_import", "computer_export", "computer_reset"]);
 
 /**
  * Mirror of the foreground permission policy for the durable path:
@@ -14,7 +19,7 @@ const COMPUTER_READONLY = new Set(["computer_list_apps", "computer_get_app_state
  */
 export function isSensitiveDurableTool(toolName: string, args?: unknown): boolean {
   if (toolName === "delete_file") return true;
-  if (toolName.startsWith("computer_") && !COMPUTER_READONLY.has(toolName)) return true;
+  if (COMPUTER_HOST_TOOLS.has(toolName)) return true;
   if (toolName === "run_command") {
     const command = (args as { command?: unknown } | null)?.command;
     return typeof command === "string" && isDestructiveCommand(command);

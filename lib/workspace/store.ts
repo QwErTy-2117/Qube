@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { detectArtifactKind } from "@/lib/artifact/kinds";
 import type { WorkspaceArtifact, WorkspaceSelection, NewSelection } from "./types";
 
 type WorkspaceState = {
@@ -45,9 +46,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const exists = s.tabs.find((t) => t.id === a.id);
       const tabs = exists ? s.tabs : [...s.tabs.slice(-7), a];
       try {
-        // Browser visibility is driven by agent browser-tool use only —
-        // never persist it, so reloads don't resurrect the browser tab.
-        if (a.kind === "browser") {
+        // Browser/computer visibility is driven by agent activity only —
+        // never persist it, so reloads don't resurrect those panels.
+        if (a.kind === "browser" || a.kind === "computer") {
           const docs = tabs.filter((t) => t.kind !== "browser");
           const docArtifact = docs.length > 0 ? { artifact: docs[docs.length - 1], tabs: docs } : null;
           if (docArtifact) localStorage.setItem(OPEN_KEY, JSON.stringify(docArtifact));
@@ -91,7 +92,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 }));
 
 export function openBrowserWorkspace() {
-  useWorkspaceStore.getState().openWorkspace({ id: "browser:session", kind: "browser", title: "Browser" });
+  useWorkspaceStore.getState().openWorkspace({ id: "computer:browser", kind: "browser", title: "Qube Computer · Browser" });
+}
+
+/** Open the unified Qube Computer side panel (live VM/computer session). */
+export function openComputerWorkspace() {
+  useWorkspaceStore.getState().openWorkspace({ id: "computer:session", kind: "computer", title: "Qube Computer" });
 }
 
 export function openDocumentWorkspace(input: {
@@ -103,16 +109,7 @@ export function openDocumentWorkspace(input: {
   slide?: number;
 }) {
   const filename = input.filename || input.filePath.split("/").pop() || input.filePath;
-  const ext = filename.split(".").pop()?.toLowerCase() || "";
-  let kind = input.kind;
-  if (!kind) {
-    if (ext === "pdf") kind = "pdf";
-    else if (["doc", "docx", "odt", "rtf"].includes(ext)) kind = "doc";
-    else if (["xls", "xlsx", "ods", "csv"].includes(ext)) kind = "sheet";
-    else if (["ppt", "pptx", "odp"].includes(ext)) kind = "slides";
-    else if (["js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "json", "yml", "yaml", "toml", "sh", "sql", "xml"].includes(ext)) kind = "code";
-    else kind = "text";
-  }
+  const kind = input.kind || detectArtifactKind(filename);
   const encodePath = (p: string) => p.split("/").map((x) => encodeURIComponent(x)).join("/");
   const downloadUrl = input.downloadUrl || `/api/files/${encodePath(input.filePath)}`;
   useWorkspaceStore.getState().openWorkspace({

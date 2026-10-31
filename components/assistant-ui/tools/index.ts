@@ -19,6 +19,5 @@ export { GoalToolUI } from "./goal-tool-ui";
 export { GenerativeUIToolUI } from "./generative-ui-tool-ui";
 export { SubagentToolUI } from "./subagent-tool-ui";
 export { ShowFileToolUI } from "./show-file-tool-ui";
-export { ComputerToolUI } from "./computer-tool-ui";
 export { ThinkingToolUI } from "./thinking-tool-ui";
 export { CompactionNoticeDataUI } from "./compaction-notice";

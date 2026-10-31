@@ -2,12 +2,13 @@ export const dynamic = "force-dynamic";
 
 export async function POST() {
   try {
-    console.log(`[setup] Pi harness active — MCP enabled, browser workspace enabled`);
-    // Warm up the shared headed browser in the background so the first
-    // browser tool call doesn't pay launch latency. Never blocks setup.
+    console.log(`[setup] Pi harness active — MCP + Qube Computer enabled`);
+    // Prepare the persistent Qube Computer runtime (directories + session
+    // state). The browser is launched lazily on first use, so an idle app
+    // costs nothing.
     try {
-      const { warmManagedChrome } = await import("@/lib/browser/managed-chrome");
-      warmManagedChrome();
+      const { ensureComputer } = await import("@/lib/computer/session");
+      ensureComputer();
     } catch {}
     return Response.json({ ok: true, message: "Pi harness active — MCP enabled" });
   } catch (e) {

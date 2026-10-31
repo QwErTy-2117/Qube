@@ -190,6 +190,16 @@ async function runPiTaskInternal(
   // Use Pi tools as base, then extend with task-specific external tools (Pi unified ownership).
   // Scheduled tasks run unattended — no interactive questioning.
   const piBaseTools = createPiTools(threadId, { includeAskUser: false });
+  // Skills are available to background runs too: load on demand, never
+  // preloaded into the prompt.
+  try {
+    const { createSkillTools } = await import("./skill-tools");
+    for (const [name, t] of Object.entries(createSkillTools())) {
+      (piBaseTools as any)[name] = t;
+    }
+  } catch (e) {
+    console.warn("[pi-task] Skill tools load failed:", e);
+  }
 
   // MCP: load custom servers for tasks as well (isolated, non-fatal)
   let mcpClients: Awaited<ReturnType<typeof loadMcpTools>>["clients"] = [];
@@ -257,20 +267,17 @@ async function runPiTaskInternal(
     console.warn("[pi-task] Headless plan tool failed:", e);
   }
 
-  // Computer Use (background-safe): read-only tools work headless; mutating
-  // computer_* tools refuse without an interactive user (see computer-tools gate).
+  // Qube Computer (background-safe): tools run inside the persistent runtime;
+  // host-file tools refuse without an interactive user to approve them.
   try {
-    const { createComputerTools } = await import("./computer-tools");
-    const { isComputerUseDisabled } = await import("./computer-use-mcp");
-    if (!isComputerUseDisabled()) {
-      const computerTools = createComputerTools(threadId, { includeAskUser: false });
-      for (const [name, t] of Object.entries(computerTools)) {
-        (piBaseTools as any)[name] = t;
-      }
-      console.log(`[pi-task] Merging ${Object.keys(computerTools).length} computer-use tools for task ${task.id}`);
+    const { createComputerTools } = await import("@/lib/computer/tools");
+    const computerTools = createComputerTools(undefined);
+    for (const [name, t] of Object.entries(computerTools)) {
+      (piBaseTools as any)[name] = t;
     }
+    console.log(`[pi-task] Merging ${Object.keys(computerTools).length} computer tools for task ${task.id}`);
   } catch (e) {
-    console.warn("[pi-task] Computer-use tools load failed:", e);
+    console.warn("[pi-task] Computer tools load failed:", e);
   }
 
   // Connectors: Composio tools for background runs (isolated, non-fatal).
@@ -522,10 +529,6 @@ async function runPiTaskInternal(
     let round = 0;
     for (;;) {
       if (signal.aborted) throw new Error("Pi task aborted before model call");
-      try {
-        const { applyKernel, kernelEnabled } = await import("@/lib/computer-use/index");
-        if (kernelEnabled()) applyKernel(baseTools as Record<string, any>, { threadId, interactive: false });
-      } catch {}
       const roundPrompt = round === 0
         ? `Execute task: ${task.name}\nInstructions: ${task.instructions}`
         : `Continue task: ${task.name}\nOriginal instructions: ${task.instructions}\n\nPrior progress (round ${round}):\n${combinedOutput.slice(-2000)}\n\nUnfinished plan:\n${headlessPlan.filter((t) => t.status !== "completed").map((t, i) => `${i + 1}. ${t.content} (${t.status})`).join("\n")}\n\nKeep working NOW with tools — update TodoWrite the moment each item completes, verify, and summarize only when every item is completed.`;
@@ -608,11 +611,6 @@ async function runPiTaskInternal(
 
     return { status: "error" as const, output: errMsg, duration };
   } finally {
-    // Snapshot browser tabs before MCP teardown closes them (see harness).
-    try {
-      const { snapshotBrowserTabs } = await import("@/lib/browser/tabs");
-      await snapshotBrowserTabs();
-    } catch {}
     try {
       await closeMcpClients(mcpClients);
     } catch {}

@@ -26,10 +26,14 @@ Files Qube produces show up as **file cards** at the bottom of the relevant
 reply. The built-in side panel opens them directly:
 
 - Word documents, spreadsheets, presentations, PDFs, text and code files all
-  open in tabbed viewers, so several files can stay open beside the chat.
+  open in one shared popup: same window, same header and close button, and a
+  viewer made for that file type (paginated document, editable sheet, PDF
+  canvas with search, highlighted code, slide deck, plain text).
 - Select text in an open file and ask Qube about it.
-- Documents, spreadsheets and code get an **Open** button in the viewer;
-  images, PDFs and slide decks offer **Download**.
+- Every file card in chat is the same card: **Open** for anything with a
+  viewer, **Download** for the raw file. HTML files open in a side panel that
+  shows only the rendered page (sandboxed, no browser chrome) with a close
+  button in the bottom-left.
 
 You can also hand Qube files you already have: attach them in the composer,
 or point it at a folder it has permission to read (see below).

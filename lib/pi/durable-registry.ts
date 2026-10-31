@@ -82,8 +82,8 @@ export async function buildDurableRegistry(opts?: {
   registry.install(buildWebExtension());
   const { buildShellExtension } = await import("@/lib/pi/durable-shell");
   registry.install(buildShellExtension());
-  const { buildBrowserExtension } = await import("@/lib/pi/durable-browser");
-  registry.install(buildBrowserExtension());
+  const { buildComputerExtension } = await import("@/lib/pi/durable-computer");
+  registry.install(buildComputerExtension());
   const { buildSubagentsExtension } = await import("@/lib/pi/durable-subagents");
   registry.install(buildSubagentsExtension());
   const { buildSchedulerExtension } = await import("@/lib/pi/durable-scheduler");

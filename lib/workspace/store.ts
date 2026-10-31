@@ -112,7 +112,15 @@ export function openComputerWorkspace() {
   useWorkspaceStore.getState().openWorkspace({ id: "computer:session", kind: "computer", title: "Computer" });
 }
 
-export function openDocumentWorkspace(input: { filePath: string; filename?: string; downloadUrl?: string; kind?: WorkspaceArtifact["kind"] }) {  const filename = input.filename || input.filePath.split("/").pop() || input.filePath;
+export function openDocumentWorkspace(input: {
+  filePath: string;
+  filename?: string;
+  downloadUrl?: string;
+  kind?: WorkspaceArtifact["kind"];
+  /** 1-based slide to open a presentation at. */
+  slide?: number;
+}) {
+  const filename = input.filename || input.filePath.split("/").pop() || input.filePath;
   const ext = filename.split(".").pop()?.toLowerCase() || "";
   let kind = input.kind;
   if (!kind) {
@@ -125,5 +133,12 @@ export function openDocumentWorkspace(input: { filePath: string; filename?: stri
   }
   const encodePath = (p: string) => p.split("/").map((x) => encodeURIComponent(x)).join("/");
   const downloadUrl = input.downloadUrl || `/api/files/${encodePath(input.filePath)}`;
-  useWorkspaceStore.getState().openWorkspace({ id: `doc:${input.filePath}`, kind, title: filename, filePath: input.filePath, downloadUrl });
+  useWorkspaceStore.getState().openWorkspace({
+    id: `doc:${input.filePath}`,
+    kind,
+    title: filename,
+    filePath: input.filePath,
+    downloadUrl,
+    ...(input.slide ? { slide: input.slide } : {}),
+  });
 }

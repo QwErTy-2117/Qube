@@ -26,6 +26,8 @@ export type WorkspaceArtifact = {
   title: string;
   filePath?: string; // workspace-relative for documents
   downloadUrl?: string;
+  /** 1-based slide to open a presentation at (used by the slide viewer). */
+  slide?: number;
 };
 
 export type AgentContext =

@@ -451,7 +451,7 @@ export function SchedulingTab() {
             if (!v) resetCreateForm();
           }}
         >
-          <DialogContent className="sm:max-w-md rounded-3xl h-[640px] flex flex-col overflow-hidden">
+          <DialogContent className="sm:max-w-md rounded-3xl h-[640px] flex flex-col overflow-hidden shadow-none">
             <DialogHeader>
               <DialogTitle>New task</DialogTitle>
               <DialogDescription className="sr-only">

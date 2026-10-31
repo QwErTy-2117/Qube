@@ -12,7 +12,9 @@ import {
   SquareArrowOutUpRightIcon,
 } from "lucide-react";
 import { openDocumentWorkspace } from "@/lib/workspace/store";
+import { isPptxFile } from "@/lib/workspace/pptx";
 import { DownloadButton } from "./download-button";
+import { PresentationFileCard } from "./presentation-card";
 import { cn } from "@/lib/utils";
 
 const OPENABLE = new Set([
@@ -20,11 +22,13 @@ const OPENABLE = new Set([
   "doc", "docx", "odt", "rtf", "txt", "md", "markdown",
   // spreadsheets
   "xls", "xlsx", "ods", "csv", "tsv",
+  // presentations
+  "ppt", "pptx", "odp",
   // code
   "json", "js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "yml", "yaml", "toml", "sh", "sql", "xml", "log",
 ]);
-// NOTE: images, pdfs, presentations (ppt/pptx/odp), audio/video/archives
-// are download-only — no viewer popup / Open button.
+// NOTE: images, pdfs, audio/video/archives are download-only. Presentations
+// open in the popup viewer; .pptx decks also get real thumbnail previews.
 
 type CardKind = "slides" | "pdf" | "doc" | "sheet" | "image" | "audio" | "video" | "archive" | "generic";
 
@@ -71,9 +75,14 @@ export function FileCard({
     openDocumentWorkspace({ filePath, filename, downloadUrl });
   };
 
-  // Single slim pill for every file type (full-width, rounded borders).
-  // Per-type colored icons are kept — only the bulky rich tile + subtitle
-  // layout is gone.
+  // PowerPoint decks get a real slide preview card instead of the generic
+  // pill. Clicking any thumbnail opens the popup at that exact slide.
+  if (isPptxFile(filename) && filePath) {
+    return <PresentationFileCard filename={filename} filePath={filePath} downloadUrl={downloadUrl} />;
+  }
+
+  // Single slim pill for every other file type (full-width, rounded borders).
+  // Per-type colored icons are kept; only the bulky rich tile is gone.
   const meta = metaForExt(ext);
   const Icon = meta.icon;
   return (

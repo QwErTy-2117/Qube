@@ -31,7 +31,7 @@ export function PresentedFiles() {
   if (entries.length === 0) return null;
 
   return (
-    <div className="mt-3 flex max-w-[380px] flex-col gap-2" data-slot="presented-files">
+    <div className="mt-3 flex max-w-[440px] flex-col gap-2" data-slot="presented-files">
       {entries.map((e) => (
         <FileCard
           key={e.key}

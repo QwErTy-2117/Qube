@@ -19,7 +19,7 @@ export function DocumentWorkspace({ artifact }: { artifact: WorkspaceArtifact })
     case "sheet":
       return <SpreadsheetWorkspace filePath={filePath} downloadUrl={downloadUrl} />;
     case "slides":
-      return <PresentationWorkspace filePath={filePath} downloadUrl={downloadUrl} />;
+      return <PresentationWorkspace filePath={filePath} downloadUrl={downloadUrl} initialSlide={artifact.slide} />;
     case "code":
       return <CodeWorkspace filePath={filePath} downloadUrl={downloadUrl} />;
     default:

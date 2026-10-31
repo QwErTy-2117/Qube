@@ -33,8 +33,10 @@ The unit of success is working, verified code — not an explanation of code.
 ## 4. Verify (do it, do not describe it)
 - Run the repo's own commands in order: format/lint → typecheck → tests → build.
 - Read the output. A red step is not done; fix and re-run.
-- For UI work, run the app and exercise the flow: open it, click through, check the
-  console, then stop the server.
+- For UI work, run the app and exercise the flow: start it with dev_server
+  (which waits for the URL and opens it in the Qube Computer browser), click
+  through with computer_browser, read crashes and compile errors with
+  dev_server_log, then stop it with dev_server stop=true.
 - For a bug fix, reproduce first and confirm the fix against the same repro.
 
 ## 5. Report

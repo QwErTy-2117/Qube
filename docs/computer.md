@@ -75,8 +75,16 @@ profile itself live inside the computer. Downloads land in
 
 ## Attachments
 
-Files you attach in chat are copied into `.computer/attachments/` and passed to
-the tools by absolute path. The staging rules are deliberately boring:
+Two different things share the word "attachment":
+
+- Files you attach in **chat** are saved into the workspace
+  (`attachments/<chat>/…`) and the agent is told that path, so workspace file
+  tools can read them. They are not inside the computer.
+- `computer_import` copies a file **into** `.computer/attachments/` and returns
+  its absolute path inside the computer; `computer_export` copies one back out
+  to a path you choose.
+
+The staging rules are deliberately boring (they apply to both paths):
 
 - Unicode names are preserved (normalised to NFC); separators, control
   characters and Windows-reserved names are neutralised.
@@ -95,10 +103,10 @@ runtime Qube owns. The two boundary crossings are the exception:
 - `computer_import` (your machine → computer)
 - `computer_export` (computer → a path on your machine)
 
-Both use the same approval card as every other host file tool. Paths inside the
-workspace or an approved **Allowed directory** pass without a prompt; anything
-else pauses for you. In a background task there is nobody to ask, so those
-paths are refused instead of silently allowed.
+Both always use the same approval card as every other host file tool — the
+crossing itself is what needs approval, not the path. In a background task
+there is nobody to ask, so those calls are refused instead of silently
+allowed.
 
 `computer_reset` requires an explicit `confirm: true` and is never triggered by
 Qube on its own.

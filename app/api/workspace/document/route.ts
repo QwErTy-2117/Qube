@@ -118,6 +118,24 @@ function readWorkbook(buffer: Buffer) {
       while (rows.length > 0 && rows[rows.length - 1].every((cell) => cell === "")) rows.pop();
       return { name, rowCount: rows.length, colCount, rows, formulas };
     });
+    // SheetJS silently drops formula cells that carry no cached value (what
+    // openpyxl and Qube's own writer produce), so formulas are re-read from
+    // the raw sheet XML and merged back in.
+    try {
+      const JSZip = (await import("jszip")).default;
+      const { extractSheetFormulas } = await import("@/lib/workspace/xlsx-formulas");
+      const zip = await JSZip.loadAsync(buffer);
+      const extracted = await extractSheetFormulas(zip);
+      for (const sheet of sheets) {
+        const found = extracted[sheet.name];
+        if (!found) continue;
+        for (const [key, formula] of Object.entries(found)) {
+          sheet.formulas[key] = formula;
+        }
+      }
+    } catch {
+      // Never fail a workbook over formula recovery.
+    }
     return sheets;
   });
 }

@@ -61,7 +61,10 @@ export function hardResetPaths(dataDir = getDataDir()): string[] {
     join(dataDir, "agent.sqlite-shm"),
     join(dataDir, "agent.sqlite-wal"),
     join(dataDir, "agent.sqlite-journal"),
-    // Managed-browser cookies, sessions, and legacy browser state.
+    // Legacy managed-browser cookies/sessions left behind by the browser
+    // architecture that the Qube Computer replaced. The computer keeps its own
+    // state (and survives a hard reset by design); these are swept only so an
+    // upgrade does not leave orphaned profiles and credentials on disk.
     join(dataDir, ".browser-profile"),
     join(dataDir, ".camoufox"),
     join(dataDir, ".camoufox-profile"),

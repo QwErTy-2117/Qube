@@ -36,6 +36,8 @@ const REGISTERED_TOOLS = [
   "composio_multi_execute_tool",
   "mcp_tool_call",
   "command_execution",
+  "dev_server",
+  "dev_server_log",
   "file_change",
   "read_external_file",
   "list_external_directory",

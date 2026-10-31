@@ -10,6 +10,8 @@ src-tauri/gen/
 .env*.local
 *.tsbuildinfo
 .next.d.ts
+# Legacy managed-browser state from the removed browser architecture; still
+# listed so upgrade leftovers stay out of git and get swept on hard reset.
 .playwright-mcp/
 .browser-profile/
 .camoufox/
@@ -23,7 +25,8 @@ generate_ppt.*
 *.xlsx
 *.docx
 *.pptx
-.memory/browser-profiles/
+# Qube Computer runtime state (files, browser profile, cookies, downloads)
+.computer/
 *.log
 *.log.*
 # Pi-durable SQLite state (per-machine agent storage, like .memory/)

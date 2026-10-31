@@ -167,6 +167,15 @@ export function classifyLocalTool(
     };
   }
   if (toolName.startsWith("computer_")) return { sensitive: false, purpose: "" };
+  if (toolName === "dev_server") {
+    const cmd = String((args.command as string) || "");
+    // Starting a dev server is ordinary work; a destructive command hidden in
+    // it is not. `stop` only kills a server Qube started.
+    if (cmd && isDestructiveCommand(cmd)) {
+      return { sensitive: true, kind: "destructive_command", purpose: `Run destructive dev-server command "$ ${cmd.slice(0, 160)}"` };
+    }
+    return { sensitive: false, purpose: "" };
+  }
   if (toolName === "run_command") {
     const cmd = String((args.command as string) || "");
     // Destructive shell always pauses; other commands are covered by

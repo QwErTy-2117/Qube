@@ -100,9 +100,11 @@ computer.
 
 ### Attachments do not appear
 
-Stage them again from chat: files are copied into `.computer/attachments/` and
-the tool result carries the absolute path inside the computer. Duplicate names
-get a ` (2)` suffix rather than overwriting.
+Chat attachments live in the workspace (`attachments/<chat>/…`), not inside the
+computer, so the agent reads them with the workspace file tools. To use one
+inside the computer, `computer_import` copies it into `.computer/attachments/`
+and returns the absolute path inside the computer; duplicate names get a ` (2)`
+suffix rather than overwriting.
 
 ### Resetting
 

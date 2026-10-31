@@ -23,6 +23,7 @@ viewer. No documentation website required.
 | [Qube Computer](./computer.md) | The persistent runtime Qube works in: its files, its browser (logins kept), attachments, reset |
 | [Connected apps (connectors)](./connectors.md) | Gmail, Drive, Calendar, Slack, GitHub, Notion and more, with approval rules |
 | [Memory and skills](./memory-and-skills.md) | What Qube remembers across chats, past conversations, reusable playbooks |
+| [Skills](./skills.md) | The bundled skills (docx, pptx, xlsx, pdf, code workflows), how they load, and how to write your own |
 | [Automations](./automations.md) | Scheduled tasks, the periodic check-in, and what runs while you're away |
 
 ## Settings, safety, and power users

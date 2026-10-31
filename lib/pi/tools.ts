@@ -257,6 +257,64 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     },
   });
 
+  extraTools.dev_server = tool({
+    description:
+      "Start (or reuse) a local dev server for the edit→run→observe→test loop: spawns the command in the workspace, waits until the URL responds, and opens it in the Qube Computer browser for UI testing. Reuses a running server for the same command. Use dev_server_log to read output and computer_browser (read/click/type) to test the UI. Stop with dev_server stop:true.",
+    inputSchema: z.object({
+      command: z.string().describe("Dev command, e.g. 'npm run dev -- -p 3010'"),
+      url: z.string().describe("URL to wait for, e.g. 'http://localhost:3010'"),
+      timeoutMs: z.number().optional().describe("Wait-for-HTTP timeout in ms (default 30000)"),
+      stop: z.boolean().optional().describe("Stop the server for this command instead of starting"),
+    }),
+    execute: async ({ command, url, timeoutMs, stop }: { command: string; url: string; timeoutMs?: number; stop?: boolean }) => {
+      return withPerm("dev_server", { command, url }, async () => {
+        const { startDevServer, stopDevServer, waitForHttp, devServerLog } = await import("@/lib/dev-server/devloop");
+        const cwd = getWorkspacePath();
+        if (stop === true) {
+          const stopped = stopDevServer(cwd, String(command || ""));
+          return JSON.stringify({ stopped });
+        }
+        if (!command || !url) return JSON.stringify({ error: "command and url are required" });
+        if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(String(url))) {
+          return JSON.stringify({ error: "dev_server only serves localhost URLs" });
+        }
+        const srv = startDevServer(cwd, String(command), String(url));
+        const wait = await waitForHttp(String(url), Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 120000));
+        // Open the app in the Qube Computer browser so UI testing follows in-turn.
+        let opened = "";
+        try {
+          const { openInComputerBrowser } = await import("@/lib/computer/browser");
+          const nav = await openInComputerBrowser(String(url));
+          opened = nav.url;
+        } catch (e: any) { opened = `browser open failed: ${e?.message || String(e)}`; }
+        const tail = devServerLog(cwd, String(command), 15);
+        return JSON.stringify({
+          pid: srv.pid, url: String(url), ready: wait.ok, status: wait.status, ms: wait.ms,
+          browser: opened,
+          logTail: tail,
+          note: wait.ok
+            ? "Server ready and open in the Qube Computer browser. Test with computer_browser; read dev_server_log for errors; iterate edit→run→observe."
+            : "Server did not respond in time — read dev_server_log for the crash/error, fix, and retry.",
+        }).slice(0, 6000);
+      });
+    },
+  });
+  extraTools.dev_server_log = tool({
+    description: "Read the tail of a dev server's captured stdout/stderr (started via dev_server). Use to find crashes, port conflicts, and compile errors during the test loop.",
+    inputSchema: z.object({
+      command: z.string().describe("The same command passed to dev_server"),
+      tail: z.number().optional().describe("Lines to return (default 60, max 200)"),
+    }),
+    execute: async ({ command, tail }: { command: string; tail?: number }) => {
+      try {
+        const { devServerLog } = await import("@/lib/dev-server/devloop");
+        const lines = devServerLog(getWorkspacePath(), String(command || ""), tail ?? 60);
+        return JSON.stringify({ command, lines }).slice(0, 12000);
+      } catch (e: any) {
+        return JSON.stringify({ error: e?.message || String(e) });
+      }
+    },
+  });
   return {
     ...extraTools,
     generate_ui: tool({
@@ -309,7 +367,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
       },
     }),
     present_file: tool({
-      description: "Surface a workspace file in chat as a slim file card, rendered in a list at the bottom of your reply. Call this ONCE per FINAL deliverable (document, spreadsheet, presentation, image, code). Only documents, spreadsheets and code get an Open button (viewer popup); images, PDFs and presentations are download-only. NEVER present intermediate builder/scaffolding scripts (e.g. .py scripts used to generate a .docx/.xlsx/.pptx) — only the final outputs. For presentations always present the real presentations/*.pptx file (python-pptx), never an .md outline.",
+      description: "Surface a workspace file in chat as a file card, rendered in a list at the bottom of your reply. Call this ONCE per FINAL deliverable (document, spreadsheet, presentation, PDF, image, code). Documents, spreadsheets, presentations, PDFs, HTML pages, code and text get an Open button (the shared viewer popup, or the HTML side panel); images, audio, video and archives get Download. NEVER present intermediate builder/scaffolding scripts (e.g. .py scripts used to generate a .docx/.xlsx/.pptx) — only the final outputs. For presentations always present the real presentations/*.pptx file (python-pptx), never an .md outline.",
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path of an existing file"),
       }),
@@ -435,66 +493,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
                   const s = await stat(full);
                   size = s.size;
                 } catch {}
-  extraTools.dev_server = tool({
-    description:
-      "Start (or reuse) a local dev server for the edit→run→observe→test loop: spawns the command in the workspace, waits until the URL responds, and opens it in the Qube Computer browser for UI testing. Reuses a running server for the same command. Use dev_server_log to read output and computer_browser (read/click/type) to test the UI. Stop with dev_server stop:true.",
-    inputSchema: z.object({
-      command: z.string().describe("Dev command, e.g. 'npm run dev -- -p 3010'"),
-      url: z.string().describe("URL to wait for, e.g. 'http://localhost:3010'"),
-      timeoutMs: z.number().optional().describe("Wait-for-HTTP timeout in ms (default 30000)"),
-      stop: z.boolean().optional().describe("Stop the server for this command instead of starting"),
-    }),
-    execute: async ({ command, url, timeoutMs, stop }: { command: string; url: string; timeoutMs?: number; stop?: boolean }) => {
-      return withPerm("dev_server", { command, url }, async () => {
-        const { startDevServer, stopDevServer, waitForHttp, devServerLog } = await import("@/lib/dev-server/devloop");
-        const cwd = getWorkspacePath();
-        if (stop === true) {
-          const stopped = stopDevServer(cwd, String(command || ""));
-          return JSON.stringify({ stopped });
-        }
-        if (!command || !url) return JSON.stringify({ error: "command and url are required" });
-        if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(String(url))) {
-          return JSON.stringify({ error: "dev_server only serves localhost URLs" });
-        }
-        const srv = startDevServer(cwd, String(command), String(url));
-        const wait = await waitForHttp(String(url), Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 120000));
-        // Open the app in the Qube Computer browser so UI testing follows in-turn.
-        let opened = "";
-        try {
-          const { openInComputerBrowser } = await import("@/lib/computer/browser");
-          const nav = await openInComputerBrowser(String(url));
-          opened = nav.url;
-        } catch (e: any) { opened = `browser open failed: ${e?.message || String(e)}`; }
-        const tail = devServerLog(cwd, String(command), 15);
-        return JSON.stringify({
-          pid: srv.pid, url: String(url), ready: wait.ok, status: wait.status, ms: wait.ms,
-          browser: opened,
-          logTail: tail,
-          note: wait.ok
-            ? "Server ready and open in the Qube Computer browser. Test with computer_browser; read dev_server_log for errors; iterate edit→run→observe."
-            : "Server did not respond in time — read dev_server_log for the crash/error, fix, and retry.",
-        }).slice(0, 6000);
-      });
-    },
-  });
-  extraTools.dev_server_log = tool({
-    description: "Read the tail of a dev server's captured stdout/stderr (started via dev_server). Use to find crashes, port conflicts, and compile errors during the test loop.",
-    inputSchema: z.object({
-      command: z.string().describe("The same command passed to dev_server"),
-      tail: z.number().optional().describe("Lines to return (default 60, max 200)"),
-    }),
-    execute: async ({ command, tail }: { command: string; tail?: number }) => {
-      try {
-        const { devServerLog } = await import("@/lib/dev-server/devloop");
-        const lines = devServerLog(getWorkspacePath(), String(command || ""), tail ?? 60);
-        return JSON.stringify({ command, lines }).slice(0, 12000);
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e) });
-      }
-    },
-  });
-
-  return {
+                return {
                   name: e.name,
                   type: e.isDirectory() ? "directory" : e.isFile() ? "file" : "other",
                   size,

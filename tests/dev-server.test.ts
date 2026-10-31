@@ -59,6 +59,4 @@ describe("devloop server registry", () => {
     }
     assert.deepEqual(devServerLog("/tmp", "npm run dev"), []);
   });
-  it("catalogs dev_server tools as terminal", () => {
-  });
 });

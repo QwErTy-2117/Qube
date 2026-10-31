@@ -396,7 +396,7 @@ export function SlidesViewer({
       <div
         ref={stageRef}
         onMouseUp={quoteSelection}
-        className="slide-stage relative min-h-0 flex-1 overflow-auto bg-neutral-100 dark:bg-black"
+        className="slide-stage relative min-h-0 flex-1 overflow-auto bg-white dark:bg-black"
       >
         {status !== "error" && (
           <div className="flex min-h-full w-max min-w-full p-6" style={{ paddingBottom: STAGE_PAD_BOTTOM }}>

@@ -7,7 +7,8 @@
  * value. Everything here is pure and unit-tested.
  */
 
-import { colLettersToIndex, evaluateFormula } from "./spreadsheet-formulas";
+import { evaluateFormula } from "./spreadsheet-formulas";
+import { colName as colNameFromRefs, formatRef, mapA1Refs } from "./a1-refs";
 
 export type SheetGrid = {
   name: string;
@@ -15,13 +16,7 @@ export type SheetGrid = {
 };
 
 export function colName(index: number): string {
-  let s = "";
-  let n = index;
-  do {
-    s = String.fromCharCode(65 + (n % 26)) + s;
-    n = Math.floor(n / 26) - 1;
-  } while (n >= 0);
-  return s;
+  return colNameFromRefs(index);
 }
 
 export function cellKey(row: number, col: number): string {
@@ -98,8 +93,6 @@ export function evaluateGrid(rows: string[][]): string[][] {
 
 // ---------- structural edits (with A1 reference remapping) ----------
 
-const REF_RE = /(\$?)([A-Za-z]{1,3})(\$?)(\d+)/g;
-
 /** Shift A1 references inside a formula after rows/cols are inserted/removed. */
 export function remapFormula(
   formula: string,
@@ -110,9 +103,9 @@ export function remapFormula(
     | { kind: "deleteCol"; at: number; count?: number },
 ): string {
   const count = change.count ?? 1;
-  return formula.replace(REF_RE, (match, colAbs, letters, rowAbs, digits) => {
-    let col = colLettersToIndex(letters);
-    let row = parseInt(digits, 10) - 1;
+  return mapA1Refs(formula, (ref) => {
+    let col = ref.col;
+    let row = ref.row;
     switch (change.kind) {
       case "insertRow":
         if (row >= change.at) row += count;
@@ -130,7 +123,7 @@ export function remapFormula(
         break;
     }
     if (row < 0 || col < 0) return "#REF!";
-    return `${colAbs}${colName(col)}${rowAbs}${row + 1}`;
+    return formatRef(col, row, ref.colAbs, ref.rowAbs);
   });
 }
 

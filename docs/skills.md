@@ -75,6 +75,12 @@ bundled set:
 - The licence of every bundled skill is recorded in its `SkillConfig`
   (`license`, `provenance`) and surfaced through `manage_skill list`.
 
+The curated marketplace snapshot (`lib/skills/marketplace.ts`) is a separate
+surface: its rows are Qube-written offline summaries used to browse and preview
+before installing, not copies of upstream text, so no third-party licence
+attaches to them. Live marketplace rows link back to the upstream repository and
+keep their own licence and audit badge.
+
 If a future skill is imported from an Apache-2.0 source, its `NOTICE`/licence
 header must be preserved in the skill directory and recorded in the table
 above.

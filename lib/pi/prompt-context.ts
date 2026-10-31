@@ -184,7 +184,7 @@ export function computerInstructions(): string {
     `Its state survives restarts — files, downloads, browser cookies and logins stay until the user explicitly resets it, so do not recreate or reorganize it "cleanly". ` +
     `Use computer_status to see its state, computer_list/computer_read/computer_write/computer_delete for files (paths are relative to its home), ` +
     `computer_run for shell work inside it, and computer_browser to open a URL in its persistent browser (downloads go to its downloads folder). ` +
-    `Files the user attaches are copied into the computer's attachments folder; open them by the absolute path you are given instead of guessing. ` +
+    `Files the user attaches are saved in the workspace (the path is given in the message as "Saved for workspace tools at: …"): read those with the workspace file tools. The computer cannot see them — computer_import copies one in, and it asks the user first. ` +
     `The host filesystem is NOT available to computer tools: computer_import (host → computer) and computer_export (computer → host) are the only crossings and they pause for the user's approval. ` +
     `Never attempt to read the host through a command, symlink or absolute path — if the user has not approved a path, ask for it in plain language. ` +
     `computer_reset deletes the computer's files and browser profile; call it only when the user explicitly asks to reset. ` +

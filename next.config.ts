@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
   // bundles the whole package into the initial chunk (slow on Windows
   // WebView2 cold start + Defender scans).
   experimental: {
-    optimizePackageImports: ["lucide-react", "@lobehub/icons", "motion", "@react-three/fiber", "three", "antd"],
+    optimizePackageImports: ["lucide-react", "@lobehub/icons", "motion", "@react-three/fiber", "three"],
   },
 };
 

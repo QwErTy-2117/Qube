@@ -83,7 +83,7 @@ async function tauriCheck(): Promise<CheckResult> {
  */
 function explainCheckError(message: string): string {
   if (/platforms` object/.test(message)) {
-    return `${message}. This release has no update package for your installation type — download it from https://github.com/QwErTy-2117/Qube/releases.`;
+    return `${message}. The release's updater metadata is missing an entry for your installation type; a .rpm or .deb may still be available for manual installation at https://github.com/QwErTy-2117/Qube/releases.`;
   }
   return message;
 }

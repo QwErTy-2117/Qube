@@ -152,6 +152,11 @@ jobs:
       # cancelled both in v0.0.34). Tauri docs recommend 22.04 as the Linux
       # baseline for Linux/glibc compat.
       fail-fast: false
+      # Each tauri-action invocation merges its platform entry into the release's
+      # latest.json. Keep these jobs serialized: concurrent jobs can all read the
+      # same old JSON and then overwrite one another, leaving a valid RPM/DEB
+      # asset in the release but no matching updater platform entry.
+      max-parallel: 1
       matrix:
         include:
           # Linux x64: deb+rpm.
@@ -316,3 +321,37 @@ jobs:
           kill "$(cat /tmp/qube-sidecar.pid)" || true
           popd >/dev/null
 
+
+  verify-updater-metadata:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Linux package updater entries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          TAG="v${VERSION}"
+          mkdir -p "$RUNNER_TEMP/release"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern latest.json --dir "$RUNNER_TEMP/release"
+          node - "$RUNNER_TEMP/release/latest.json" <<'NODE'
+          const fs = require('node:fs');
+          const latest = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const required = [
+            'linux-x86_64-rpm',
+            'linux-x86_64-deb',
+            'linux-aarch64-rpm',
+            'linux-aarch64-deb',
+          ];
+          const missing = required.filter((platform) => !latest.platforms?.[platform]);
+          if (missing.length) {
+            console.error(`latest.json is missing updater platform entries: ${missing.join(', ')}`);
+            process.exit(1);
+          }
+          console.log(`Verified Linux updater entries: ${required.join(', ')}`);
+          NODE

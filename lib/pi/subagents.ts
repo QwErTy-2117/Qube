@@ -209,6 +209,15 @@ export async function runSubagent(opts: {
       request: opts.request,
     }) as Record<string, any>;
 
+    try {
+      const { createSkillTools } = await import("./skill-tools");
+      const skillTools = createSkillTools();
+      (allTools as any).skill = skillTools.skill;
+      if (agentType === "general") (allTools as any).manage_skill = skillTools.manage_skill;
+    } catch (e) {
+      console.warn("[subagent] Skill tools load failed:", e);
+    }
+
     let childTools: Record<string, any> = allTools;
     if (agentType === "Explore") {
       const allowed = ["read_file", "list_directory", "web_search", "web_fetch", "run_command"];

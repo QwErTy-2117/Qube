@@ -562,6 +562,14 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
       request: config.request,
       threadIdForScratchpad: config.threadId,
     });
+    // Skill tools: on-demand SKILL.md loading + self-authored skills. Always
+    // available — skills are not part of the memory toggle.
+    try {
+      const { createSkillTools } = await import("./skill-tools");
+      tools = { ...tools, ...createSkillTools() };
+    } catch (e: any) {
+      console.warn("[pi-harness] Skill tools load failed (non-fatal):", e?.message || String(e));
+    }
     // Agent tools: schedules, heartbeat, user questions (goals=TodoWrite above)
     try {
       const { createPiAgentTools } = await import("./agent-tools");

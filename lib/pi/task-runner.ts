@@ -190,6 +190,16 @@ async function runPiTaskInternal(
   // Use Pi tools as base, then extend with task-specific external tools (Pi unified ownership).
   // Scheduled tasks run unattended — no interactive questioning.
   const piBaseTools = createPiTools(threadId, { includeAskUser: false });
+  // Skills are available to background runs too: load on demand, never
+  // preloaded into the prompt.
+  try {
+    const { createSkillTools } = await import("./skill-tools");
+    for (const [name, t] of Object.entries(createSkillTools())) {
+      (piBaseTools as any)[name] = t;
+    }
+  } catch (e) {
+    console.warn("[pi-task] Skill tools load failed:", e);
+  }
 
   // MCP: load custom servers for tasks as well (isolated, non-fatal)
   let mcpClients: Awaited<ReturnType<typeof loadMcpTools>>["clients"] = [];

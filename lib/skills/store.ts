@@ -1,171 +1,245 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+/**
+ * Process-wide skill store.
+ *
+ * Reads bundled + user skills through the loader, caches them in memory, and
+ * writes user/agent-created skills back as `SKILL.md` directories. The store
+ * is the single entry point used by the harness, tools, API routes and the
+ * settings UI — bundled and self-created skills share one implementation.
+ */
+
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { getDataDir } from "@/lib/data-dir";
-import { SYSTEM_SKILLS } from "./system-skills";
+import { bundledSkills } from "./bundled";
+import {
+  deleteSkillDir,
+  isSafeSkillDirName,
+  loadSkills,
+  skillRootDir,
+  writeSkillToDisk,
+  type SkillLoadError,
+} from "./loader";
 import {
   normalizeSkill,
   validateSkill,
+} from "./registry";
+import {
+  colorForSkill,
+  normalizeSkillSource,
   type SkillConfig,
 } from "./types";
 
-function skillsFilePath(): string {
-  return join(getDataDir(), ".memory", "skills.json");
+export type SkillStoreSnapshot = {
+  skills: SkillConfig[];
+  errors: SkillLoadError[];
+  userDir: string;
+};
+
+function canonical(skill: Pick<SkillConfig, "description" | "instructions" | "allowedTools" | "disallowedTools">): string {
+  return JSON.stringify([
+    skill.description.trim(),
+    skill.instructions.trim(),
+    (skill.allowedTools || "").trim(),
+    (skill.disallowedTools || "").trim(),
+  ]);
 }
 
 class SkillStore {
-  private skills: SkillConfig[] = [];
-  private initialized = false;
+  private skills: SkillConfig[] | null = null;
+  private errors: SkillLoadError[] = [];
 
-  private ensureInitialized() {
-    if (this.initialized) return;
-    this.initialized = true;
-    // Always start from system skills (can't be deleted)
-    const byName = new Map<string, SkillConfig>();
-    for (const s of SYSTEM_SKILLS) byName.set(s.name, { ...s });
-    try {
-      const file = skillsFilePath();
-      if (existsSync(file)) {
-        const raw = readFileSync(file, "utf-8");
-        const data = JSON.parse(raw);
-        const arr: SkillConfig[] = Array.isArray(data?.skills)
-          ? data.skills
-          : Array.isArray(data)
-            ? data
-            : [];
-        for (const s of arr) {
-          if (!s || typeof s.name !== "string") continue;
-          const name = s.name.trim().toLowerCase();
-          // System skills always win on isSystem/source, but allow edited
-          // description/instructions to persist (editable, not deletable).
-          if (byName.has(name)) {
-            const sys = byName.get(name)!;
-            byName.set(name, {
-              ...sys,
-              description: s.description || sys.description,
-              instructions: s.instructions || sys.instructions,
-              allowedTools: s.allowedTools ?? sys.allowedTools,
-              disallowedTools: s.disallowedTools ?? sys.disallowedTools,
-              color: s.color || sys.color,
-              updatedAt: s.updatedAt || Date.now(),
-            });
-          } else {
-            byName.set(name, { ...s, name } as SkillConfig);
-          }
-        }
-      }
-    } catch (e) {
-      console.error("[SkillStore] Failed to load:", e);
+  private ensure(): SkillConfig[] {
+    if (this.skills) return this.skills;
+    const result = loadSkills({ migrate: true });
+    this.skills = result.skills;
+    this.errors = result.errors;
+    const realErrors = result.errors.filter((e) => !/Duplicate skill/.test(e.error));
+    if (realErrors.length > 0) {
+      for (const e of realErrors) console.warn(`[SkillStore] Skipped ${e.source}: ${e.error}`);
     }
-    this.skills = Array.from(byName.values());
+    return this.skills;
   }
 
-  private persist() {
-    try {
-      const file = skillsFilePath();
-      const dir = join(getDataDir(), ".memory");
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(file, JSON.stringify({ skills: this.skills }, null, 2), "utf-8");
-    } catch (e) {
-      console.error("[SkillStore] Failed to write:", e);
-    }
+  /** Force a re-read from disk (after external writes, upgrades, resets). */
+  reload(): void {
+    this.skills = null;
+    this.errors = [];
+  }
+
+  snapshot(): SkillStoreSnapshot {
+    this.ensure();
+    return {
+      skills: this.getAll(),
+      errors: [...this.errors],
+      userDir: skillRootDir(),
+    };
   }
 
   getAll(): SkillConfig[] {
-    this.ensureInitialized();
-    return this.skills.map((s) => ({ ...s }));
+    return this.ensure().map((s) => ({ ...s }));
   }
 
   getByName(name: string): SkillConfig | null {
-    this.ensureInitialized();
-    const n = name.trim().toLowerCase();
-    return this.skills.find((s) => s.name === n) ?? null;
+    const n = (name || "").trim().toLowerCase();
+    if (!n) return null;
+    const found = this.ensure().find((s) => s.name === n);
+    return found ? { ...found } : null;
   }
 
-  /** Replace user (non-system) skills wholesale — used by /api/skills/sync. */
-  sync(skills: SkillConfig[]): { ok: boolean; error?: string } {
-    this.ensureInitialized();
-    // Validate all non-system entries
-    for (const s of skills) {
-      if ((s as any).isSystem) continue;
-      const err = validateSkill(s);
-      if (err) return { ok: false, error: `${s.name || "?"}: ${err}` };
-    }
-    const normalized = new Map<string, SkillConfig>();
-    // System skills always present
-    for (const sys of SYSTEM_SKILLS) {
-      const incoming = skills.find(
-        (s) => s.name.trim().toLowerCase() === sys.name
-      );
-      normalized.set(sys.name, {
-        ...sys,
-        ...(incoming
-          ? {
-              description: incoming.description || sys.description,
-              instructions: incoming.instructions || sys.instructions,
-              allowedTools: incoming.allowedTools ?? sys.allowedTools,
-              disallowedTools:
-                incoming.disallowedTools ?? sys.disallowedTools,
-              color: incoming.color || sys.color,
-              updatedAt: Date.now(),
-            }
-          : {}),
-      });
-    }
-    for (const s of skills) {
-      const name = s.name.trim().toLowerCase();
-      if (normalized.has(name)) continue;
-      normalized.set(name, normalizeSkill({ ...s, name }));
-    }
-    this.skills = Array.from(normalized.values());
-    this.persist();
-    return { ok: true };
-  }
+  /**
+   * Create or replace a skill. Bundled names become user overrides rather
+   * than being destroyed, so a later upgrade can still restore the default.
+   */
+  upsert(
+    input: Partial<SkillConfig> & { name: string },
+  ): { ok: boolean; error?: string; skill?: SkillConfig } {
+    this.ensure();
+    const name = (input.name || "").trim().toLowerCase();
+    const existing = this.getByName(name);
+    if (input.isSystem) delete (input as { isSystem?: boolean }).isSystem;
+    const bundled = bundledSkills().find((s) => s.name === name);
 
-  upsert(skill: Partial<SkillConfig> & { name: string }): { ok: boolean; error?: string; skill?: SkillConfig } {
-    this.ensureInitialized();
-    const err = validateSkill(skill);
+    const merged = normalizeSkill({
+      ...(existing || {}),
+      ...input,
+      name,
+      source: bundled ? "user" : normalizeSkillSource(input.source ?? existing?.source ?? "user"),
+      isSystem: !!bundled,
+      // Never let a caller claim a bundled skill's provenance.
+      provenance:
+        input.provenance ??
+        existing?.provenance ??
+        (bundled ? `User override of the bundled ${name} skill` : "Created in Qube"),
+      installedAt: existing?.installedAt ?? Date.now(),
+    });
+    const err = validateSkill(merged);
     if (err) return { ok: false, error: err };
-    const name = skill.name.trim().toLowerCase();
-    const existing = this.skills.find((s) => s.name === name);
-    if (existing?.isSystem) {
-      // System: editable fields only, never delete/rename/source-change
-      existing.description = skill.description!.trim();
-      existing.instructions = skill.instructions!.trim();
-      if (skill.allowedTools !== undefined) existing.allowedTools = skill.allowedTools || undefined;
-      if (skill.disallowedTools !== undefined)
-        existing.disallowedTools = skill.disallowedTools || undefined;
-      if (skill.color) existing.color = skill.color;
-      existing.updatedAt = Date.now();
-      this.persist();
-      return { ok: true, skill: { ...existing } };
+
+    // Identical to the bundled version → drop the override.
+    if (bundled && canonical(merged) === canonical(bundled)) {
+      deleteSkillDir(name);
+      this.reload();
+      return { ok: true, skill: this.getByName(name) ?? merged };
     }
-    if (existing) {
-      Object.assign(existing, normalizeSkill({ ...existing, ...skill, name }));
-      this.persist();
-      return { ok: true, skill: { ...existing } };
-    }
-    const created = normalizeSkill({ ...skill, name, source: skill.source || "custom" });
-    this.skills.push(created);
-    this.persist();
-    return { ok: true, skill: { ...created } };
+
+    const written = writeSkillToDisk({ ...merged, source: "user", isSystem: false });
+    if (!written.ok) return { ok: false, error: written.error };
+    this.reload();
+    return { ok: true, skill: this.getByName(name) ?? merged };
   }
 
-  remove(name: string): { ok: boolean; error?: string } {
-    this.ensureInitialized();
-    const n = name.trim().toLowerCase();
-    const existing = this.skills.find((s) => s.name === n);
-    if (!existing) return { ok: false, error: "Skill not found." };
-    if (existing.isSystem || existing.source === "system")
-      return { ok: false, error: "System skills can't be deleted." };
-    this.skills = this.skills.filter((s) => s.name !== n);
-    this.persist();
+  /**
+   * Remove a user skill (or a user override of a bundled skill). Bundled
+   * defaults always survive and reappear immediately.
+   */
+  remove(name: string): { ok: boolean; error?: string; restoredBundled?: boolean } {
+    this.ensure();
+    const n = (name || "").trim().toLowerCase();
+    if (!isSafeSkillDirName(n)) return { ok: false, error: "Invalid skill name" };
+    const bundled = bundledSkills().find((s) => s.name === n);
+    const written = deleteSkillDir(n);
+    if (!written.ok) return { ok: false, error: written.error };
+    this.reload();
+    if (bundled) return { ok: true, restoredBundled: true };
+    if (!this.getByName(n)) return { ok: true };
+    // The name also exists in the legacy materialized directory.
+    return { ok: false, error: "Skill is provided by another source" };
+  }
+
+  /**
+   * Bulk reconcile used by the settings UI (and by the legacy client that
+   * POSTs the whole list). Writes only differences, removes user skills that
+   * are no longer listed, and never deletes bundled defaults.
+   */
+  sync(incoming: SkillConfig[]): { ok: boolean; error?: string } {
+    this.ensure();
+    const bundled = new Map(bundledSkills().map((s) => [s.name, s]));
+    const keep = new Set<string>();
+    const planned: SkillConfig[] = [];
+
+    for (const raw of incoming || []) {
+      if (!raw || typeof raw.name !== "string") continue;
+      const name = raw.name.trim().toLowerCase();
+      if (!isSafeSkillDirName(name)) return { ok: false, error: `Invalid skill name "${raw.name}"` };
+      const base = bundled.get(name);
+      const isBundledShaped =
+        !!base &&
+        (raw.isSystem === true ||
+          raw.source === "bundled" ||
+          (raw.source as string) === "system" ||
+          raw.source === undefined);
+      const skill = normalizeSkill({
+        ...(base || {}),
+        ...raw,
+        name,
+        source: isBundledShaped ? "user" : normalizeSkillSource(raw.source),
+        isSystem: !!base,
+        installedAt: raw.installedAt || Date.now(),
+      });
+      // Validate everything the user can actually author.
+      const err = validateSkill(skill);
+      if (err) return { ok: false, error: `${name}: ${err}` };
+      keep.add(name);
+      if (base && canonical(skill) === canonical(base)) {
+        planned.push({ ...base }); // pure bundled default, nothing on disk
+        continue;
+      }
+      planned.push(skill);
+    }
+
+    // Write planned user skills.
+    for (const skill of planned) {
+      if (bundled.has(skill.name) && canonical(skill) === canonical(bundled.get(skill.name)!)) {
+        deleteSkillDir(skill.name);
+        continue;
+      }
+      const written = writeSkillToDisk({ ...skill, source: "user", isSystem: false });
+      if (!written.ok) return { ok: false, error: `${skill.name}: ${written.error}` };
+    }
+
+    // Remove user skills that are no longer listed.
+    const dir = skillRootDir();
+    if (existsSync(dir)) {
+      for (const entry of readdirSync(dir)) {
+        if (entry.startsWith(".") || keep.has(entry)) continue;
+        if (!isSafeSkillDirName(entry)) continue;
+        deleteSkillDir(entry);
+      }
+    }
+    this.reload();
     return { ok: true };
   }
 
-  /** Hard reset: restore the built-in skill set in memory without writing it. */
+  /** Directory where user / agent-created skills live. */
+  userDir(): string {
+    return skillRootDir();
+  }
+
+  /** Full body for on-demand loading through the `skill` tool. */
+  loadBody(name: string): { skill: SkillConfig; content: string } | null {
+    const skill = this.getByName(name);
+    if (!skill) return null;
+    const files = skill.resources ?? [];
+    const resources = files.length
+      ? `\n\nFiles shipped with this skill (read them with read_file when referenced):\n${files
+          .map((r) => `- ${join(skill.path || skill.name, r)}`)
+          .join("\n")}`
+      : "";
+    return { skill, content: `${skill.instructions.trim()}${resources}` };
+  }
+
+  errorsFor(name: string): SkillLoadError[] {
+    this.ensure();
+    return this.errors.filter((e) => e.source.includes(`/${name}/`) || e.source.endsWith(name));
+  }
+
+  /** Hard reset: forget in-memory state (disk state is handled elsewhere). */
   resetForHardReset(): void {
-    this.initialized = true;
-    this.skills = SYSTEM_SKILLS.map((s) => ({ ...s }));
+    this.reload();
+  }
+
+  /** Backwards-compatible accessor used by older call sites. */
+  colorFor(name: string): string {
+    return this.getByName(name)?.color || colorForSkill(name);
   }
 }
 

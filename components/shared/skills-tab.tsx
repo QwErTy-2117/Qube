@@ -603,7 +603,7 @@ export function SkillsTab({ onDialogOpenChange }: { onDialogOpenChange?: (open: 
       disallowedTools: form.disallowedTools.trim() || undefined,
       userInvocable: form.userInvocable,
       disableModelInvocation: form.disableModelInvocation,
-      source: "custom",
+      source: "user",
       version: "1.0.0",
       installedAt: now,
       updatedAt: now,

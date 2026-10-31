@@ -42,60 +42,6 @@ export function createPiMemoryTools(threadId: string): Record<string, any> {
     },
   });
 
-  const manage_skill = tool({
-    description:
-      "Create, update, or deprecate a reusable self-learned skill (procedure, not a fact). " +
-      "Use when you discover a reusable multi-step procedure: recurring error recovery, effective tool sequence, validation routine, data transform, or proactive workflow. " +
-      "Skills must GENERALIZE (reusable strategy, not one URL/error/dataset). Lifecycle: candidate -> tested -> trusted -> deprecated. " +
-      "Actions: create (name, description, instructions, whenToUse required), update, deprecate, get, list.",
-    inputSchema: z.object({
-      action: z.enum(["create", "update", "deprecate", "get", "list"]).describe("Skill action"),
-      name: z.string().optional().describe("Skill name (lowercase-hyphens)"),
-      description: z.string().optional().describe("What it does + when to use it"),
-      instructions: z.string().optional().describe("Generalized procedure (≥30 words, no hardcoded single instance)"),
-      whenToUse: z.string().optional().describe("When this skill applies"),
-    }),
-    execute: async (args: any) => {
-      try {
-        const { skillStore } = await import("@/lib/skills/store");
-        const { validateSkillDraft, draftToSkillConfig } = await import("@/lib/skills/learner");
-        const { logSkillEvent } = await import("@/lib/agent/observability");
-        if (args.action === "list") {
-          const all = skillStore.getAll();
-          return JSON.stringify({ skills: all.map((s) => ({ name: s.name, description: s.description, source: s.source })) });
-        }
-        if (args.action === "get") {
-          if (!args.name) return JSON.stringify({ error: "name required" });
-          const s = skillStore.getByName(args.name);
-          if (!s) return JSON.stringify({ error: "Skill not found" });
-          return JSON.stringify({ skill: { name: s.name, description: s.description, instructions: (s.instructions || "").slice(0, 3000) } });
-        }
-        if (args.action === "deprecate") {
-          if (!args.name) return JSON.stringify({ error: "name required" });
-          const s = skillStore.getByName(args.name);
-          if (!s) return JSON.stringify({ error: "Skill not found" });
-          if ((s as any).isSystem) return JSON.stringify({ error: "System skills cannot be deprecated" });
-          const res = skillStore.upsert({ name: args.name, description: s.description, instructions: `${s.instructions}\n\n<!-- status: deprecated -->` } as any);
-          await logSkillEvent(threadId, "deprecated", args.name, "agent deprecated after failure").catch(() => {});
-          return JSON.stringify({ deprecated: res.ok, skill: res.skill?.name });
-        }
-        // create / update
-        if (!args.name || !args.description || !args.instructions || !args.whenToUse) {
-          return JSON.stringify({ error: "create/update require name, description, instructions, whenToUse" });
-        }
-        const err = validateSkillDraft({ name: args.name, description: args.description, instructions: args.instructions, whenToUse: args.whenToUse, scope: "global_user", confidence: 0.5, provenance: `thread:${threadId}`, preconditions: [], failureModes: [], recoverySteps: [], validation: "reuse twice successfully" });
-        if (err) return JSON.stringify({ error: err, saved: false });
-        const cfg = draftToSkillConfig({ name: args.name, description: args.description, instructions: args.instructions, whenToUse: args.whenToUse, preconditions: [], failureModes: [], recoverySteps: [], validation: "reuse twice successfully", scope: "global_user", confidence: 0.5, provenance: `thread:${threadId}` });
-        const res = skillStore.upsert({ ...cfg, source: "custom" } as any);
-        if (!res.ok) return JSON.stringify({ error: res.error, saved: false });
-        await logSkillEvent(threadId, args.action === "create" ? "created" : "updated", args.name, "agent self-created reusable procedure").catch(() => {});
-        return JSON.stringify({ saved: true, skill: res.skill?.name, status: "candidate — validate by reuse" });
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e) });
-      }
-    },
-  });
-
   const manage_proactive = tool({
     description:
       "Manage proactive preferences and follow-ups (least-intrusive assistance). " +
@@ -242,5 +188,5 @@ export function createPiMemoryTools(threadId: string): Record<string, any> {
     },
   });
 
-  return { read_memory, save_memory, manage_skill, manage_proactive, list_sessions, read_session_summary, read_session };
+  return { read_memory, save_memory, manage_proactive, list_sessions, read_session_summary, read_session };
 }

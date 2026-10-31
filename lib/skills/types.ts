@@ -1,36 +1,45 @@
 /**
- * Skills — Claude Code compatible SKILL.md model.
+ * Skills — an Agent Skills compatible model (SKILL.md).
  *
- * A skill is a directory with SKILL.md (YAML frontmatter + markdown body).
- * Only `name` + `description` stay in context; the body loads on invocation
- * (manual `/name` or automatic when the description matches the request).
+ * A skill is a self-contained directory with a `SKILL.md` file: YAML-ish
+ * frontmatter (`name`, `description`, optional tool hints) plus a Markdown
+ * body that is only loaded when the skill is actually used.
  *
- * This file defines the persisted shape. See:
- * - system-skills.ts for the 3 built-in non-deletable skills
- * - marketplace.ts for the curated catalog from the 3 best marketplaces
- *   (skills.sh by Vercel, SkillsMP, ClawHub + Anthropic official)
- * - prompt.ts for harness injection (progressive disclosure)
+ * Design rules (see docs/skills.md):
+ * - Only `name` + `description` live in the model context by default.
+ * - The body is loaded on demand through the `skill` tool (or `/name`).
+ * - Bundled skills ship with Qube and can be upgraded; user/agent-created
+ *   skills live in the data directory and always win on name conflicts.
+ * - Nothing about skills is stored in the system prompt beyond the metadata
+ *   list, so the prompt stays small.
+ *
+ * Pure helpers live in `registry.ts`; filesystem discovery lives in
+ * `loader.ts`; the process-wide instance is in `store.ts`.
  */
 
-export type SkillSource = "system" | "custom" | "marketplace";
+export type SkillSource = "bundled" | "user" | "marketplace";
 
 export interface SkillConfig {
   id: string;
   /** lowercase letters, numbers, hyphens only, max 64. Matches directory name. */
   name: string;
-  /** What it does + when to use it ("does X. Use when Y."). Model routing logic. */
+  /** What it does + when to use it ("does X. Use when Y."). Routing logic. */
   description: string;
-  /** Markdown body of SKILL.md — procedures, examples, edge cases. Keep <500 lines. */
+  /** Markdown body of SKILL.md — loaded on demand, never preloaded. */
   instructions: string;
-  /** Claude Code `allowed-tools` — space/comma separated, pre-approved for the invoking turn. */
+  /** Claude Code `allowed-tools` — preferred tools while this skill is active. */
   allowedTools?: string;
-  /** Claude Code `disallowed-tools` — removed from pool while skill is active. */
+  /** Claude Code `disallowed-tools` — removed from the pool while active. */
   disallowedTools?: string;
   /** false hides from `/` menu (background knowledge only). Default true. */
   userInvocable?: boolean;
-  /** true = manual `/name` only, never auto-loaded (also not preloaded into subagents). Default false. */
+  /** true = manual `/name` only, never model-selected. Default false. */
   disableModelInvocation?: boolean;
-  /** Badge color in Advanced settings (hex or tailwind-safe hex). */
+  /** SPDX identifier of the skill content itself (not the Qube app). */
+  license?: string;
+  /** Human-readable provenance: where the content came from. */
+  provenance?: string;
+  /** Badge color in Advanced settings. */
   color?: string;
   source: SkillSource;
   /** Which marketplace this came from, if any. */
@@ -38,13 +47,18 @@ export interface SkillConfig {
   version?: string;
   installedAt: number;
   updatedAt: number;
-  /** System skills can't be deleted. */
+  /** Bundled skills can't be deleted (they can be overridden by the user). */
   isSystem?: boolean;
+  /** Absolute directory containing SKILL.md, when loaded from disk. */
+  path?: string;
+  /** Optional resource files shipped with the skill (scripts, references). */
+  resources?: string[];
 }
 
-export const SKILL_NAME_RE = /^[a-z0-9-]+$/;
+export const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const SKILL_NAME_MAX = 64;
 export const SKILL_DESC_MAX = 1024;
+export const SKILL_BODY_MAX_LINES = 500;
 
 const PALETTE = [
   "#5E6AD2",
@@ -67,60 +81,22 @@ export function colorForSkill(name: string): string {
   return PALETTE[h % PALETTE.length];
 }
 
-export function validateSkill(input: Partial<SkillConfig>): string | null {
-  const name = (input.name || "").trim();
-  if (!name) return "Skill name is required.";
-  if (name.length > SKILL_NAME_MAX) return `Skill name must be ≤${SKILL_NAME_MAX} characters.`;
-  if (!SKILL_NAME_RE.test(name))
-    return "Skill name must be lowercase letters, numbers, and hyphens only.";
-  const desc = (input.description || "").trim();
-  if (!desc) return "Skill description is required.";
-  if (desc.length > SKILL_DESC_MAX)
-    return `Skill description must be ≤${SKILL_DESC_MAX} characters.`;
-  const instructions = (input.instructions || "").trim();
-  if (!instructions) return "Skill instructions are required.";
-  if (instructions.split("\n").length > 500)
-    return "Keep SKILL.md under 500 lines — move details to references.";
-  return null;
+/** Normalize a user/agent supplied name into the skill-name grammar. */
+export function normalizeSkillName(raw: string): string {
+  return (raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, SKILL_NAME_MAX);
 }
 
-export function normalizeSkill(input: Partial<SkillConfig> & { name: string }): SkillConfig {
-  const now = Date.now();
-  return {
-    id:
-      input.id ||
-      `${input.name}_${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-    name: input.name.trim().toLowerCase(),
-    description: (input.description || "").trim(),
-    instructions: (input.instructions || "").trim(),
-    allowedTools: (input.allowedTools || "").trim() || undefined,
-    disallowedTools: (input.disallowedTools || "").trim() || undefined,
-    userInvocable: input.userInvocable !== false,
-    disableModelInvocation: input.disableModelInvocation === true,
-    color: input.color || colorForSkill(input.name),
-    source: input.source || "custom",
-    marketplace: input.marketplace,
-    version: input.version || "1.0.0",
-    installedAt: input.installedAt || now,
-    updatedAt: now,
-    isSystem: input.isSystem === true,
-  };
-}
-
-/** Render a Claude Code compatible SKILL.md file for export/debugging. */
-export function toSkillMd(skill: SkillConfig): string {
-  const lines: string[] = ["---"];
-  lines.push(`name: ${skill.name}`);
-  // Escape description quotes
-  const desc = skill.description.replace(/\n/g, " ").trim();
-  lines.push(`description: ${desc}`);
-  if (skill.allowedTools) lines.push(`allowed-tools: ${skill.allowedTools}`);
-  if (skill.disallowedTools) lines.push(`disallowed-tools: ${skill.disallowedTools}`);
-  if (skill.userInvocable === false) lines.push(`user-invocable: false`);
-  if (skill.disableModelInvocation === true)
-    lines.push(`disable-model-invocation: true`);
-  lines.push("---");
-  lines.push("");
-  lines.push(skill.instructions.trim() + "\n");
-  return lines.join("\n");
+/** Legacy persisted values ("system"/"custom") map onto the new sources. */
+export function normalizeSkillSource(value: unknown): SkillSource {
+  if (value === "system") return "bundled";
+  if (value === "custom") return "user";
+  if (value === "bundled" || value === "user" || value === "marketplace") return value;
+  return "user";
 }

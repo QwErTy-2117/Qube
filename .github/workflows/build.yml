@@ -130,18 +130,18 @@ jobs:
             fi
             sleep 2
           done
-          # The Qube Computer is the only runtime the agent works in; if it is
-          # not serving in the exact shipped bundle, every shell/file tool is
-          # dead on user machines. Assert the API answers before shutting down.
-          curl -sf http://127.0.0.1:3010/api/computer | grep -q '"persistent":true' || {
-            echo "computer runtime did not answer /api/computer"
-            kill "$(cat /tmp/qube-sidecar.pid)" || true
-            exit 1
-          }
-          test -d "$QUBE_DATA_DIR/.computer" || { echo "computer state dir was not created"; kill "$(cat /tmp/qube-sidecar.pid)" || true; exit 1; }
-          echo "computer runtime answered and created its state dir"
           kill "$(cat /tmp/qube-sidecar.pid)" || true
           popd >/dev/null
+
+      - name: Smoke test browser MCP (bundled server boots + lists tools)
+        # Turns the Windows production symptom "browser use MCP fails to
+        # start" into a per-OS gate: boots sidecar-dist/node-bin/node with
+        # sidecar-dist/lib/browser/auto-mcp/server.mjs (the exact artifacts
+        # Tauri ships -- not repo copies) and asserts tools/list returns the
+        # browser tools. Catches missing script, missing `ws`, wrong node
+        # arch, or bad perms in the bundle on the OS where it breaks.
+        shell: bash
+        run: node scripts/smoke-mcp.js sidecar-dist
 
   build:
     needs: test
@@ -316,3 +316,56 @@ jobs:
           kill "$(cat /tmp/qube-sidecar.pid)" || true
           popd >/dev/null
 
+      - name: Smoke test browser MCP
+        shell: bash
+        run: node scripts/smoke-mcp.js sidecar-dist
+
+  finalize-updater-manifest:
+    # tauri-action merges each platform into the shared latest.json with a
+    # read-modify-write. Parallel matrix jobs can drop each other's entries
+    # (v0.0.97 shipped without linux-x86_64, so Linux updater clients failed
+    # with "None of the fallback platforms ... were found"). Rebuild the
+    # manifest from the assets actually attached to the release, then prove
+    # the Linux keys exist before the workflow is green.
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Complete latest.json from release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/build-updater-json.mjs
+
+      - name: Verify Linux updater entries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          TAG="v${VERSION}"
+          mkdir -p "$RUNNER_TEMP/release"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern latest.json --dir "$RUNNER_TEMP/release"
+          node - "$RUNNER_TEMP/release/latest.json" <<'NODE'
+          const fs = require('node:fs');
+          const latest = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const required = [
+            'linux-x86_64-rpm',
+            'linux-x86_64-deb',
+            'linux-aarch64-rpm',
+            'linux-aarch64-deb',
+          ];
+          const missing = required.filter((platform) => !latest.platforms?.[platform]);
+          if (missing.length) {
+            console.error(`latest.json is missing updater platform entries: ${missing.join(', ')}`);
+            process.exit(1);
+          }
+          console.log(`Verified Linux updater entries: ${required.join(', ')}`);
+          NODE

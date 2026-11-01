@@ -1,14 +1,13 @@
 /**
  * Unified workspace / artifact model.
  *
- * A "browser" artifact is the Qube Computer browser side panel and a
- * "computer" artifact is the Qube Computer panel itself; everything else is
- * a file artifact whose inner viewer comes from components/artifact.
+ * A "browser" artifact is the browser side panel; everything else is a file
+ * artifact whose inner viewer comes from components/artifact.
  */
 
 import { detectArtifactKind, type ArtifactKind } from "@/lib/artifact/kinds";
 
-export type WorkspaceKind = "browser" | "computer" | ArtifactKind;
+export type WorkspaceKind = "browser" | ArtifactKind;
 
 export type SelectionRef =
   | { kind: "pdf"; page: number; text: string }
@@ -17,8 +16,7 @@ export type SelectionRef =
   | { kind: "slides"; slide: number; text: string }
   | { kind: "code"; startLine: number; endLine: number; text: string }
   | { kind: "text"; startLine: number; endLine: number; text: string }
-  | { kind: "browser"; url: string; text: string }
-  | { kind: "computer"; text: string };
+  | { kind: "browser"; url: string; text: string };
 
 export type WorkspaceSelection = SelectionRef & { id: string; at: number };
 

@@ -97,10 +97,10 @@ import { useTheme } from "next-themes";
 import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
 import { ChatErrorTopPopup, pushChatError, parseChatGPTError, isAgentErrorText, notifyAgentError } from "@/components/chat/chat-error-popup";
-import { QubeComputerCard, QubeComputerPanel } from "@/components/workspace";
+import { BrowserPanel } from "@/components/workspace";
 import { ArtifactPopup } from "@/components/artifact/ArtifactPopup";
 import { HtmlPanel } from "@/components/artifact/HtmlPanel";
-import { openComputerWorkspace, useWorkspaceStore } from "@/lib/workspace/store";
+import { openBrowserWorkspace, useWorkspaceStore } from "@/lib/workspace/store";
 
 const baseToolGroupBy = groupPartByType({
   reasoning: ["group-tool", "group-chainOfThought"],
@@ -1389,12 +1389,12 @@ const ChatErrorWatcher: FC = () => {
 
 // Opens the browser side panel when the agent uses browser tools.
 // Never closes it automatically — the window stays open after the run;
-// Opens the Qube Computer panel when the agent uses a computer tool. Opens
-// ONCE per tool call (tracked by toolCallId): closing the panel dismisses it
-// until a NEW computer call arrives — it never reopens on re-renders, and
-// nothing auto-closes the session.
-const openedComputerCallIds = new Set<string>();
-const ComputerAutoOpener: FC = () => {
+// only the panel X (or app shutdown) ends the session.
+// Opens ONCE per tool call (tracked by toolCallId): closing the panel
+// dismisses it until a NEW browser call arrives — it never reopens
+// itself on re-renders, and nothing auto-closes the window.
+const openedBrowserCallIds = new Set<string>();
+const BrowserAutoOpener: FC = () => {
   const messages = useAuiState((s) => s.thread.messages);
   const mountedRef = useRef(false);
   useEffect(() => {
@@ -1406,29 +1406,32 @@ const ComputerAutoOpener: FC = () => {
       }>) {
         const parts = m?.content || m?.parts || [];
         for (const p of parts) {
-          if (p?.type === "tool-call" && typeof p?.toolName === "string" && p.toolName.startsWith("computer_")) {
+          if (p?.type === "tool-call" && typeof p?.toolName === "string" && (p.toolName.startsWith("browser_") || ["open_tab","navigate","tabs","user_tabs","page_info","cdp","move_mouse","run_action_plan","wait_load","claim_tab","finalize_tabs","ping","info"].includes(p.toolName))) {
             ids.push(typeof p.toolCallId === "string" && p.toolCallId ? p.toolCallId : `${p.toolName}`);
           }
         }
       }
+      // On (re)mount, follow an already browser-active thread: the panel
+      // shows the shared live browser, so reopen to keep following it.
       if (!mountedRef.current) {
         mountedRef.current = true;
-        ids.forEach((id) => openedComputerCallIds.add(id));
+        ids.forEach((id) => openedBrowserCallIds.add(id));
         if (ids.length > 0) {
           const st = useWorkspaceStore.getState();
-          if (!st.open || st.artifact?.kind !== "computer") openComputerWorkspace();
+          if (!st.open || st.artifact?.kind !== "browser") openBrowserWorkspace();
           return;
         }
       }
-      const fresh = ids.filter((id) => !openedComputerCallIds.has(id));
+      const fresh = ids.filter((id) => !openedBrowserCallIds.has(id));
       if (fresh.length > 0) {
-        fresh.forEach((id) => openedComputerCallIds.add(id));
-        if (openedComputerCallIds.size > 200) {
-          const arr = [...openedComputerCallIds];
-          arr.slice(0, arr.length - 200).forEach((id) => openedComputerCallIds.delete(id));
+        fresh.forEach((id) => openedBrowserCallIds.add(id));
+        // Bound memory: forget calls from long-finished threads.
+        if (openedBrowserCallIds.size > 200) {
+          const arr = [...openedBrowserCallIds];
+          arr.slice(0, arr.length - 200).forEach((id) => openedBrowserCallIds.delete(id));
         }
         const st = useWorkspaceStore.getState();
-        if (!st.open || st.artifact?.kind !== "computer") openComputerWorkspace();
+        if (!st.open || st.artifact?.kind !== "browser") openBrowserWorkspace();
       }
     } catch {}
   }, [messages]);
@@ -1452,7 +1455,7 @@ export const Base: FC = () => {
     <div className="bg-muted text-foreground relative flex h-full w-full pl-2">
       <ChatErrorTopPopup />
       <ChatErrorWatcher />
-      <ComputerAutoOpener />
+      <BrowserAutoOpener />
       <ThreadUrlSync />
       <WorkspaceThreadReset />
       <DebugSend />
@@ -1469,11 +1472,10 @@ export const Base: FC = () => {
               <Thread />
             </main>
           </div>
-          <QubeComputerPanel />
+          <BrowserPanel />
           <HtmlPanel />
         </div>
       </div>
-      <QubeComputerCard />
       <ArtifactPopup />
       <ConnectorConnectDialog />
     </div>

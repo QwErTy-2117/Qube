@@ -46,9 +46,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const exists = s.tabs.find((t) => t.id === a.id);
       const tabs = exists ? s.tabs : [...s.tabs.slice(-7), a];
       try {
-        // Browser/computer visibility is driven by agent activity only —
-        // never persist it, so reloads don't resurrect those panels.
-        if (a.kind === "browser" || a.kind === "computer") {
+        // Browser visibility is driven by agent activity only —
+        // never persist it, so reloads don't resurrect the browser tab.
+        if (a.kind === "browser") {
           const docs = tabs.filter((t) => t.kind !== "browser");
           const docArtifact = docs.length > 0 ? { artifact: docs[docs.length - 1], tabs: docs } : null;
           if (docArtifact) localStorage.setItem(OPEN_KEY, JSON.stringify(docArtifact));
@@ -92,12 +92,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 }));
 
 export function openBrowserWorkspace() {
-  useWorkspaceStore.getState().openWorkspace({ id: "computer:browser", kind: "browser", title: "Qube Computer · Browser" });
-}
-
-/** Open the unified Qube Computer side panel (live VM/computer session). */
-export function openComputerWorkspace() {
-  useWorkspaceStore.getState().openWorkspace({ id: "computer:session", kind: "computer", title: "Qube Computer" });
+  useWorkspaceStore.getState().openWorkspace({ id: "browser:session", kind: "browser", title: "Browser" });
 }
 
 export function openDocumentWorkspace(input: {

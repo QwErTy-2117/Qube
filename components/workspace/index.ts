@@ -1,4 +1,4 @@
 export { DocComposer } from "./DocComposer";
 export { WorkspaceQuote } from "./WorkspaceQuote";
-export { QubeComputerCard } from "./QubeComputerCard";
-export { QubeComputerPanel } from "./QubeComputerPanel";
+export { BrowserToolUI } from "./BrowserToolUI";
+export { BrowserPanel } from "./BrowserPanel";

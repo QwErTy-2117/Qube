@@ -62,6 +62,8 @@ export function SlidesViewer({
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  const currentRef = useRef(0);
+  currentRef.current = current;
 
   // Refresh the rendered deck after the agent finishes writing to the file.
   const wasRunning = useRef(false);
@@ -107,10 +109,12 @@ export function SlidesViewer({
       previewerRef.current?.destroy();
     } catch {}
     previewerRef.current = null;
+    // Keep the reader on the same slide when the deck is reloaded after an
+    // agent edit; a fresh open still honours the requested initial slide.
+    const preferredIndex = reloadToken > 0 ? currentRef.current : (initialSlideRef.current ?? 1) - 1;
     setStatus("loading");
     setError("");
     setSlideCount(0);
-    setCurrent(0);
     setZoomMode("fit");
 
     (async () => {
@@ -138,7 +142,7 @@ export function SlidesViewer({
         .forEach((node) => node.remove());
 
       const total = instance.slideCount || nextMeta.slideCount;
-      const target = clamp((initialSlideRef.current ?? 1) - 1, 0, Math.max(0, total - 1));
+      const target = clamp(preferredIndex, 0, Math.max(0, total - 1));
       if (target > 0) instance.renderSingleSlide(target);
 
       setMeta(nextMeta);

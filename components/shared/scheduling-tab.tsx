@@ -76,7 +76,7 @@ export function SchedulingTab() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   // AI draft flow: prompt -> generating -> review (prefilled form).
-  const [draftStage, setDraftStage] = useState<"prompt" | "generating" | "review">("review");
+  const [draftStage, setDraftStage] = useState<"prompt" | "generating" | "review">("prompt");
   const [draftError, setDraftError] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
 
@@ -245,6 +245,44 @@ export function SchedulingTab() {
       createKind === "none" ||
       (createRunAt !== "" && new Date(createRunAt).getTime() > Date.now()));
 
+  const HOUR = 60;
+  const WEEK = 10080;
+  const MONTH = 43200;
+
+  const clockHour = createClock?.hour ?? 9;
+  const clockMinute = createClock?.minute ?? 0;
+  const clockTime = `${String(clockHour).padStart(2, "0")}:${String(clockMinute).padStart(2, "0")}`;
+  const clockWeekday = createClock?.weekdays?.[0] ?? 1;
+  const clockMonthDay = createClock?.monthDay ?? 1;
+
+  function setClockTime(value: string) {
+    const [h, m] = value.split(":").map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return;
+    setCreateClock((prev) => ({ ...(prev ?? {}), hour: h, minute: m }));
+  }
+
+  function setClockWeekday(value: number) {
+    setCreateClock((prev) => ({ ...(prev ?? {}), weekdays: [value] }));
+  }
+
+  function setClockMonthDay(value: number) {
+    setCreateClock((prev) => ({ ...(prev ?? {}), monthDay: value }));
+  }
+
+  // Hourly repeats keep the raw interval. Daily/weekly/monthly are wall-clock
+  // schedules: the backend needs hour/minute (plus weekday/month-day) and
+  // then ignores intervalMinutes, so never send a clock with the hourly path.
+  function intervalSchedule() {
+    if (createInterval === HOUR) return { intervalMinutes: HOUR };
+    return {
+      intervalMinutes: createInterval,
+      hour: clockHour,
+      minute: clockMinute,
+      ...(createInterval === WEEK ? { weekdays: [clockWeekday] } : {}),
+      ...(createInterval === MONTH ? { monthDay: clockMonthDay } : {}),
+    };
+  }
+
   async function handleCreate() {
     if (!canCreate || creating) return;
     setCreating(true);
@@ -271,8 +309,7 @@ export function SchedulingTab() {
                 name: createName.trim(),
                 instructions: createInstructions.trim(),
                 scheduleKind: "interval",
-                intervalMinutes: createInterval,
-                ...(createClock ?? {}),
+                ...intervalSchedule(),
               };
       const res = await fetch("/api/scheduler/tasks", {
         method: "POST",
@@ -299,7 +336,7 @@ export function SchedulingTab() {
       ? { ...base, runAt: createRunAt ? new Date(createRunAt).toISOString() : undefined }
       : createKind === "none"
         ? { ...base }
-        : { ...base, intervalMinutes: createInterval, ...(createClock ?? {}) };
+        : { ...base, ...intervalSchedule() };
   }
 
   async function runDraft(prompt: string, current: unknown) {
@@ -614,6 +651,76 @@ export function SchedulingTab() {
                     })}
                   </div>
 
+                  {createInterval === HOUR ? (
+                    <p className="text-xs text-muted-foreground">
+                      Runs every hour.
+                    </p>
+                  ) : (
+                    <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
+                      <div className="flex items-center gap-2">
+                        <label
+                          className="text-xs font-medium text-muted-foreground"
+                          htmlFor="task-interval-time"
+                        >
+                          At
+                        </label>
+                        <input
+                          className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+                          id="task-interval-time"
+                          onChange={(e) => setClockTime(e.target.value)}
+                          type="time"
+                          value={clockTime}
+                        />
+                      </div>
+                      {createInterval === WEEK && (
+                        <div className="flex items-center gap-2">
+                          <label
+                            className="text-xs font-medium text-muted-foreground"
+                            htmlFor="task-weekday"
+                          >
+                            On
+                          </label>
+                          <select
+                            className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+                            id="task-weekday"
+                            onChange={(e) => setClockWeekday(Number(e.target.value))}
+                            value={clockWeekday}
+                          >
+                            {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map(
+                              (day, index) => (
+                                <option key={day} value={index}>
+                                  {day}
+                                </option>
+                              ),
+                            )}
+                          </select>
+                        </div>
+                      )}
+                      {createInterval === MONTH && (
+                        <div className="flex items-center gap-2">
+                          <label
+                            className="text-xs font-medium text-muted-foreground"
+                            htmlFor="task-monthday"
+                          >
+                            On day
+                          </label>
+                          <select
+                            className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+                            id="task-monthday"
+                            onChange={(e) => setClockMonthDay(Number(e.target.value))}
+                            value={clockMonthDay}
+                          >
+                            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                              <option key={day} value={day}>
+                                {day}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-xs text-muted-foreground">of the month</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : null}
 
@@ -631,7 +738,7 @@ export function SchedulingTab() {
 
             <div className="shrink-0 flex items-center gap-2">
               <div className="min-w-0 flex-1">
-                <PromptPill busy={false} onSend={(t) => runDraft(t, currentDraftInput())} placeholder="Describe an edit…" />
+                <PromptPill busy={drafting} onSend={(t) => runDraft(t, currentDraftInput())} placeholder="Describe an edit…" />
               </div>
               <button
                 onClick={handleCreate}

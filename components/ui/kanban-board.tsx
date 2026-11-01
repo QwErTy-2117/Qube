@@ -241,12 +241,7 @@ function Card({
   return (
     <motion.div
       animate="animate"
-      className={
-        draggable
-          ? "not-prose flex cursor-grab select-none flex-row items-start gap-2 active:cursor-grabbing"
-          : "not-prose flex select-none flex-row items-start gap-2"
-      }
-      draggable={draggable}
+      className="not-prose"
       exit="exit"
       initial={
         enterFromBelow
@@ -255,15 +250,7 @@ function Card({
       }
       layout
       layoutId={card.id}
-      onDragEnd={onDragEnd}
-      // NOTE: motion types onDragStart as its pan handler; the arrow
-      // forwards the native HTML5 drag event (with dataTransfer).
-      onDragStart={(e: any) => onDragStart(e as React.DragEvent<HTMLDivElement>)}
       style={{
-        ...containerStyle,
-        boxShadow: isDragging
-          ? "0 0 0 1px var(--border), 0 12px 32px rgba(0,0,0,0.18), 0 4px 8px rgba(0,0,0,0.10)"
-          : "0 0 0 1px var(--border), 0 1px 2px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.03)",
         opacity: isDone && !isDragging ? 0.5 : 1,
         position: "relative",
         zIndex: isDragging ? 50 : 1,
@@ -276,26 +263,44 @@ function Card({
       variants={cardVariants}
       whileHover={{
         y: -2,
-        boxShadow:
-          "0 0 0 1px var(--border), 0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06)",
         transition: { type: "spring", stiffness: 400, damping: 20 },
       }}
       whileTap={{ scale: 0.97 }}
     >
-      <span className="pt-[1px]">
-        <StatusCircle done={taskDone} spinning={spinning} />
-      </span>
-      {/* Title only — `div` avoids `.prose p` margins when embedded in MDX/docs */}
+      {/* Native HTML5 drag lives on a plain element: Framer Motion reserves
+          onDragStart/onDragEnd for pan gestures on motion components, which
+          left only the first card in each column draggable. */}
       <div
-        className="min-w-0 flex-1 font-semibold text-[11.5px] leading-snug"
+        className={
+          draggable
+            ? "flex cursor-grab select-none flex-row items-start gap-2 active:cursor-grabbing"
+            : "flex select-none flex-row items-start gap-2"
+        }
+        draggable={draggable}
+        onDragEnd={onDragEnd}
+        onDragStart={onDragStart}
         style={{
-          color: "var(--foreground)",
-          textDecoration: isDone ? "line-through" : "none",
-          textDecorationColor: isDone ? "var(--muted-foreground)" : undefined,
-          textWrap: "pretty",
+          ...containerStyle,
+          boxShadow: isDragging
+            ? "0 0 0 1px var(--border), 0 12px 32px rgba(0,0,0,0.18), 0 4px 8px rgba(0,0,0,0.10)"
+            : "0 0 0 1px var(--border), 0 1px 2px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.03)",
         }}
       >
-        {card.title}
+        <span className="pt-[1px]">
+          <StatusCircle done={taskDone} spinning={spinning} />
+        </span>
+        {/* Title only — `div` avoids `.prose p` margins when embedded in MDX/docs */}
+        <div
+          className="min-w-0 flex-1 font-semibold text-[11.5px] leading-snug"
+          style={{
+            color: "var(--foreground)",
+            textDecoration: isDone ? "line-through" : "none",
+            textDecorationColor: isDone ? "var(--muted-foreground)" : undefined,
+            textWrap: "pretty",
+          }}
+        >
+          {card.title}
+        </div>
       </div>
     </motion.div>
   )
@@ -449,15 +454,16 @@ export function Column({
       // Prefer React state, fall back to the native payload (some webviews
       // deliver the drop without the state update having flushed).
       const cardId =
-        dragState?.cardId || e.dataTransfer.getData("text/plain")
+        e.dataTransfer.getData("text/plain") || dragState?.cardId
       const from =
-        dragState?.fromColumn ||
-        (e.dataTransfer.getData("application/x-from-column") as ColumnStatus)
+        (e.dataTransfer.getData("application/x-from-column") as ColumnStatus) ||
+        dragState?.fromColumn
+      setDragState(null)
       if (!cardId || !from) return
       if (from === "done" && e.dataTransfer.getData("application/x-rerunnable") !== "1") return
       onDrop(cardId, from, column.id)
     },
-    [dragState, onDrop, column.id]
+    [dragState, onDrop, setDragState, column.id]
   )
 
   return (

@@ -1,6 +1,5 @@
 import { skillStore } from "@/lib/skills/store";
-import { validateSkill } from "@/lib/skills/registry";
-import type { SkillConfig } from "@/lib/skills/types";
+import { validateSkill, type SkillConfig } from "@/lib/skills/types";
 
 export async function GET() {
   try {

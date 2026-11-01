@@ -20,8 +20,8 @@ export function ArtifactPopup() {
   const isRunning = useAuiState((s) => s.thread.isRunning);
 
   if (!open || !artifact) return null;
-  // Browser/computer sessions and HTML pages have their own side panels.
-  if (artifact.kind === "browser" || artifact.kind === "computer" || artifact.kind === "html") return null;
+  // Browser sessions and HTML pages have their own side panels.
+  if (artifact.kind === "browser" || artifact.kind === "html") return null;
 
   const filePath = artifact.filePath || "";
   const filename = artifact.title || filePath.split("/").pop() || "file";

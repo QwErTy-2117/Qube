@@ -13,7 +13,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { buildSubagentSystemPrompt } from "@/lib/pi/subagents";
-import { computerInstructions } from "@/lib/pi/prompt-context";
+import { browserUseInstructions } from "@/lib/pi/prompt-context";
 import { buildPiTaskSystemPrompt } from "@/lib/pi/task-runner";
 
 const currentYear = String(new Date().getFullYear());
@@ -37,20 +37,19 @@ describe("subagent system prompt", () => {
   });
 });
 
-describe("computer instructions describe the Qube Computer contract", () => {
-  it("documents persistence, confinement and the permission-gated boundary", () => {
-    const text = computerInstructions();
+describe("browser instructions describe the live kernel contract", () => {
+  it("documents verdicts, repeat discipline, disabled targets, takeover, and gating", () => {
+    const text = browserUseInstructions(true);
     for (const term of [
-      "persistent",
-      "computer_status",
-      "computer_run",
-      "computer_import",
-      "computer_export",
+      "_kernel",
+      "blocked/denied",
+      "repeat-warned",
+      "Disabled targets fail before acting",
+      "request_takeover",
+      "CAPTCHAs",
       "approval",
-      "computer_reset",
-      "survives restarts",
     ]) {
-      assert.ok(text.includes(term), `computer instructions must mention: ${term}`);
+      assert.ok(text.includes(term), `browser instructions must mention: ${term}`);
     }
   });
 });

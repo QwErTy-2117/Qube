@@ -60,7 +60,8 @@ has. Treat adding one like installing software:
 - If a tool seems missing, check the server actually exposes it over MCP and
   look for the startup warning in chat.
 - Advanced overrides for source/self-hosted runs include
-  `PI_MCP_TIMEOUT_MS` (client timeout). See
+  `PI_MCP_TIMEOUT_MS` (client timeout) and, for the built-in browser service,
+  `BROWSER_MCP_DISABLED` / `BROWSER_MCP_COMMAND`. See
   [Environment variables](./configuration.md).
 
 For driving Qube itself from an editor rather than adding tools to it, see

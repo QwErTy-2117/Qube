@@ -2389,6 +2389,29 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                 </div>
 
 
+                {/* Heartbeat and Task Section */}
+                <div className="border-t border-border/40 pt-6 space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold text-foreground">Heartbeat and Task</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Choose what Qube may do on its own, and how sensitive actions are approved.
+                      </p>
+                      <p className="text-[11px] text-muted-foreground/70">
+                        Tools {allowTools ? "on" : "off"} · Connectors {allowConnectors ? "on" : "off"} · Destructive actions {allowDestructiveActions ? "on" : "off"} · {autoApproveActions ? "Auto-approve" : "Self-review"}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleOpenHeartbeatTask}
+                      variant="outline"
+                      className="rounded-full font-semibold px-4 h-8 shrink-0"
+                      size="sm"
+                    >
+                      Configure
+                    </Button>
+                  </div>
+                </div>
+
                 {/* Startup & Background Section */}
                 <div className="border-t border-border/40 pt-6 space-y-4">
                   <div className="space-y-1">
@@ -2419,29 +2442,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         saveSettingsToServer();
                       }} />
                     </div>
-                  </div>
-                </div>
-
-                {/* Heartbeat and Task Section */}
-                <div className="border-t border-border/40 pt-6 space-y-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <h3 className="text-sm font-semibold text-foreground">Heartbeat and Task</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Choose what Qube may do on its own, and how sensitive actions are approved.
-                      </p>
-                      <p className="text-[11px] text-muted-foreground/70">
-                        Tools {allowTools ? "on" : "off"} · Connectors {allowConnectors ? "on" : "off"} · Destructive actions {allowDestructiveActions ? "on" : "off"} · {autoApproveActions ? "Auto-approve" : "Self-review"}
-                      </p>
-                    </div>
-                    <Button
-                      onClick={handleOpenHeartbeatTask}
-                      variant="outline"
-                      className="rounded-full font-semibold px-4 h-8 shrink-0"
-                      size="sm"
-                    >
-                      Configure
-                    </Button>
                   </div>
                 </div>
               </div>

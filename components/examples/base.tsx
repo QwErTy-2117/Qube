@@ -403,16 +403,19 @@ const Thread: FC = () => {
             <ThreadPrimitive.ViewportFooter
               className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-2 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
             >
-              <QuestionPanel />
-              {/* On send the bar glides center → bottom; on navigation it is
-                  simply there (mount-only initial, never traps the UI). */}
-              <motion.div
-                initial={justSent ? { y: -140, opacity: 0.7 } : false}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ type: "spring", stiffness: 260, damping: 30 }}
-              >
-                <Composer />
-              </motion.div>
+              <QuestionPanel
+                fallback={
+                  /* On send the bar glides center → bottom; on navigation it is
+                     simply there (mount-only initial, never traps the UI). */
+                  <motion.div
+                    initial={justSent ? { y: -140, opacity: 0.7 } : false}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 30 }}
+                  >
+                    <Composer />
+                  </motion.div>
+                }
+              />
             </ThreadPrimitive.ViewportFooter>
           </div>
         )}

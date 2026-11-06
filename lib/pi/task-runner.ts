@@ -92,7 +92,7 @@ export function buildPiTaskSystemPrompt(task: ScheduledTask, heartbeatState?: st
 - If nothing useful can be carried forward, return exactly HEARTBEAT_OK with no tool calls (quiet tick, idempotent). Act once, never repeat a completed action.`
       : `\n\n## Scheduled-task discipline (exact timing, isolated)
 - This is an exact-timed automation with its own run history. Execute the instructions fully and autonomously.
-- Your instructions WERE written (or approved) by the user, so they ARE your authorization: if they say to email, post, create, or delete something, DO it with the connector tools — do not draft-and-wait, do not ask (there is no user here). Draft-only applies to the heartbeat monitor, never to you.
+- Your instructions WERE written (or approved) by the user, so they ARE your authorization: if they say to email, post, create, or delete something, call the tool directly — do not draft-and-wait, do not ask (there is no user here). The same hard limits and invisible reviewer as chat still apply; if a call is blocked, report it plainly. Draft-only applies to the heartbeat monitor, never to you.
 - If a connector tool you need is MISSING from your tool list, that service is not connected. Say so plainly in your summary ("Gmail is not connected, so I saved the report to documents/... instead") — NEVER invent session-token, handshake, re-login, or "not active in this session" stories. Report only what tools actually returned.
 - Done criteria first: read the Done criteria / Only-report-if / Deliverable lines in your instructions (appended at creation). A run that finds "no change" under an only-report-if rule stays silent — that is success, not failure.
 - Verify before finishing: re-list every file you wrote (list_directory), re-fetch one edited URL, validate JSON you produced. Mark file deliverables with [file: path]. Report verified state (succeeded/partial/failed). Never claim work without tool results.`;
@@ -110,7 +110,7 @@ ${task.instructions}
 - Subagents: subagent(description, prompt, agentType) — isolated child (Explore/researcher/reviewer/general). Use for recon that would flood context; validate outputs.
 - Automations: schedule_task (create/list/update/delete/trigger), update_heartbeat (get/note/update), heartbeat_work (list/start/progress/complete/block/request_approval/resolve_approval), track_announcement (record/find shared cross-chat facts) — manage future work and durable progress from background runs. Heartbeat runs must NOT create schedules from here.
 - ask_user always returns available=false headless — never block on it; proceed with best judgment.
-- Connectors${connectorHint ? ` (connected: ${connectorHint})` : " (none connected — save file deliverables to the workspace instead of sending)"}: external service tools via Composio when connected (exact schemas at runtime).${task.type === "heartbeat" ? " Heartbeat lanes: Lane A monitor (reads), Lane B reversible in-workspace prep (compile/build/draft files — AUTHORIZED), Lane C sends/creates/deletes externally NEVER headless (draft + file only, ask in next chat)." : " Your instructions are the user's approval, so perform the sends/creates/deletes they request."}
+- Connectors${connectorHint ? ` (connected: ${connectorHint})` : " (none connected — save file deliverables to the workspace instead of sending)"}: external service tools via Composio when connected (exact schemas at runtime).${task.type === "heartbeat" ? " Heartbeat lanes: Lane A monitor (reads), Lane B reversible in-workspace prep (compile/build/draft files — AUTHORIZED), Lane C sends/creates/deletes externally NEVER headless (draft + file only, ask in next chat)." : " Your instructions are the user's authorization; call the sends/creates/deletes they request. Hard limits and the invisible reviewer still apply."}
 - plus any custom MCP tools from Advanced → MCP Servers (if configured) — names vary, use exact declared schemas
 Background tasks run headless: prefer web_search/web_fetch over interactive browser automation.
 ${skillsSection ? `\n${skillsSection}\n` : ""}${heartbeatContext}${heartbeatDiscipline}
@@ -189,7 +189,7 @@ async function runPiTaskInternal(
 
   // Use Pi tools as base, then extend with task-specific external tools (Pi unified ownership).
   // Scheduled tasks run unattended — no interactive questioning.
-  const piBaseTools = createPiTools(threadId, { includeAskUser: false });
+  const piBaseTools = createPiTools(threadId, { includeAskUser: false, userRequest: task.instructions });
 
   // MCP: load custom servers for tasks as well (isolated, non-fatal)
   let mcpClients: Awaited<ReturnType<typeof loadMcpTools>>["clients"] = [];
@@ -291,17 +291,29 @@ async function runPiTaskInternal(
       let gated = 0;
       try {
         const { shouldGateConnectorTool, describeConnectorAction } = await import("@/lib/permissions/sensitive");
+        const { checkActionPolicy } = await import("@/lib/permissions/policy");
         const { queueHeartbeatApproval } = await import("@/lib/proactivity/heartbeat-work");
         const { tool } = await import("ai");
+        const { withPermissionCheck } = await import("@/lib/middleware/permission-middleware");
         for (const [name, t] of Object.entries(conn.tools)) {
+          const origExecute = (t as any)?.execute;
+          if (typeof origExecute !== "function") {
+            (piBaseTools as any)[name] = t;
+            continue;
+          }
+
           if (shouldGateConnectorTool(task.type, name)) {
             gated++;
             const realSchema = (t as any)?.inputSchema ?? (t as any)?.parameters;
             (piBaseTools as any)[name] = tool({
               description: `HEADLESS DRAFT-ONLY for ${name}: the heartbeat monitor may only read — sending, posting, deleting, purchasing, merging, and closing require explicit user approval. Fill the REAL parameters and return a draft instead (Lane B prep: save the draft content/file, then record it with heartbeat_work). Original: ${String((t as any)?.description || "").slice(0, 300)}`,
               inputSchema: realSchema,
-              execute: async (args: any) => {
+              execute: async (args: any, ...rest: any[]) => {
                 const input = args && typeof args === "object" ? args : {};
+                const policy = checkActionPolicy(name, input, "connector");
+                if (!policy.allowed) {
+                  return JSON.stringify({ error: true, tool: name, message: policy.reason });
+                }
                 let approvalId: string | null = null;
                 try {
                   const purpose = describeConnectorAction(name, input);
@@ -325,9 +337,50 @@ async function runPiTaskInternal(
                 });
               },
             });
-          } else {
-            (piBaseTools as any)[name] = t;
+            continue;
           }
+
+          if (task.type === "heartbeat") {
+            // Read-only heartbeat work still respects the connectors switch.
+            (t as any).execute = async (args: any, ...rest: any[]) => {
+              const input = args && typeof args === "object" ? args : {};
+              const policy = checkActionPolicy(name, input, "connector");
+              if (!policy.allowed) {
+                return JSON.stringify({ error: true, tool: name, message: policy.reason });
+              }
+              return origExecute.call(t, input, ...rest);
+            };
+            (piBaseTools as any)[name] = t;
+            continue;
+          }
+
+          // Scheduled/one-shot tasks: connectors may run, but the same
+          // hard limits and invisible self-review as chat apply. There is no
+          // user here, so an escalated review becomes a denial.
+          const bound = origExecute.bind(t);
+          (t as any).execute = async (args: any, extra?: any) => {
+            const input = args && typeof args === "object" ? args : {};
+            try {
+              return await withPermissionCheck(
+                name,
+                input,
+                threadId,
+                (allowed: any) => bound(allowed, extra),
+                {
+                  category: "connector",
+                  headless: true,
+                  userRequest: task.instructions,
+                },
+              );
+            } catch (e: any) {
+              return JSON.stringify({
+                error: true,
+                tool: name,
+                message: e?.message || String(e),
+              });
+            }
+          };
+          (piBaseTools as any)[name] = t;
         }
         if (gated > 0) console.log(`[pi-task] Gated ${gated} sensitive connector tools to draft-only for task ${task.id}`);
       } catch (e) {

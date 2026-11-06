@@ -284,7 +284,7 @@ export function SchedulingTab() {
   }
 
   async function handleCreate() {
-    if (!canCreate || creating) return;
+    if (!canCreate || creating || drafting) return;
     setCreating(true);
     setCreateError(null);
     try {
@@ -488,7 +488,7 @@ export function SchedulingTab() {
             if (!v) resetCreateForm();
           }}
         >
-          <DialogContent className="sm:max-w-md rounded-3xl h-[640px] flex flex-col overflow-hidden shadow-none">
+          <DialogContent className="sm:max-w-md rounded-3xl h-[640px] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-none">
             <DialogHeader>
               <DialogTitle>New task</DialogTitle>
               <DialogDescription className="sr-only">
@@ -627,7 +627,7 @@ export function SchedulingTab() {
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { label: "Hour", minutes: 60, icon: Clock },
-                      { label: "Day", minutes: 1440, icon: Calendar },
+                      { label: "Day", minutes: 1440, icon: CalendarIcon },
                       { label: "Week", minutes: 10080, icon: CalendarDays },
                       { label: "Month", minutes: 43200, icon: CalendarRange },
                     ].map((opt) => {
@@ -742,7 +742,7 @@ export function SchedulingTab() {
               </div>
               <button
                 onClick={handleCreate}
-                disabled={!canCreate || creating}
+                disabled={!canCreate || creating || drafting}
                 aria-label="Save task"
                 className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
               >

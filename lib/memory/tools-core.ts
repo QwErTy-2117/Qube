@@ -27,11 +27,8 @@ export const SAVE_MEMORY_DESCRIPTION =
   "Use the smallest useful scope; pass scopeKey for project-specific facts.";
 
 export function isMemoryEnabled(): boolean {
-  try {
-    return settingsStore.getAll().memoryEnabled !== false;
-  } catch {
-    return true;
-  }
+  // Memory is always on.
+  return true;
 }
 
 export type RecallArgs = {

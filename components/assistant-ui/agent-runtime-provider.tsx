@@ -226,7 +226,6 @@ export function AgentRuntimeProvider({ children }: { children: ReactNode }) {
               if (s.defaultModel) localStorage.setItem("qube-default-model", s.defaultModel);
               if (s.runOnStart !== undefined) localStorage.setItem("qube-run-on-start", String(s.runOnStart));
               if (s.keepAlive !== undefined) localStorage.setItem("qube-keep-alive", String(s.keepAlive));
-              if (s.memoryEnabled !== undefined) localStorage.setItem("qube-memory-enabled", String(s.memoryEnabled !== false));
               if (s.runOnStart) {
                 fetch("/api/scheduler/tasks").catch(() => {});
               }
@@ -319,13 +318,6 @@ function useQubeChatThread() {
             if (Array.isArray(parsed) && parsed.length > 0) allowedDirs = parsed;
           }
         } catch {}
-        // Long-term memory toggle (Advanced settings). Default ON; only explicit "false" disables.
-        let memoryEnabled: boolean | undefined;
-        try {
-          const raw = localStorage.getItem("qube-memory-enabled");
-          if (raw !== null) memoryEnabled = raw === "true";
-        } catch {}
-
         return {
           instanceId,
           ...(customSystemPrompt ? { customSystemPrompt } : {}),
@@ -335,7 +327,6 @@ function useQubeChatThread() {
           ...(mcpServers ? { mcpServers } : {}),
           ...(skills ? { skills } : {}),
           ...(allowedDirs ? { allowedDirs } : {}),
-          ...(memoryEnabled !== undefined ? { memoryEnabled } : {}),
         };
       },
     }),

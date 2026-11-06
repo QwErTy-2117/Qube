@@ -3,10 +3,6 @@ import { warmup } from "@/lib/memory/memory-store";
 
 export async function POST(req: NextRequest) {
   try {
-    const { settingsStore } = await import("@/lib/settings-store");
-    if (settingsStore.getAll().memoryEnabled === false) {
-      return NextResponse.json({ ok: true, prefetched: false, reason: "memory disabled" });
-    }
     const { partial, query } = await req.json().catch(() => ({}));
     const text = ((partial || query || "") as string).trim();
     if (!text || text.length < 2) {

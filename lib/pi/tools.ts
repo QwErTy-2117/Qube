@@ -49,12 +49,19 @@ export type PiToolsOptions = {
   includeAskUser?: boolean;
   parentModelName?: string | null;
   request?: Request;
+  userRequest?: string;
   threadIdForScratchpad?: string;
 };
 
 export function createPiTools(threadId: string, opts?: PiToolsOptions) {
   const withPerm = (name: string, args: any, fn: () => Promise<string>) =>
-    withPermissionCheck(name, args, threadId, fn);
+    withPermissionCheck(name, args, threadId, fn, {
+      category: "tool",
+      modelName: opts?.parentModelName,
+      request: opts?.request,
+      userRequest: opts?.userRequest,
+      headless: opts?.includeAskUser === false,
+    });
 
   const includeSubagents = opts?.includeSubagents !== false;
   const includeTodos = opts?.includeTodos !== false;
@@ -81,7 +88,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
         "Batch ALL questions for this decision into ONE call (up to 6) — never ask one-by-one across turns. " +
         "Keep each question to one sentence; options to 2-4 short labels (≤5 words each); set multiSelect only when several answers make sense. " +
         "The user may also type free text instead of picking options. " +
-        "Do NOT use for anything answerable from files, tools, or prior context, and never to ask permission for a read-only look-up, a draft, or an action the user already asked for (sensitive actions show their own approval card). Returns { answers: { <id>: string | string[] } }.",
+        "Do NOT use for anything answerable from files, tools, or prior context, and never to ask permission for a read-only look-up, a draft, or an action the user already asked for (sensitive actions go through Qube's invisible reviewer). Returns { answers: { <id>: string | string[] } }.",
       inputSchema: z.object({
         questions: z
           .array(
@@ -195,6 +202,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
             parentThreadId: threadId,
             modelName: opts?.parentModelName || null,
             request: opts?.request,
+            userRequest: opts?.userRequest,
           });
           return JSON.stringify(result);
         } catch (e: any) {
@@ -339,7 +347,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
   extraTools.browser_screenshot = tool({
     description: BROWSER_SCREENSHOT_DESC,
     inputSchema: z.object({}),
-    execute: runBrowserScreenshot,
+    execute: () => withPerm("browser_screenshot", {}, runBrowserScreenshot),
     toModelOutput: async ({ output }: any) => modelOutputWithFrame(output),
   });
   extraTools.browser_pixel_act = tool({
@@ -354,7 +362,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
   extraTools.computer_observe = tool({
     description: `[DEPRECATED alias of browser_screenshot — use browser_screenshot instead.] ${BROWSER_SCREENSHOT_DESC}`,
     inputSchema: z.object({}),
-    execute: runBrowserScreenshot,
+    execute: () => withPerm("browser_screenshot", {}, runBrowserScreenshot),
     toModelOutput: async ({ output }: any) => modelOutputWithFrame(output),
   });
   extraTools.computer_act = tool({
@@ -427,14 +435,16 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
       'Open a URL in the managed browser and return the document title. Prefer this over pixel clicks for web pages. If the result includes fallback:"browser_pixel_act", use browser_pixel_act in the same browser window instead.',
     inputSchema: z.object({ url: z.string().describe("http(s) URL to open") }),
     execute: async ({ url }: { url: string }) => {
-      try {
-        const { browserNavigate } = await import("./computer-use");
-        const res = await browserNavigate(String(url || ""));
-        pokeBrowserPanel();
-        return JSON.stringify(res).slice(0, 4000);
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act" });
-      }
+      return withPerm("browser_navigate", { url }, async () => {
+        try {
+          const { browserNavigate } = await import("./computer-use");
+          const res = await browserNavigate(String(url || ""));
+          pokeBrowserPanel();
+          return JSON.stringify(res).slice(0, 4000);
+        } catch (e: any) {
+          return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act" });
+        }
+      });
     },
   });
   extraTools.browser_snapshot = tool({
@@ -442,14 +452,16 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
       "Capture a bounded snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over browser_screenshot for web pages. If fallback is browser_pixel_act, use pixel/coordinate tools in the same browser window instead.",
     inputSchema: z.object({}),
     execute: async () => {
-      try {
-        const { browserSnapshot } = await import("./computer-use");
-        const res = await browserSnapshot();
-        const out = { url: res.url, title: res.title, tree: res.tree?.slice(0, 8000), elements: res.elements, fallback: (res as any).fallback, error: (res as any).error, note: (res as any).note };
-        return JSON.stringify(out).slice(0, 12000);
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act" });
-      }
+      return withPerm("browser_snapshot", {}, async () => {
+        try {
+          const { browserSnapshot } = await import("./computer-use");
+          const res = await browserSnapshot();
+          const out = { url: res.url, title: res.title, tree: res.tree?.slice(0, 8000), elements: res.elements, fallback: (res as any).fallback, error: (res as any).error, note: (res as any).note };
+          return JSON.stringify(out).slice(0, 12000);
+        } catch (e: any) {
+          return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act" });
+        }
+      });
     },
   });
   extraTools.browser_act = tool({
@@ -459,14 +471,16 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
       actions: z.array(z.record(z.string(), z.any())).describe("Page actions by ref (max 24)"),
     }),
     execute: async ({ actions }: { actions: unknown }) => {
-      try {
-        const { browserAct } = await import("./computer-use");
-        const res = await browserAct(actions as any);
-        pokeBrowserPanel();
-        return JSON.stringify(res).slice(0, 6000);
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act", uncertain: true });
-      }
+      return withPerm("browser_act", { actions }, async () => {
+        try {
+          const { browserAct } = await import("./computer-use");
+          const res = await browserAct(actions as any);
+          pokeBrowserPanel();
+          return JSON.stringify(res).slice(0, 6000);
+        } catch (e: any) {
+          return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act", uncertain: true });
+        }
+      });
     },
   });
   extraTools.request_takeover = tool({
@@ -854,9 +868,9 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           return JSON.stringify({ error: e.message || String(e), query, results: [] });
         }
         };
-        // Web search leaves the workspace → approval modal in chat sessions.
-        if (interactive) return withPerm("web_search", { query }, run);
-        return run();
+        // Hard limits still apply in background runs; ordinary web lookups
+        // auto-allow in the permission layer.
+        return withPerm("web_search", { query }, run);
       },
     }),
 
@@ -904,10 +918,10 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           return JSON.stringify({ error: e.message || String(e), url });
         }
         };
-        // Goes through the permission layer, but read-only web fetches auto-allow
-        // (see evaluateToolCall) — no approval modal for ordinary lookups.
-        if (interactive) return withPerm("web_fetch", { url, selector }, run);
-        return run();
+        // Goes through the permission layer in every run, but read-only web
+        // fetches auto-allow (see evaluateToolCall) — no approval modal for
+        // ordinary lookups.
+        return withPerm("web_fetch", { url, selector }, run);
       },
     }),
   };

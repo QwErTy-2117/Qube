@@ -1,0 +1,1 @@
+https://stripe.com/blog/giving-agents-the-ability-to-pay

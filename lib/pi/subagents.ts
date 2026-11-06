@@ -117,6 +117,7 @@ export async function runSubagent(opts: {
   parentThreadId: string;
   modelName?: string | null;
   request?: Request;
+  userRequest?: string;
 }): Promise<SubagentResult> {
   const agentType = normalizeAgentType(opts.agentType);
   const title = agentType; // pill shows "Explore <description>" like screenshots
@@ -207,6 +208,7 @@ export async function runSubagent(opts: {
       includeAskUser: false,
       parentModelName: effectiveModel,
       request: opts.request,
+      userRequest: opts.userRequest,
     }) as Record<string, any>;
 
     let childTools: Record<string, any> = allTools;
@@ -253,7 +255,13 @@ export async function runSubagent(opts: {
     try {
       try {
         const { applyKernel, kernelEnabled } = await import("@/lib/computer-use/index");
-        if (kernelEnabled()) applyKernel(childTools as Record<string, any>, { threadId: `subagent_${runId}`, interactive: false });
+        if (kernelEnabled()) applyKernel(childTools as Record<string, any>, {
+          threadId: `subagent_${runId}`,
+          interactive: false,
+          modelName: effectiveModel,
+          request: opts.request,
+          userRequest: opts.userRequest,
+        });
       } catch {}
       result = streamText({
         model,

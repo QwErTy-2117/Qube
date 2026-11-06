@@ -1,6 +1,8 @@
 import { defineExtension, hook, ToolTask } from "@earendil-works/pi-durable";
 import { approvalMemoKey } from "@/lib/pi/durable-registry";
-import { isSensitiveConnectorTool } from "@/lib/permissions/sensitive";
+import { classifyLocalTool, isSensitiveConnectorTool } from "@/lib/permissions/sensitive";
+import { checkActionPolicy, getPermissionSettings } from "@/lib/permissions/policy";
+import { reviewAction } from "@/lib/permissions/reviewer";
 import { isDestructiveCommand } from "@/lib/middleware/workspace";
 import { Approvals } from "@/lib/pi/durable-docs";
 
@@ -56,6 +58,16 @@ export function createGuardBeforeTool() {
     context: unknown,
   ): Promise<{ block?: string } | undefined> => {
     if (!isSensitiveDurableTool(call.name, call.arguments)) return undefined;
+
+    // Hard limits from Settings → Advanced → Heartbeat and Task apply before
+    // any ledger/memo lookup: a disabled category can never be approved.
+    const args = (call.arguments && typeof call.arguments === "object")
+      ? (call.arguments as Record<string, unknown>)
+      : {};
+    const category = isSensitiveConnectorTool(call.name) ? "connector" : "tool";
+    const policy = checkActionPolicy(call.name, args, category);
+    if (!policy.allowed) return { block: policy.reason };
+
     const key = approvalMemoKey(call.name, argsHash(call.arguments));
 
     // 1) Durable session ledger written by the app/UI on user decision.
@@ -78,6 +90,33 @@ export function createGuardBeforeTool() {
     const prior = await api.memo<boolean>(key, context).catch(() => undefined);
     if (prior === true) return undefined;
     if (prior === false) return { block: `Not approved: ${call.name} was denied earlier. Ask the user before retrying.` };
+
+    // 3) Invisible self-review (skipped when auto-approve is enabled).
+    const autoApprove = getPermissionSettings().autoApprove;
+    if (!autoApprove) {
+      let description = call.name;
+      try {
+        description = classifyLocalTool(call.name, args).purpose || call.name;
+      } catch {}
+      const review = await reviewAction({
+        toolName: call.name,
+        args,
+        description,
+        category,
+        threadId: typeof context === "string" ? context : undefined,
+        headless: true,
+      });
+      if (review.decision === "approve") {
+        await api.memo<boolean>(key, true, context).catch(() => true as boolean);
+        return undefined;
+      }
+      if (review.decision === "deny") {
+        await api.memo<boolean>(key, false, context).catch(() => false as boolean);
+        return { block: `Blocked by Qube's self-review: ${review.reason}` };
+      }
+    }
+    if (autoApprove) return undefined;
+
     const decision = await api.memo<boolean>(key, false, context).catch(() => false as boolean);
     if (decision === true) return undefined;
     return {

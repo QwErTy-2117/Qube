@@ -339,12 +339,13 @@ export async function POST(req: Request) {
             temperature: temperature !== undefined ? Number(temperature) : undefined,
             reasoningEffort,
             request: req,
+            userRequest: latestUserText,
             mcpServers: Array.isArray(mcpServers) ? mcpServers : undefined,
             instanceId: typeof instanceId === "string" ? instanceId : undefined,
             skills: Array.isArray(skills) ? skills : undefined,
             userName: typeof userName === "string" ? userName : undefined,
             userAbout: typeof userAbout === "string" ? userAbout : undefined,
-            memoryEnabled: typeof memoryEnabled === "boolean" ? memoryEnabled : undefined,
+            memoryEnabled: true,
           });
           // Verified delivery + normal-chat research dedup happen only after
           // a successful turn with visible reply text.

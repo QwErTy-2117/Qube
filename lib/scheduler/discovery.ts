@@ -513,6 +513,10 @@ async function runConnectorProbes(opts: DiscoveryOptions): Promise<{ connected: 
   let tools: Record<string, any> = opts.connectorTools || {};
   if (!opts.connectorTools && !opts.skipConnectors) {
     try {
+      const { getPermissionSettings } = await import("@/lib/permissions/policy");
+      if (!getPermissionSettings().allowConnectors) {
+        return { connected: [], tools: {}, signals: [], hash: "connectors-disabled" };
+      }
       const { loadConnectorTools } = await import("@/lib/pi/connectors");
       const timeoutMs = parseInt(process.env.QUBE_HEARTBEAT_CONNECTOR_TIMEOUT_MS || "6000", 10);
       let timer: ReturnType<typeof setTimeout> | undefined;

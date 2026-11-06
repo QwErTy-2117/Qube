@@ -1030,7 +1030,20 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   // Advanced settings state
   const [runOnStart, setRunOnStart] = useState(false);
   const [keepAlive, setKeepAlive] = useState(true);
-  const [memoryEnabled, setMemoryEnabled] = useState(true);
+
+  // Heartbeat and Task permissions (Advanced)
+  const [heartbeatTaskOpen, setHeartbeatTaskOpen] = useState(false);
+  const [allowTools, setAllowTools] = useState(true);
+  const [allowConnectors, setAllowConnectors] = useState(true);
+  const [allowDestructiveActions, setAllowDestructiveActions] = useState(false);
+  const [autoApproveActions, setAutoApproveActions] = useState(false);
+  const [tempAllowTools, setTempAllowTools] = useState(true);
+  const [tempAllowConnectors, setTempAllowConnectors] = useState(true);
+  const [tempAllowDestructiveActions, setTempAllowDestructiveActions] = useState(false);
+  const [tempAutoApproveActions, setTempAutoApproveActions] = useState(false);
+  const [savingHeartbeatTask, setSavingHeartbeatTask] = useState(false);
+  const [savedHeartbeatTask, setSavedHeartbeatTask] = useState(false);
+  const [heartbeatTaskError, setHeartbeatTaskError] = useState<string | null>(null);
 
   // MCP Servers state
   interface McpServerConfig {
@@ -1269,11 +1282,78 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           userAbout,
           runOnStart,
           keepAlive,
-          memoryEnabled,
+          allowTools,
+          allowConnectors,
+          allowDestructiveActions,
+          autoApproveActions,
         },
       }),
     }).catch(() => {});
-  }, [defaultModel, customSystemPrompt, temperature, userName, userAbout, runOnStart, keepAlive, memoryEnabled]);
+  }, [
+    defaultModel,
+    customSystemPrompt,
+    temperature,
+    userName,
+    userAbout,
+    runOnStart,
+    keepAlive,
+    allowTools,
+    allowConnectors,
+    allowDestructiveActions,
+    autoApproveActions,
+  ]);
+
+  const handleOpenHeartbeatTask = () => {
+    setTempAllowTools(allowTools);
+    setTempAllowConnectors(allowConnectors);
+    setTempAllowDestructiveActions(allowDestructiveActions);
+    setTempAutoApproveActions(autoApproveActions);
+    setHeartbeatTaskError(null);
+    setSavedHeartbeatTask(false);
+    setHeartbeatTaskOpen(true);
+  };
+
+  const handleSaveHeartbeatTask = async () => {
+    setSavingHeartbeatTask(true);
+    setHeartbeatTaskError(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: {
+            allowTools: tempAllowTools,
+            allowConnectors: tempAllowConnectors,
+            allowDestructiveActions: tempAllowDestructiveActions,
+            autoApproveActions: tempAutoApproveActions,
+          },
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to save permissions.");
+      }
+      setAllowTools(tempAllowTools);
+      setAllowConnectors(tempAllowConnectors);
+      setAllowDestructiveActions(tempAllowDestructiveActions);
+      setAutoApproveActions(tempAutoApproveActions);
+      try {
+        localStorage.setItem("qube-permissions-tools", String(tempAllowTools));
+        localStorage.setItem("qube-permissions-connectors", String(tempAllowConnectors));
+        localStorage.setItem("qube-permissions-destructive", String(tempAllowDestructiveActions));
+        localStorage.setItem("qube-auto-approve-actions", String(tempAutoApproveActions));
+      } catch {}
+      setSavedHeartbeatTask(true);
+      setTimeout(() => {
+        setSavedHeartbeatTask(false);
+        setHeartbeatTaskOpen(false);
+      }, 800);
+    } catch (e) {
+      setHeartbeatTaskError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingHeartbeatTask(false);
+    }
+  };
 
   const [savingConfigure, setSavingConfigure] = useState(false);
   const [savedConfigure, setSavedConfigure] = useState(false);
@@ -1661,7 +1741,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       const lsUserAbout = localStorage.getItem("qube-user-about");
       const lsRunOnStart = localStorage.getItem("qube-run-on-start");
       const lsKeepAlive = localStorage.getItem("qube-keep-alive");
-      const lsMemoryEnabled = localStorage.getItem("qube-memory-enabled");
+      const lsPermissionsTools = localStorage.getItem("qube-permissions-tools");
+      const lsPermissionsConnectors = localStorage.getItem("qube-permissions-connectors");
+      const lsPermissionsDestructive = localStorage.getItem("qube-permissions-destructive");
+      const lsAutoApproveActions = localStorage.getItem("qube-auto-approve-actions");
 
       setDefaultModel(lsDefaultModel || "");
       setCustomSystemPrompt(lsCustomPrompt || "");
@@ -1670,7 +1753,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       setUserAbout(lsUserAbout || "");
       setRunOnStart(lsRunOnStart === "true");
       setKeepAlive(lsKeepAlive === "true");
-      setMemoryEnabled(lsMemoryEnabled === null ? true : lsMemoryEnabled === "true");
+      setAllowTools(lsPermissionsTools === null ? true : lsPermissionsTools === "true");
+      setAllowConnectors(lsPermissionsConnectors === null ? true : lsPermissionsConnectors === "true");
+      setAllowDestructiveActions(lsPermissionsDestructive === "true");
+      setAutoApproveActions(lsAutoApproveActions === "true");
 
       // Fetch server-side settings and merge for any keys missing from localStorage
       (async () => {
@@ -1688,7 +1774,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               if (!lsUserAbout && s.userAbout) setUserAbout(s.userAbout);
               if (!lsRunOnStart && s.runOnStart !== undefined) setRunOnStart(s.runOnStart);
               if (!lsKeepAlive && s.keepAlive !== undefined) setKeepAlive(s.keepAlive);
-              if (lsMemoryEnabled === null && s.memoryEnabled !== undefined) setMemoryEnabled(s.memoryEnabled !== false);
+              if (lsPermissionsTools === null && s.allowTools !== undefined) setAllowTools(s.allowTools !== false);
+              if (lsPermissionsConnectors === null && s.allowConnectors !== undefined) setAllowConnectors(s.allowConnectors !== false);
+              if (lsPermissionsDestructive === null && s.allowDestructiveActions !== undefined) setAllowDestructiveActions(s.allowDestructiveActions === true);
+              if (lsAutoApproveActions === null && s.autoApproveActions !== undefined) setAutoApproveActions(s.autoApproveActions === true);
             }
           }
         } catch {}
@@ -1791,6 +1880,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
        || mcpManagerOpen
        || skillsDialogOpen
        || allowedDirsDialogOpen
+       || heartbeatTaskOpen
        || mcpDeleteConfirm !== null
       || chatGptCodeDialogOpen;
 
@@ -1804,7 +1894,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       localStorage.setItem("qube-user-about", userAbout);
       localStorage.setItem("qube-run-on-start", String(runOnStart));
       localStorage.setItem("qube-keep-alive", String(keepAlive));
-      localStorage.setItem("qube-memory-enabled", String(memoryEnabled));
+      localStorage.setItem("qube-permissions-tools", String(allowTools));
+      localStorage.setItem("qube-permissions-connectors", String(allowConnectors));
+      localStorage.setItem("qube-permissions-destructive", String(allowDestructiveActions));
+      localStorage.setItem("qube-auto-approve-actions", String(autoApproveActions));
       syncTauriAutostart(runOnStart);
       saveSettingsToServer();
       fetch("/api/providers/sync", {
@@ -1829,7 +1922,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       } else if (tabValue === "advanced") {
         localStorage.setItem("qube-run-on-start", String(runOnStart));
         localStorage.setItem("qube-keep-alive", String(keepAlive));
-        localStorage.setItem("qube-memory-enabled", String(memoryEnabled));
+        localStorage.setItem("qube-permissions-tools", String(allowTools));
+        localStorage.setItem("qube-permissions-connectors", String(allowConnectors));
+        localStorage.setItem("qube-permissions-destructive", String(allowDestructiveActions));
+        localStorage.setItem("qube-auto-approve-actions", String(autoApproveActions));
         syncTauriAutostart(runOnStart);
       }
       saveSettingsToServer();
@@ -1855,7 +1951,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             userAbout,
             runOnStart,
             keepAlive,
-            memoryEnabled,
           },
         }),
       }).catch(() => {});
@@ -2293,37 +2388,6 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                   )}
                 </div>
 
-                {/* Memory Section */}
-                <div className="border-t border-border/40 pt-6 space-y-4">
-                  <div className="rounded-xl border border-border/60 divide-y divide-border/40">
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <div className="space-y-0.5">
-                        <span className="text-sm font-medium text-foreground">Memory</span>
-                        <p className="text-xs text-muted-foreground">Qube recalls and saves memories across chats.</p>
-                      </div>
-                      <SwitchToggle checked={memoryEnabled} onCheckedChange={(v) => {
-                        setMemoryEnabled(v);
-                        try { localStorage.setItem("qube-memory-enabled", String(v)); } catch {}
-                        fetch("/api/settings", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            settings: {
-                              defaultModel,
-                              customSystemPrompt,
-                              temperature,
-                              userName,
-                              userAbout,
-                              runOnStart,
-                              keepAlive,
-                              memoryEnabled: v,
-                            },
-                          }),
-                        }).catch(() => {});
-                      }} />
-                    </div>
-                  </div>
-                </div>
 
                 {/* Startup & Background Section */}
                 <div className="border-t border-border/40 pt-6 space-y-4">
@@ -2355,6 +2419,29 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                         saveSettingsToServer();
                       }} />
                     </div>
+                  </div>
+                </div>
+
+                {/* Heartbeat and Task Section */}
+                <div className="border-t border-border/40 pt-6 space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold text-foreground">Heartbeat and Task</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Choose what Qube may do on its own, and how sensitive actions are approved.
+                      </p>
+                      <p className="text-[11px] text-muted-foreground/70">
+                        Tools {allowTools ? "on" : "off"} · Connectors {allowConnectors ? "on" : "off"} · Destructive actions {allowDestructiveActions ? "on" : "off"} · {autoApproveActions ? "Auto-approve" : "Self-review"}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleOpenHeartbeatTask}
+                      variant="outline"
+                      className="rounded-full font-semibold px-4 h-8 shrink-0"
+                      size="sm"
+                    >
+                      Configure
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -3336,6 +3423,73 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               saving={composioSaving}
               saved={composioSaved}
               confirmDisabled={composioMode === "custom" && !composioHasCustom && !composioKeyInput.trim()}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={heartbeatTaskOpen} onOpenChange={(v) => {
+        if (!v) {
+          setHeartbeatTaskOpen(false);
+          setHeartbeatTaskError(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-lg rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Heartbeat and Task</DialogTitle>
+            <DialogDescription>
+              Set the hard limits for autonomous work and how Qube reviews sensitive actions.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="rounded-2xl border border-border/60 divide-y divide-border/40">
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="space-y-0.5">
+                  <span className="text-sm font-medium text-foreground">Tools</span>
+                  <p className="text-xs text-muted-foreground">Allow file, shell, browser and computer tools.</p>
+                </div>
+                <SwitchToggle checked={tempAllowTools} onCheckedChange={setTempAllowTools} />
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="space-y-0.5">
+                  <span className="text-sm font-medium text-foreground">Connectors</span>
+                  <p className="text-xs text-muted-foreground">Allow connected services such as email, calendar, chat and GitHub.</p>
+                </div>
+                <SwitchToggle checked={tempAllowConnectors} onCheckedChange={setTempAllowConnectors} />
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="space-y-0.5">
+                  <span className="text-sm font-medium text-foreground">Destructive actions</span>
+                  <p className="text-xs text-muted-foreground">Allow deletes, destructive shell commands, purchases and closing or merging external items.</p>
+                </div>
+                <SwitchToggle checked={tempAllowDestructiveActions} onCheckedChange={setTempAllowDestructiveActions} />
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="space-y-0.5">
+                  <span className="text-sm font-medium text-foreground">Auto-approve actions</span>
+                  <p className="text-xs text-muted-foreground">Skip the invisible self-review and run allowed sensitive actions directly. Hard limits above still apply.</p>
+                </div>
+                <SwitchToggle checked={tempAutoApproveActions} onCheckedChange={setTempAutoApproveActions} />
+              </div>
+            </div>
+
+            <p className="text-[11px] leading-5 text-muted-foreground/70">
+              When a category is off, Qube blocks it immediately and never asks for permission. When it is on, a separate reviewer
+              checks each sensitive action before it runs. If the reviewer is unsure, you get the usual approval card.
+            </p>
+
+            {heartbeatTaskError && (
+              <p className="text-xs text-red-500 leading-relaxed">{heartbeatTaskError}</p>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2">
+            <ConfirmGroup
+              onCancel={() => setHeartbeatTaskOpen(false)}
+              onConfirm={handleSaveHeartbeatTask}
+              saving={savingHeartbeatTask}
+              saved={savedHeartbeatTask}
             />
           </DialogFooter>
         </DialogContent>

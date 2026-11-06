@@ -1,7 +1,13 @@
 import { resolve, relative } from "node:path";
 import { getWorkspacePath, isDestructiveCommand } from "./workspace";
 import { allowedDirsStore, toAbsoluteDir, type DirAccess } from "@/lib/permissions/allowed-dirs";
-import { classifyLocalTool } from "@/lib/permissions/sensitive";
+import { classifyLocalTool, describeConnectorAction, isSensitiveConnectorTool } from "@/lib/permissions/sensitive";
+import {
+  checkActionPolicy,
+  getPermissionSettings,
+  type PermissionCategory,
+} from "@/lib/permissions/policy";
+import { reviewAction } from "@/lib/permissions/reviewer";
 import type { TaskPermissions } from "@/lib/scheduler/types";
 
 export type PermissionRequest = {
@@ -230,22 +236,80 @@ export function evaluateToolCall(
   return { needsPermission: false, description: "" };
 }
 
+export type PermissionCheckOptions = {
+  category?: PermissionCategory;
+  /** Preferred model for the self-review call. */
+  modelName?: string | null;
+  /** Request context, needed when the preferred model is a ChatGPT model. */
+  request?: Request;
+  /** The user's request, so the reviewer can check intent alignment. */
+  userRequest?: string;
+  /** Background/subagent run: escalation is a denial, never a visible card. */
+  headless?: boolean;
+};
+
 export async function withPermissionCheck<T extends Record<string, unknown>>(
   toolName: string,
   args: T,
   threadId: string,
   execute: (args: T) => Promise<string>,
+  options: PermissionCheckOptions = {},
 ): Promise<string> {
+  const input = (args || {}) as Record<string, unknown>;
+  const category: PermissionCategory = options.category ?? "tool";
+
+  // Hard limits first. Disabled categories are denied outright — no
+  // permission request is created, so the user is never prompted.
+  const policy = checkActionPolicy(toolName, input, category);
+  if (!policy.allowed) {
+    return policy.reason;
+  }
+
   const workspacePath = getWorkspacePath();
-  const evaluation = evaluateToolCall(toolName, args, workspacePath);
+  const evaluation =
+    category === "connector"
+      ? {
+          needsPermission: isSensitiveConnectorTool(toolName),
+          description: describeConnectorAction(toolName, input),
+        }
+      : evaluateToolCall(toolName, input, workspacePath);
 
   if (!evaluation.needsPermission) {
     return execute(args);
   }
 
+  // Auto-approve skips the reviewer but never overrides the hard limits.
+  const settings = getPermissionSettings();
+  if (settings.autoApprove) {
+    return execute(args);
+  }
+
+  const review = await reviewAction({
+    toolName,
+    args: input,
+    description: evaluation.description,
+    category,
+    threadId,
+    modelName: options.modelName,
+    request: options.request,
+    userRequest: options.userRequest,
+    headless: options.headless,
+  });
+
+  if (review.decision === "approve") {
+    return execute(args);
+  }
+  if (review.decision === "deny") {
+    return `Blocked by Qube's self-review: ${review.reason}`;
+  }
+
+  if (options.headless) {
+    return `Blocked: ${evaluation.description || toolName} needs approval, but no user is available in this background run.`;
+  }
+
   const { promise } = createPermissionRequest(
     toolName,
-    args as Record<string, unknown>,
+    input,
     evaluation.description,
     threadId,
   );
@@ -276,6 +340,13 @@ export function createTaskPermissionChecker(permissions: TaskPermissions) {
     toolName: string,
     args: Record<string, unknown>,
   ): { allowed: boolean; reason?: string } {
+    // Global hard limits (Settings → Advanced → Heartbeat and Task) apply
+    // before the per-task flags. A disabled category is never prompted.
+    const policy = checkActionPolicy(toolName, args, "tool");
+    if (!policy.allowed) {
+      return { allowed: false, reason: policy.reason };
+    }
+
     // Headless task gates run independently of the interactive prompt.
     // Interactive chat only prompts for outside-workspace paths, but
     // background tasks must still respect their own permission flags.

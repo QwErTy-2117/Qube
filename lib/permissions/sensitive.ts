@@ -8,8 +8,9 @@
  *
  * Qube mirrors that here:
  * - read-only lookups never pause (clean requests auto-allow)
- * - destructive / external side effects pause via the permission widget
- * - the chat loop blocks until the user allows once / always / denies
+ * - destructive / external side effects are checked by the invisible reviewer;
+ *   only an escalation falls back to the permission widget
+ * - the chat loop blocks only when the reviewer cannot decide
  *
  * Used by permission-middleware (foreground chat) and the Pi harness
  * (connector tool wrapping). Headless runs can't prompt, so the heartbeat

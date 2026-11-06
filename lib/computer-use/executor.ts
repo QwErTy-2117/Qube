@@ -11,6 +11,10 @@ import type { ActionDescriptor, KernelSummary, PageFingerprint, RecoveryPlan, Ri
 export interface KernelDeps {
   threadId: string;
   interactive: boolean;
+  /** Foreground reviewer context, used instead of a visible card when possible. */
+  modelName?: string | null;
+  request?: Request;
+  userRequest?: string;
   askApproval?: (purpose: string, tool: string, args: Record<string, unknown>) => Promise<boolean>;
   resolveLabel?: (ref: string) => Promise<string | null>;
   /** Richer ref description (label + disabled state). Falls back to resolveLabel when absent. */
@@ -124,6 +128,14 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
     const wrapped = async (args: any, extra?: any) => {
       const input = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
       const desc = describeAction(name, input);
+      // Hard "Tools" limit applies to every kernel-wrapped surface, including
+      // MCP browser/file/terminal tools that bypass withPermissionCheck.
+      if (desc.domain !== "other" && desc.kind !== "meta") {
+        const { getPermissionSettings } = await import("@/lib/permissions/policy");
+        if (!getPermissionSettings().allowTools) {
+          return deniedResult(name, "Blocked: tools are turned off in Settings → Advanced → Heartbeat and Task.");
+        }
+      }
       const t0 = Date.now();
       let verdict: Verdict = "unknown";
       let risk: RiskLevel = "read";
@@ -265,11 +277,54 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
           try {
             if (deps.askApproval) approved = await deps.askApproval(purpose, name, input);
             else {
-              const { createPermissionRequest } = await import("@/lib/middleware/permission-middleware");
-              const { promise } = createPermissionRequest(name, input, purpose, deps.threadId);
-              const timeoutMs = parseInt(process.env.PERMISSION_TIMEOUT_MS || "300000", 10);
-              const res = await Promise.race([promise, new Promise<null>((r) => setTimeout(() => r(null), timeoutMs))]);
-              approved = res?.approved === true;
+              const { getPermissionSettings } = await import("@/lib/permissions/policy");
+              const settings = getPermissionSettings();
+              const destructiveRisk = risk === "financial" || risk === "destructive" || risk === "account";
+              if (destructiveRisk && !settings.allowDestructive) {
+                verdict = "denied";
+                state.record({ id: state.nextId(), tool: name, summary: desc.summary, risk, verdict, signals, at: Date.now() });
+                log(verdict);
+                return deniedResult(
+                  name,
+                  "Destructive actions are turned off in Settings → Advanced → Heartbeat and Task.",
+                );
+              }
+              if (settings.autoApprove) {
+                approved = true;
+              } else {
+                const { reviewAction } = await import("@/lib/permissions/reviewer");
+                const review = await reviewAction({
+                  toolName: name,
+                  args: input,
+                  description: purpose,
+                  category: "tool",
+                  threadId: deps.threadId,
+                  modelName: deps.modelName,
+                  request: deps.request,
+                  userRequest: deps.userRequest,
+                  redactTyped: risk === "credential" || risk === "financial" || risk === "account",
+                  headless: !deps.interactive,
+                });
+                if (review.decision === "approve") {
+                  approved = true;
+                } else if (review.decision === "deny") {
+                  verdict = "denied";
+                  state.record({ id: state.nextId(), tool: name, summary: desc.summary, risk, verdict, signals, at: Date.now() });
+                  log(verdict);
+                  return deniedResult(name, `Blocked by Qube's self-review: ${review.reason}`);
+                } else if (!deps.interactive) {
+                  verdict = "denied";
+                  state.record({ id: state.nextId(), tool: name, summary: desc.summary, risk, verdict, signals, at: Date.now() });
+                  log(verdict);
+                  return deniedResult(name, `${risk} browser action needs approval, but no user is available in this background run.`);
+                } else {
+                  const { createPermissionRequest } = await import("@/lib/middleware/permission-middleware");
+                  const { promise } = createPermissionRequest(name, input, purpose, deps.threadId);
+                  const timeoutMs = parseInt(process.env.PERMISSION_TIMEOUT_MS || "300000", 10);
+                  const res = await Promise.race([promise, new Promise<null>((r) => setTimeout(() => r(null), timeoutMs))]);
+                  approved = res?.approved === true;
+                }
+              }
             }
           } catch { approved = false; }
           if (!approved) {

@@ -41,6 +41,8 @@ export type PiConfig = {
   temperature?: number;
   reasoningEffort?: string;
   request?: Request;
+  /** The current user request, passed to the invisible action reviewer. */
+  userRequest?: string;
   mcpServers?: McpServerConfig[];
   instanceId?: string;
   skills?: SkillConfig[];
@@ -49,16 +51,9 @@ export type PiConfig = {
   memoryEnabled?: boolean;
 };
 
-export function resolveMemoryEnabled(explicit?: boolean): boolean {
-  if (explicit !== undefined) return explicit;
-  try {
-    // Single gate lives in lib/memory/tools-core; delegate so both paths agree.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { isMemoryEnabled } = require("@/lib/memory/tools-core") as typeof import("@/lib/memory/tools-core");
-    return isMemoryEnabled();
-  } catch {
-    return true;
-  }
+export function resolveMemoryEnabled(_explicit?: boolean): boolean {
+  // Memory is always on.
+  return true;
 }
 
 /**
@@ -560,6 +555,7 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
       includeTodos: true,
       parentModelName: config.modelName,
       request: config.request,
+      userRequest: config.userRequest,
       threadIdForScratchpad: config.threadId,
     });
     // Agent tools: schedules, heartbeat, user questions (goals=TodoWrite above)
@@ -587,10 +583,11 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     throw new Error(`Failed to initialize Pi tools: ${e.message}`);
   }
 
-  // Connectors: Composio external service tools — isolated, non-fatal
-  // Muse Sentinel parity: sensitive connector actions (send/create/delete)
-  // are wrapped with withPermissionCheck so the chat BLOCKS on the
-  // PermissionBar widget. Read-only lookups pass straight through.
+  // Connectors: Composio external service tools — isolated, non-fatal.
+  // Every connector tool goes through the unified permission middleware so
+  // the Advanced hard limits (connectors / destructive actions) are enforced
+  // even for reads. Sensitive writes are self-reviewed; only an escalation
+  // reaches the PermissionBar. Read-only lookups pass through.
   try {
     const { loadConnectorTools } = await import("./connectors");
     const conn = await loadConnectorTools(config.instanceId);
@@ -598,25 +595,32 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
       console.log(`[pi-harness] Merging ${Object.keys(conn.tools).length} connector tools for thread ${config.threadId}`);
       try {
         const { withPermissionCheck } = await import("@/lib/middleware/permission-middleware");
-        const { isSensitiveConnectorTool, describeConnectorAction } = await import("@/lib/permissions/sensitive");
         for (const [name, def] of Object.entries(conn.tools as Record<string, any>)) {
           const origExecute = (def as any)?.execute;
           if (typeof origExecute !== "function") continue;
-          if (!isSensitiveConnectorTool(name)) continue;
           const bound = origExecute.bind(def);
           (def as any).execute = async (args: any, extra?: any) => {
             const input = typeof args === "object" && args !== null ? args : {};
-            // Pre-compute purpose so the widget shows even if evaluation shifts.
-            void describeConnectorAction;
             try {
-              return await withPermissionCheck(name, input, config.threadId, (gated: any) => bound(gated, extra));
+              return await withPermissionCheck(
+                name,
+                input,
+                config.threadId,
+                (gated: any) => bound(gated, extra),
+                {
+                  category: "connector",
+                  modelName: config.modelName,
+                  request: config.request,
+                  userRequest: config.userRequest,
+                },
+              );
             } catch (e: any) {
-              return `Operation not permitted: ${e?.message || String(e)}`.slice(0, 1000);
+              return `Connector action failed: ${e?.message || String(e)}`.slice(0, 1000);
             }
           };
         }
       } catch (e: any) {
-        console.warn("[pi-harness] Connector Sentinel wrap failed (non-fatal):", e?.message || String(e));
+        console.warn("[pi-harness] Connector permission wrap failed (non-fatal):", e?.message || String(e));
       }
       tools = { ...tools, ...conn.tools };
     }
@@ -654,7 +658,12 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     const { createComputerTools } = await import("./computer-tools");
     const { isComputerUseDisabled } = await import("./computer-use-mcp");
     if (!isComputerUseDisabled()) {
-      const computerTools = createComputerTools(config.threadId, { includeAskUser: true });
+      const computerTools = createComputerTools(config.threadId, {
+        includeAskUser: true,
+        modelName: config.modelName,
+        request: config.request,
+        userRequest: config.userRequest,
+      });
       console.log(`[pi-harness] Merging ${Object.keys(computerTools).length} computer-use tools for thread ${config.threadId}`);
       tools = { ...tools, ...computerTools };
     }
@@ -668,7 +677,13 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
   try {
     const { applyKernel, kernelEnabled, StateTracker } = await import("@/lib/computer-use/index");
     if (kernelEnabled()) {
-      applyKernel(tools as Record<string, any>, { threadId: config.threadId, interactive: true });
+      applyKernel(tools as Record<string, any>, {
+        threadId: config.threadId,
+        interactive: true,
+        modelName: config.modelName,
+        request: config.request,
+        userRequest: config.userRequest,
+      });
       try {
         const resume = StateTracker.forThread(config.threadId).resumeContext();
         if (resume) systemPrompt += `\n\n${resume}`;

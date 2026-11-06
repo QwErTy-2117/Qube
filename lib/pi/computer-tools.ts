@@ -19,9 +19,10 @@
  *   get_window_state / doctor / capabilities) run without pausing.
  * - Mutating tools (click / secondary / scroll / drag / type_text /
  *   press_key / set_value / launch_app / activate_window / run_sequence)
- *   go through withPermissionCheck in interactive sessions, so the chat
- *   BLOCKS on the approval card. In background runs (no interactive user)
- *   they refuse with a clear message instead of acting blindly.
+ *   go through withPermissionCheck in interactive sessions, so the invisible
+ *   reviewer checks them first and only an escalation reaches the approval
+ *   card. In background runs (no interactive user) they refuse with a clear
+ *   message instead of acting blindly.
  */
 
 import { tool } from "ai";
@@ -166,6 +167,10 @@ export async function runClipboardWrite(text: string): Promise<string> {
 export type ComputerToolsOptions = {
   /** Foreground chat passes true (default); subagents/scheduler pass false. */
   includeAskUser?: boolean;
+  /** Preferred model / request context for the self-review call. */
+  modelName?: string | null;
+  request?: Request;
+  userRequest?: string;
 };
 
 const labelField = z
@@ -620,9 +625,19 @@ export function createComputerTools(threadId: string, opts?: ComputerToolsOption
     }
     try {
       const { withPermissionCheck } = await import("@/lib/middleware/permission-middleware");
-      return await withPermissionCheck(qubeTool, args, threadId, run);
-    } catch {
-      return await run();
+      return await withPermissionCheck(qubeTool, args, threadId, run, {
+        category: "tool",
+        modelName: opts?.modelName,
+        request: opts?.request,
+        userRequest: opts?.userRequest,
+        headless: !interactive,
+      });
+    } catch (e) {
+      return JSON.stringify({
+        error: true,
+        tool: qubeTool,
+        message: `Permission check failed: ${e instanceof Error ? e.message : String(e)}`,
+      });
     }
   };
 

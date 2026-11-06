@@ -12,9 +12,7 @@ import {
   SquareArrowOutUpRightIcon,
 } from "lucide-react";
 import { openDocumentWorkspace } from "@/lib/workspace/store";
-import { isPptxFile } from "@/lib/workspace/pptx";
 import { DownloadButton } from "./download-button";
-import { PresentationFileCard } from "./presentation-card";
 import { cn } from "@/lib/utils";
 
 const OPENABLE = new Set([
@@ -28,7 +26,7 @@ const OPENABLE = new Set([
   "json", "js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "yml", "yaml", "toml", "sh", "sql", "xml", "log",
 ]);
 // NOTE: images, pdfs, audio/video/archives are download-only. Presentations
-// open in the popup viewer; .pptx decks also get real thumbnail previews.
+// use the same slim pill as every other file and open in the popup viewer.
 
 type CardKind = "slides" | "pdf" | "doc" | "sheet" | "image" | "audio" | "video" | "archive" | "generic";
 
@@ -75,13 +73,7 @@ export function FileCard({
     openDocumentWorkspace({ filePath, filename, downloadUrl });
   };
 
-  // PowerPoint decks get a real slide preview card instead of the generic
-  // pill. Clicking any thumbnail opens the popup at that exact slide.
-  if (isPptxFile(filename) && filePath) {
-    return <PresentationFileCard filename={filename} filePath={filePath} downloadUrl={downloadUrl} />;
-  }
-
-  // Single slim pill for every other file type (full-width, rounded borders).
+  // One slim pill for every file type (including .pptx decks).
   // Per-type colored icons are kept; only the bulky rich tile is gone.
   const meta = metaForExt(ext);
   const Icon = meta.icon;

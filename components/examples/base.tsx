@@ -1123,24 +1123,14 @@ const icon =
 
 const AssistantWorkingIndicator: FC = () => {
   const isEmpty = useAuiState((s) => s.message.content.length === 0);
-  if (isEmpty) {
-    return (
-      <span
-        data-slot="aui_assistant-message-indicator"
-        className="text-muted-foreground inline-flex items-center gap-2 align-middle"
-      >
-        <DotMatrix state="connecting" aria-hidden />
-        <span className="text-sm">Connecting</span>
-      </span>
-    );
-  }
+  if (!isEmpty) return null;
   return (
     <span
       data-slot="aui_assistant-message-indicator"
-      className="animate-pulse font-sans"
-      aria-label="Assistant is working"
+      className="text-muted-foreground inline-flex items-center gap-2 align-middle"
     >
-      {"●"}
+      <DotMatrix state="connecting" aria-hidden />
+      <span className="text-sm">Connecting</span>
     </span>
   );
 };

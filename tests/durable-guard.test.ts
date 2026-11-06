@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createGuardBeforeTool, isSensitiveDurableTool } from "@/lib/pi/durable-guard";
 import { buildGuardExtension } from "@/lib/pi/durable-guard";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { settingsStore } from "@/lib/settings-store";
 
 function fakeMemoApi(store = new Map<string, unknown>()) {
   return {
@@ -19,6 +20,11 @@ function fakeMemoApi(store = new Map<string, unknown>()) {
 }
 
 describe("durable guard", () => {
+  // These tests cover the ledger/reviewer path. The hard category limits are
+  // covered in permissions-policy.test.ts; enable destructive actions here so
+  // delete_file reaches the guard.
+  settingsStore.update({ allowDestructiveActions: true });
+
   it("classifies sensitive tools like the foreground policy", () => {
     assert.equal(isSensitiveDurableTool("read_file"), false);
     assert.equal(isSensitiveDurableTool("read_memory"), false);

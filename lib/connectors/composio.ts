@@ -576,11 +576,11 @@ export async function getConnectorTools(userId?: string) {
 
   // NOTE (Muse Sentinel parity): destructive connector gating no longer
   // lives here. getConnectorTools returns RAW tools; the Pi harness wraps
-  // sensitive ones with withPermissionCheck (unified permission store), so
-  // the chat blocks on the PermissionBar widget (allow once / always / deny)
-  // with a user-visible purpose. Headless heartbeat runs get draft-only
-  // stubs instead (see task-runner); user-created scheduled tasks run their
-  // instructed sends for real.
+  // every connector tool with withPermissionCheck (unified hard limits +
+  // invisible reviewer), and only a reviewer escalation reaches the
+  // PermissionBar. Headless heartbeat runs get draft-only stubs instead
+  // (see task-runner); user-created scheduled tasks run their instructed
+  // sends through the same review path.
   // The legacy pendingConfirmations map below is kept for back-compat with
   // /api/connectors/pending callers (now always empty for new runs).
 

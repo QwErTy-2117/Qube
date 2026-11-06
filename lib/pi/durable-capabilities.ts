@@ -78,6 +78,8 @@ export async function installTurnCapabilities(
 export function defaultCapabilityLoaders(threadId: string, instanceId?: string, opts?: { interactive?: boolean }): TurnCapabilities {
   return {
     connectors: async () => {
+      const { getPermissionSettings } = await import("@/lib/permissions/policy");
+      if (!getPermissionSettings().allowConnectors) return { tools: {} };
       const { loadConnectorTools } = await import("@/lib/pi/connectors");
       const { tools } = await loadConnectorTools(instanceId);
       return { tools };

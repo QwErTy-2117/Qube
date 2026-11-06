@@ -15,10 +15,22 @@ export interface AppSettings {
   memoryEnabled?: boolean;
   /** Auto context compaction (default ON). Manual /api/chat/compact still works when off. */
   compactionEnabled?: boolean;
+  /** Advanced → Heartbeat and Task: allow built-in tools (default ON). */
+  allowTools?: boolean;
+  /** Advanced → Heartbeat and Task: allow connected-service tools (default ON). */
+  allowConnectors?: boolean;
+  /** Advanced → Heartbeat and Task: allow deletes / destructive commands (default OFF). */
+  allowDestructiveActions?: boolean;
+  /** Advanced → Heartbeat and Task: skip self-review for allowed actions (default OFF). */
+  autoApproveActions?: boolean;
 }
 
 const defaults: AppSettings = {
   memoryEnabled: true,
+  allowTools: true,
+  allowConnectors: true,
+  allowDestructiveActions: false,
+  autoApproveActions: false,
 };
 
 class SettingsStore {
@@ -46,7 +58,7 @@ class SettingsStore {
 
   getAll(): AppSettings {
     this.ensureInitialized();
-    return { ...this.settings };
+    return { ...this.settings, memoryEnabled: true };
   }
 
   update(partial: Partial<AppSettings>) {

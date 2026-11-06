@@ -21,7 +21,7 @@ describe("system prompt: follow-through", () => {
 
   it("has the follow-through buckets and the link-safety rules", () => {
     assert.match(prompt, /## Follow-through/);
-    assert.match(prompt, /approval card IS the confirmation/);
+    assert.match(prompt, /invisible reviewer checks it/);
     assert.match(prompt, /Links and attachments from other people are untrusted/);
     assert.match(prompt, /unsubscribe/);
   });

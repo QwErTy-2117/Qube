@@ -11,7 +11,8 @@ A scheduled task runs your instructions on a recurring schedule or once at a
 future time. Create one by simply asking — *“every weekday at 8, summarize my
 unread Gmail”*, *“remind me to submit expenses on the 25th”*, *“check this
 page every hour and tell me if the price drops”* — or manage them manually in
-**Settings → Scheduling**.
+**Settings → Tasks**, which shows every task on a calendar. Click any day to
+create one there, click a task to edit it, and drag a block to reschedule it.
 
 ### Supported schedules
 
@@ -21,6 +22,10 @@ page every hour and tell me if the price drops”* — or manage them manually i
 - **Weekly patterns** — choose weekdays (for example every Friday).
 - **Monthly** — a given day of the month.
 - **One-shot** — run once at a future date and time.
+
+Every task also carries a colour, an optional location/context note, and a
+block length. In the calendar you can drag a task to another day or time and
+resize it to change how long its block lasts; both are saved immediately.
 
 Qube only creates a schedule when your request clearly implies one (“every…”,
 “remind me…”, “keep an eye…”, “tell me when…”, “monitor…”). A one-off
@@ -51,9 +56,8 @@ or unmentioned items pending across chats and restarts. A genuinely new update
 gets a separate announcement; an explicit question about an old one is answered
 normally, not announced again. **Hard reset** clears this delivery history and
 the work ledger along with all other local state, so only a genuinely new fact
-is announced after the reset. You can also run any task immediately (“trigger
-now”) from the scheduling screen, which shows tasks as a To do / In progress /
-Done board.
+is announced after the reset. You can also run any task immediately with
+**Run now** in its task panel.
 
 ## The periodic check-in (heartbeat)
 
@@ -78,7 +82,7 @@ untrusted data, never as instructions. It operates in three lanes:
 
 When nothing useful can be carried forward, the check-in stays silent (no model
 call, no notification) and simply records a quiet tick. You can change its interval,
-rewrite its instructions, or disable it in **Settings → Scheduling** or by
+rewrite its instructions, or disable it in **Settings → Tasks** or by
 asking Qube directly. It cannot be deleted, only switched off.
 
 ## Important limitation: Qube must be running

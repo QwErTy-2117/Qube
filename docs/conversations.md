@@ -24,9 +24,11 @@ During the run you will see:
 - **File cards** — finished documents, spreadsheets, presentations and images
   appear as cards at the end of the reply. Open them in the built-in viewer
   or download them.
-- **Interactive visuals** — comparisons, charts, tables and small working
-  widgets (for example a bill-splitting calculator) can render inline instead
-  of as plain text.
+- **Visual answers** — when numbers need comparing or options belong side by
+  side, Qube can render a native card with charts, tables, key facts, badges
+  and follow-up buttons instead of plain text. These use assistant-ui's
+  built-in generative UI with a fixed, allowlisted component set, so no HTML
+  or scripts from the model ever run.
 
 ## Asking questions back
 

@@ -37,14 +37,14 @@ export function createPiAgentTools(ctx: AgentToolsContext): Record<string, any> 
     description:
       "Manage scheduled automations (OpenClaw-style cron). Use ONLY for exact-timing work with an explicit recurring/one-shot-future cue from the user: daily reports, reminders, weekly reviews, one-shot follow-ups at a future time. " +
       "ONE-SHOT READS ARE NOT SCHEDULES: 'check the price of X', 'what does X cost', 'look up…' with no every/keep-an-eye/tell-me-when/monitor cue must be done INLINE now with web_search/web_fetch — never create a task for them. " +
-      "Actions: create (name, instructions, scheduleKind interval|once|none, intervalMinutes|runAt ISO, doneCriteria, condition/onlyReportIf, deliverablePath, hour/minute/weekdays/monthDay, permissions), list, get, update, delete, trigger (run now). " +
+      "Actions: create (name, instructions, scheduleKind interval|once, intervalMinutes|runAt ISO, doneCriteria, condition/onlyReportIf, deliverablePath, hour/minute/weekdays/monthDay, permissions), list, get, update, delete, trigger (run now). " +
       "Recurring checks belong here — NOT in heartbeat scratch. Scheduled work runs inside Qube, so it only runs while Qube is open and running — tell the user that when you create one. Returns JSON.",
     inputSchema: z.object({
       action: z.enum(["create", "list", "get", "update", "delete", "trigger"]).describe("Action to perform"),
       id: z.string().optional().describe("Task id for get/update/delete/trigger"),
       name: z.string().optional().describe("Task name for create/update"),
       instructions: z.string().optional().describe("What the agent should do when the task runs"),
-      scheduleKind: z.enum(["interval", "once", "none"]).optional().describe("interval=recurring, once=one-shot future run, none=manual task with no schedule"),
+      scheduleKind: z.enum(["interval", "once"]).optional().describe("interval=recurring, once=future one-shot run"),
       intervalMinutes: z.number().optional().describe("Recurring interval in minutes"),
       runAt: z.string().optional().describe("ISO date for once tasks"),
       enabled: z.boolean().optional().describe("Enable/disable (update only)"),

@@ -19,6 +19,7 @@
   },
   "registries": {
     "@magicui": "https://magicui.design/r/{name}",
-    "@fancy": "https://fancycomponents.dev/r/{name}.json"
+    "@fancy": "https://fancycomponents.dev/r/{name}.json",
+    "@reui": "https://reui.io/r/{name}.json"
   }
 }

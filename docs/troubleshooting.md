@@ -182,7 +182,7 @@ tasks run once, deduplicated, when Qube reopens. See
 
 Check the task's permission switches (shell, web, external files, destructive
 commands) — a background task cannot prompt, so any action outside its
-permissions is refused. Its execution log in **Settings → Scheduling** shows
+permissions is refused. Its execution log in **Settings → Tasks** shows
 the exact failure.
 
 ## MCP servers

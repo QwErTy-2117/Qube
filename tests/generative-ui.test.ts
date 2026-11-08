@@ -1,131 +1,143 @@
 /**
- * Generative UI regression tests (OpenIntelligentUI pattern, Qube style).
+ * Generative UI regression tests.
  *
- * Covers the full vertical slice without a browser:
- * - Pi harness exposes a `generate_ui` tool with validating `execute`
- * - Sandbox helpers stay self-contained, Qube-themed, and scrubbed
- * - Renderer stays sandboxed (`allow-scripts` only) in Qube card style
- * - Tool is registered, labeled in plain language, and prompted
+ * Covers the assistant-ui built-in generative UI path end to end without a
+ * browser:
+ * - Pi harness exposes a `render_gui` tool that validates specs
+ * - The spec vocabulary is the allowlist the renderer resolves against
+ * - The renderer uses MessagePrimitive.GenerativeUI (no iframe sandbox)
+ * - The tool is registered, labeled in plain language, and prompted
+ * - The old custom implementations are gone
  *
  * Run: node scripts/run-tests.mjs generative-ui
  */
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { createPiTools } from "@/lib/pi/tools";
 import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
 import { buildPiSystemPrompt } from "@/lib/pi/system-prompt";
 import {
-  buildSandboxSrcDoc,
-  clampHeight,
-  parseGenerativeUIFence,
-  stripDangerousJs,
-} from "@/lib/generative-ui/sandbox";
+  GENERATIVE_UI_COMPONENT_NAMES,
+  buildGenerativeUIPrompt,
+  generativeUISpecSchema,
+} from "@/lib/generative-ui/catalog";
 
 const ROOT = process.cwd();
 const read = (p: string) => readFile(join(ROOT, p), "utf-8");
+const exists = (p: string) =>
+  access(join(ROOT, p)).then(
+    () => true,
+    () => false,
+  );
 
-async function generateUiTool() {
+async function renderGuiTool() {
   const tools = createPiTools("test-generative-ui", {
     includeSubagents: false,
     includeTodos: false,
     includeAskUser: false,
   }) as Record<string, any>;
-  assert.ok(tools.generate_ui, "Pi harness must expose generate_ui");
-  return tools.generate_ui;
+  assert.ok(tools.render_gui, "Pi harness must expose render_gui");
+  return tools.render_gui;
 }
 
-describe("generate_ui tool: validation", () => {
-  it("renders a valid payload", async () => {
-    const t = await generateUiTool();
-    const out = JSON.parse(
-      await t.execute({
-        title: "Bill splitter",
-        kind: "calculator",
-        html: "<div>hi</div>",
-        height: 400,
-      }),
-    );
+describe("render_gui tool: validation", () => {
+  it("renders a valid spec and round-trips it", async () => {
+    const t = await renderGuiTool();
+    const spec = {
+      root: {
+        component: "Card",
+        props: { title: "Q3 revenue" },
+        children: [
+          {
+            component: "Chart",
+            props: {
+              variant: "bar",
+              data: [
+                { label: "Jul", value: 22 },
+                { label: "Aug", value: 26 },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const out = JSON.parse(await t.execute({ spec }));
     assert.equal(out.status, "rendered");
-    assert.equal(out.title, "Bill splitter");
-    assert.equal(out.kind, "calculator");
-    assert.equal(out.height, 400);
+    assert.deepEqual(out.spec, spec);
   });
 
-  it("rejects a missing body", async () => {
-    const t = await generateUiTool();
-    const out = JSON.parse(await t.execute({ title: "Empty", html: "" }));
-    assert.ok(out.error, "expected an error for empty html");
+  it("accepts a root array and plain strings", async () => {
+    const t = await renderGuiTool();
+    const spec = {
+      root: [
+        "A quick note",
+        { component: "Divider" },
+        { component: "Text", props: { value: "Done." } },
+      ],
+    };
+    const out = JSON.parse(await t.execute({ spec }));
+    assert.equal(out.status, "rendered");
+    assert.deepEqual(out.spec, spec);
   });
 
-  it("rejects oversized payloads", async () => {
-    const t = await generateUiTool();
+  it("rejects unknown component names", async () => {
+    const t = await renderGuiTool();
     const out = JSON.parse(
-      await t.execute({ title: "Big", html: "x".repeat(60001) }),
-    );
-    assert.match(out.error, /too large/i);
-  });
-
-  it("clamps height and truncates titles", async () => {
-    const t = await generateUiTool();
-    const tall = JSON.parse(
-      await t.execute({ title: "T", html: "<div>hi</div>", height: 5000 }),
-    );
-    assert.equal(tall.height, 900);
-    const short = JSON.parse(
-      await t.execute({ title: "S", html: "<div>hi</div>", height: 10 }),
-    );
-    assert.equal(short.height, 120);
-    const long = JSON.parse(
       await t.execute({
-        title: "t".repeat(500),
-        html: "<div>hi</div>",
+        spec: { root: { component: "Iframe", props: { src: "https://x.test" } } },
       }),
     );
-    assert.ok(long.title.length <= 120);
+    assert.equal(out.error, "Invalid visual spec");
+    assert.ok(Array.isArray(out.issues) && out.issues.length > 0);
+  });
+
+  it("rejects a spec without a root", async () => {
+    const t = await renderGuiTool();
+    const out = JSON.parse(await t.execute({ spec: { children: [] } }));
+    assert.equal(out.error, "Invalid visual spec");
+  });
+
+  it("rejects non-object input", async () => {
+    const t = await renderGuiTool();
+    const out = JSON.parse(await t.execute({ spec: "hello" }));
+    assert.equal(out.error, "Invalid visual spec");
   });
 });
 
-describe("sandbox helpers: Qube-themed and scrubbed", () => {
-  it("injects Qube theme tokens with a dark-mode companion", () => {
-    const doc = buildSandboxSrcDoc({ html: "<div>hi</div>" });
-    for (const token of [
-      "--background",
-      "--foreground",
-      "--muted",
-      "--border",
-      "--primary",
-      "--radius",
-    ]) {
-      assert.ok(doc.includes(token), `srcDoc must define ${token}`);
+describe("generative UI vocabulary", () => {
+  it("every documented component resolves in the allowlist", () => {
+    const prompt = buildGenerativeUIPrompt();
+    for (const name of GENERATIVE_UI_COMPONENT_NAMES) {
+      assert.ok(prompt.includes(name), `prompt omits ${name}`);
     }
-    assert.ok(doc.includes("prefers-color-scheme: dark"));
-    assert.ok(doc.includes("window.qube"));
-    assert.ok(doc.includes("sendPrompt"));
   });
 
-  it("scrubs exfiltration vectors from model scripts", () => {
-    const dirty =
-      "top.location='x'; fetch('/steal'); localStorage.setItem('k','v');";
-    const clean = stripDangerousJs(dirty);
-    assert.ok(!/top\s*\.\s*location/i.test(clean));
-    assert.ok(!/localStorage/.test(clean));
-    assert.ok(!/fetch\s*\(/.test(clean));
-  });
+  it("spec schema accepts nested allowlisted nodes only", () => {
+    const ok = generativeUISpecSchema.safeParse({
+      root: {
+        component: "Row",
+        children: [
+          { component: "Fact", props: { label: "Total", value: "42" } },
+          { component: "Button", props: { label: "More", prompt: "Tell me more" } },
+        ],
+      },
+    });
+    assert.equal(ok.success, true);
 
-  it("bounds iframe heights", () => {
-    assert.equal(clampHeight(5000), 900);
-    assert.equal(clampHeight(-5), 120);
-    assert.equal(clampHeight(undefined), 320);
+    const nested = generativeUISpecSchema.safeParse({
+      root: { component: "Card", children: [{ component: "Script" }] },
+    });
+    assert.equal(nested.success, false);
   });
 });
 
 describe("generative UI: Qube wiring", () => {
   it("has a plain-language label with no jargon", () => {
-    const label = friendlyToolLabel("generate_ui", {});
+    const label = friendlyToolLabel("render_gui", {});
     assert.ok(label.length > 0);
     assert.ok(!label.includes("_"), `leaks snake_case: ${label}`);
     for (const jargon of ["snapshot", "pixel", "takeover", "heartbeat", "scratchpad", "mcp"]) {
@@ -138,83 +150,70 @@ describe("generative UI: Qube wiring", () => {
 
   it("is advertised in the system prompt", () => {
     const prompt = buildPiSystemPrompt({});
-    assert.ok(prompt.includes("generate_ui"));
-    assert.ok(prompt.includes("var(--background)"));
-  });
-
-  it("renderer stays sandboxed in a Qube card", async () => {
-    const src = await read(
-      "components/assistant-ui/tools/generative-ui-tool-ui.tsx",
-    );
-    assert.ok(src.includes('sandbox="allow-scripts"'));
-    assert.ok(!src.includes("allow-same-origin"));
-    assert.ok(src.includes("rounded-xl border"));
-    assert.ok(src.includes("border-border/60"));
-    // Host validates the event source before honoring resize/follow-ups.
-    assert.ok(src.includes("contentWindow"));
-    assert.ok(src.includes("__qubeGenerativeUIHeight"));
-    assert.ok(src.includes("thread().append"));
-  });
-
-  it("is registered with the runtime and exported", async () => {
-    const [provider, index] = await Promise.all([
-      read("components/assistant-ui/agent-runtime-provider.tsx"),
-      read("components/assistant-ui/tools/index.ts"),
-    ]);
-    assert.ok(provider.includes('toolName: "generate_ui"'));
-    assert.ok(provider.includes("GenerativeUIToolUI"));
-    assert.ok(index.includes("GenerativeUIToolUI"));
-  });
-});
-
-describe("generative UI: inline placement, chromeless card", () => {
-  it("tool card has no header chrome", async () => {
-    const src = await read(
-      "components/assistant-ui/tools/generative-ui-tool-ui.tsx",
-    );
-    for (const chrome of [
-      "SparklesIcon",
-      "Copy HTML",
-      "Open in new tab",
-      "TooltipIconButton",
-    ]) {
-      assert.ok(!src.includes(chrome), `card still contains ${chrome}`);
+    assert.ok(prompt.includes("render_gui"));
+    assert.ok(prompt.includes("Allowed components"));
+    for (const name of GENERATIVE_UI_COMPONENT_NAMES) {
+      assert.ok(prompt.includes(`- ${name}:`), `prompt omits ${name}`);
     }
-    assert.ok(!src.includes('"Hide"'), "card still contains a Hide toggle");
-    assert.ok(
-      !src.includes("runs locally in a sandbox"),
-      "card still contains the bottom disclaimer",
-    );
-    assert.ok(src.includes("GenerativeUIFrame"));
-    assert.ok(src.includes('sandbox="allow-scripts"'));
-    assert.ok(!src.includes("allow-same-origin"));
   });
 
-  it("markdown renders ```genui fences inline", async () => {
-    const src = await read("components/assistant-ui/markdown-text.tsx");
-    assert.ok(src.includes("language-genui"));
-    assert.ok(src.includes("GenerativeUIFrame"));
-    assert.ok(src.includes("parseGenerativeUIFence"));
-  });
-
-  it("fence JSON round-trips into a themed sandbox doc", () => {
-    const fence = JSON.stringify({
-      title: "Tip calc",
-      kind: "calculator",
-      html: "<div>hi</div>",
-      height: 400,
-    });
-    const parsed = parseGenerativeUIFence(fence);
-    assert.ok(parsed);
-    const doc = buildSandboxSrcDoc(parsed!);
-    assert.ok(doc.includes("<div>hi</div>"));
-    assert.ok(doc.includes("--background"));
-    assert.equal(parseGenerativeUIFence("not json"), null);
-    assert.equal(parseGenerativeUIFence(JSON.stringify({ title: "x" })), null);
-  });
-
-  it("system prompt documents inline placement", () => {
+  it("does not advertise the old OpenUI or sandbox paths", () => {
     const prompt = buildPiSystemPrompt({});
-    assert.ok(prompt.includes("tagged genui"));
+    assert.ok(!prompt.includes("openui-lang"));
+    assert.ok(!prompt.includes("OPENUI"));
+    assert.ok(!prompt.includes("generate_ui"));
+    assert.ok(!/\bgenui\b/i.test(prompt));
+    assert.ok(!prompt.includes("var(--background)"));
+  });
+
+  it("is registered with the runtime", async () => {
+    const provider = await read("components/assistant-ui/agent-runtime-provider.tsx");
+    assert.ok(provider.includes('toolName: "render_gui"'));
+    assert.ok(provider.includes("RenderGuiToolUI"));
+    assert.ok(!provider.includes("GenerativeUIToolUI"));
+    assert.ok(!provider.includes("generate_ui"));
+  });
+
+  it("renders through assistant-ui's built-in GenerativeUI primitive", async () => {
+    const src = await read("components/assistant-ui/generative-ui.tsx");
+    assert.ok(src.includes("MessagePrimitive.GenerativeUI"));
+    assert.ok(src.includes("generativeUIComponents"));
+    assert.ok(src.includes("GenerativeUIUnknownComponent"));
+    assert.ok(src.includes("render_gui"));
+    assert.ok(!src.includes("<iframe"));
+    assert.ok(!src.includes("allow-scripts"));
+    assert.ok(!src.includes("dangerouslySetInnerHTML"));
+  });
+
+  it("removes the old custom generative UI files", async () => {
+    for (const path of [
+      "lib/openui/library.ts",
+      "lib/openui/openui.spec.json",
+      "lib/openui/prompt.ts",
+      "lib/openui/segments.ts",
+      "lib/generative-ui/sandbox.ts",
+      "components/assistant-ui/openui-text.tsx",
+      "components/assistant-ui/tools/generative-ui-tool-ui.tsx",
+      "tests/openui.test.ts",
+    ]) {
+      assert.equal(await exists(path), false, `stale file still present: ${path}`);
+    }
+  });
+
+  it("no longer imports OpenUI packages", async () => {
+    const pkg = JSON.parse(await read("package.json")) as {
+      dependencies?: Record<string, string>;
+      scripts?: Record<string, string>;
+    };
+    const all = Object.keys(pkg.dependencies || {});
+    assert.ok(!all.some((name) => name.startsWith("@openuidev/")));
+    assert.ok(!pkg.scripts?.["openui:spec"]);
+  });
+
+  it("renders markdown text without the old inline genui fence branch", async () => {
+    const src = await read("components/assistant-ui/markdown-text.tsx");
+    assert.ok(!src.includes("language-genui"));
+    assert.ok(!src.includes("GenerativeUIFrame"));
+    assert.ok(!src.includes("parseGenerativeUIFence"));
   });
 });

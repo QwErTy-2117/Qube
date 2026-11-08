@@ -16,7 +16,6 @@ export { UpdateHeartbeatToolUI } from "./update-heartbeat-tool-ui";
 export { ConnectorToolUI } from "./connector-tool-ui";
 export { ConnectServiceToolUI } from "./connect-service-tool-ui";
 export { GoalToolUI } from "./goal-tool-ui";
-export { GenerativeUIToolUI } from "./generative-ui-tool-ui";
 export { SubagentToolUI } from "./subagent-tool-ui";
 export { ShowFileToolUI } from "./show-file-tool-ui";
 export { ComputerToolUI } from "./computer-tool-ui";

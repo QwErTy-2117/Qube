@@ -1,22 +1,33 @@
 "use client";
 
-import "@assistant-ui/react-markdown/styles/dot.css";
 import {
   type CodeHeaderProps,
   MarkdownTextPrimitive,
+  escapeCurrencyDollars,
+  normalizeMathDelimiters,
   unstable_memoizeMarkdownComponents as memoizeMarkdownComponents,
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
 import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { useState, type FC, useCallback } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  memo,
+  useState,
+  type FC,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+} from "react";
+import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { SyntaxHighlighter } from "./shiki-highlighter";
 import { TooltipIconButton } from "./tooltip-icon-button";
-import { GenerativeUIFrame } from "./tools/generative-ui-tool-ui";
-import { parseGenerativeUIFence } from "@/lib/generative-ui/sandbox";
 import { remarkFileRefs, MdFileCardNode, MdFileCardGroupNode, FILE_REF_RE } from "./md-file-ref";
-import { renderLatexShortcuts } from "./latex-shortcuts";
 
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const [isCopied, setIsCopied] = useState(false);
@@ -38,10 +49,6 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   );
 };
 
-// Created lazily on first render (not at module scope): chunk evaluation
-// order can otherwise hit the SyntaxHighlighter binding before its
-// initializer runs (SSR ReferenceError) in production chunk graphs.
-let cachedBaseComponents: any = null;
 // Raw text of a fenced block (children may be a string or string array).
 function fenceText(children: unknown): string {
   if (typeof children === "string") return children;
@@ -49,101 +56,222 @@ function fenceText(children: unknown): string {
     return children.filter((c): c is string => typeof c === "string").join("");
   return "";
 }
+
+/**
+ * Strip agent-only artifacts before markdown parsing:
+ * - inline <script> blocks never belong in a rendered reply
+ * - [file:]/present_file(...) markers render through PresentedFiles instead
+ */
+function stripAgentArtifacts(text: string): string {
+  const clean = text
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<script\b[^>]*\/>/gi, "");
+  FILE_REF_RE.lastIndex = 0;
+  return clean.replace(FILE_REF_RE, "");
+}
+
+/**
+ * Normalize model-produced math delimiters (\(...\), \[...\], custom tags)
+ * into the $.../$$...$ form remark-math understands, then protect currency
+ * amounts such as "$5" from being parsed as inline math.
+ */
+export function preprocessMarkdown(text: string): string {
+  return escapeCurrencyDollars(normalizeMathDelimiters(stripAgentArtifacts(text)));
+}
+
+/**
+ * Wrap words in spans so each newly streamed word can fade in on its own.
+ * Keys are stable per text position, so React reuses the existing spans as
+ * more text arrives and only genuinely new words play the appear animation.
+ * The CSS lives in app/globals.css and only animates while the markdown
+ * container carries data-status="running".
+ */
+const WORD_GAP_RE = /(\s+)/;
+const ANIMATABLE_INLINE = new Set([
+  "a",
+  "b",
+  "strong",
+  "i",
+  "em",
+  "u",
+  "s",
+  "del",
+  "mark",
+  "sup",
+  "sub",
+  "span",
+]);
+
+function splitWords(text: string, prefix: string): ReactNode[] {
+  const pieces = text.split(WORD_GAP_RE);
+  const nodes: ReactNode[] = [];
+  let word = 0;
+  for (const piece of pieces) {
+    if (!piece) continue;
+    if (/^\s+$/.test(piece)) {
+      nodes.push(piece);
+      continue;
+    }
+    nodes.push(
+      <span key={`${prefix}-w${word++}`} className="aui-word">
+        {piece}
+      </span>,
+    );
+  }
+  return nodes;
+}
+
+function withWordAnimation(children: ReactNode): ReactNode {
+  return Children.map(children, (child, index) => {
+    if (typeof child === "string") return splitWords(child, `t${index}`);
+    if (!isValidElement(child)) return child;
+    const element = child as ReactElement<{ className?: string; children?: ReactNode }>;
+    const type = element.type;
+    if (typeof type !== "string" || !ANIMATABLE_INLINE.has(type)) return child;
+    if (/katex|math/i.test(element.props.className || "")) return child;
+    return cloneElement(
+      element,
+      { key: element.key ?? `e${index}` },
+      withWordAnimation(element.props.children),
+    );
+  });
+}
+
+// Shared element styling for the context-bound primitive and static
+// markdown (generative UI components, subagent steps).
+function sharedComponents() {
+  return {
+    h1: ({ className, children, ...props }: any) => (
+      <h1 className={cn("aui-md-h1 mb-4 mt-6 text-2xl font-bold", className)} {...props}>
+        {withWordAnimation(children)}
+      </h1>
+    ),
+    h2: ({ className, children, ...props }: any) => (
+      <h2 className={cn("aui-md-h2 mb-3 mt-5 text-xl font-semibold", className)} {...props}>
+        {withWordAnimation(children)}
+      </h2>
+    ),
+    h3: ({ className, children, ...props }: any) => (
+      <h3 className={cn("aui-md-h3 mb-2 mt-4 text-lg font-medium", className)} {...props}>
+        {withWordAnimation(children)}
+      </h3>
+    ),
+    p: ({ className, children, ...props }: any) => (
+      <p className={cn("aui-md-p mb-4 leading-7", className)} {...props}>
+        {withWordAnimation(children)}
+      </p>
+    ),
+    a: ({ className, children, ...props }: any) => (
+      <a className={cn("aui-md-a text-primary underline underline-offset-2", className)} {...props}>
+        {withWordAnimation(children)}
+      </a>
+    ),
+    blockquote: ({ className, ...props }: any) => (
+      <blockquote className={cn("aui-md-blockquote border-l-4 border-primary/30 pl-4 italic text-muted-foreground", className)} {...props} />
+    ),
+    ul: ({ className, ...props }: any) => (
+      <ul className={cn("aui-md-ul mb-4 list-disc pl-6", className)} {...props} />
+    ),
+    ol: ({ className, ...props }: any) => (
+      <ol className={cn("aui-md-ol mb-4 list-decimal pl-6", className)} {...props} />
+    ),
+    li: ({ className, children, ...props }: any) => (
+      <li className={cn("aui-md-li mb-1", className)} {...props}>
+        {withWordAnimation(children)}
+      </li>
+    ),
+    hr: ({ className, ...props }: any) => (
+      <hr className={cn("aui-md-hr my-6 border-border/50", className)} {...props} />
+    ),
+    table: ({ className, ...props }: any) => (
+      <div className="mb-4 mt-6 overflow-hidden rounded-lg border">
+        <div className="overflow-x-auto">
+          <table className={cn("aui-md-table w-full border-collapse text-sm", className)} {...props} />
+        </div>
+      </div>
+    ),
+    thead: ({ className, ...props }: any) => (
+      <thead className={cn("aui-md-thead bg-muted/50", className)} {...props} />
+    ),
+    tbody: ({ className, ...props }: any) => (
+      <tbody className={cn("aui-md-tbody", className)} {...props} />
+    ),
+    tr: ({ className, ...props }: any) => (
+      <tr className={cn("aui-md-tr border-b border-border/50 last:border-b-0", className)} {...props} />
+    ),
+    th: ({ className, children, ...props }: any) => (
+      <th className={cn("aui-md-th px-4 py-2 text-left font-medium", className)} {...props}>
+        {withWordAnimation(children)}
+      </th>
+    ),
+    td: ({ className, children, ...props }: any) => (
+      <td className={cn("aui-md-td px-4 py-2", className)} {...props}>
+        {withWordAnimation(children)}
+      </td>
+    ),
+    pre: ({ className, ...props }: any) => (
+      <pre className={cn("aui-md-pre mb-6", className)} {...props} />
+    ),
+  };
+}
+
+// Created lazily on first render (not at module scope): chunk evaluation
+// order can otherwise hit the SyntaxHighlighter binding before its
+// initializer runs (SSR ReferenceError) in production chunk graphs.
+let cachedBaseComponents: any = null;
+let cachedStaticComponents: any = null;
+
 function getBaseComponents() {
   if (!cachedBaseComponents) {
     cachedBaseComponents = memoizeMarkdownComponents({
       SyntaxHighlighter,
       CodeHeader,
-  h1: ({ className, ...props }) => (
-    <h1 className={cn("aui-md-h1 mb-4 mt-6 text-2xl font-bold", className)} {...props} />
-  ),
-  h2: ({ className, ...props }) => (
-    <h2 className={cn("aui-md-h2 mb-3 mt-5 text-xl font-semibold", className)} {...props} />
-  ),
-  h3: ({ className, ...props }) => (
-    <h3 className={cn("aui-md-h3 mb-2 mt-4 text-lg font-medium", className)} {...props} />
-  ),
-  p: ({ className, ...props }) => (
-    <p className={cn("aui-md-p mb-4 leading-7", className)} {...props} />
-  ),
-  a: ({ className, ...props }) => (
-    <a className={cn("aui-md-a text-primary underline underline-offset-2", className)} {...props} />
-  ),
-  blockquote: ({ className, ...props }) => (
-    <blockquote className={cn("aui-md-blockquote border-l-4 border-primary/30 pl-4 italic text-muted-foreground", className)} {...props} />
-  ),
-  ul: ({ className, ...props }) => (
-    <ul className={cn("aui-md-ul mb-4 list-disc pl-6", className)} {...props} />
-  ),
-  ol: ({ className, ...props }) => (
-    <ol className={cn("aui-md-ol mb-4 list-decimal pl-6", className)} {...props} />
-  ),
-  li: ({ className, ...props }) => (
-    <li className={cn("aui-md-li mb-1", className)} {...props} />
-  ),
-  hr: ({ className, ...props }) => (
-    <hr className={cn("aui-md-hr my-6 border-border/50", className)} {...props} />
-  ),
-  table: ({ className, ...props }) => (
-    <div className="mb-4 mt-6 overflow-hidden rounded-lg border">
-      <div className="overflow-x-auto">
-        <table className={cn("aui-md-table w-full border-collapse text-sm", className)} {...props} />
-      </div>
-    </div>
-  ),
-  thead: ({ className, ...props }) => (
-    <thead className={cn("aui-md-thead bg-muted/50", className)} {...props} />
-  ),
-  tbody: ({ className, ...props }) => (
-    <tbody className={cn("aui-md-tbody", className)} {...props} />
-  ),
-  tr: ({ className, ...props }) => (
-    <tr className={cn("aui-md-tr border-b border-border/50 last:border-b-0", className)} {...props} />
-  ),
-  th: ({ className, ...props }) => (
-    <th className={cn("aui-md-th px-4 py-2 text-left font-medium", className)} {...props} />
-  ),
-  td: ({ className, ...props }) => (
-    <td className={cn("aui-md-td px-4 py-2", className)} {...props} />
-  ),
-  pre: ({ className, ...props }) => (
-    <pre className={cn("aui-md-pre mb-6", className)} {...props} />
-  ),
-  code: function Code({ className, children, ...props }) {
-    const isCodeBlock = useIsMarkdownCodeBlock();
-    // Inline generative UI: a ```genui fenced JSON block
-    // ({title, kind, html, css, js, height}) renders as a Qube-styled
-    // sandboxed visual exactly where the agent placed it in its reply.
-    // Invalid JSON falls through to a normal code block — never lost.
-    if (
-      isCodeBlock &&
-      typeof className === "string" &&
-      /(?:^|\s)language-genui(\s|$)/.test(className)
-    ) {
-      const parsed = parseGenerativeUIFence(fenceText(children));
-      if (parsed) {
+      ...sharedComponents(),
+      code: function Code({ className, children, ...props }: any) {
+        const isCodeBlock = useIsMarkdownCodeBlock();
         return (
-          <div className="aui-genui my-3 overflow-hidden rounded-xl border border-border/60">
-            <GenerativeUIFrame args={parsed} />
-          </div>
+          <code
+            className={cn(
+              !isCodeBlock && "aui-md-inline-code rounded bg-muted px-1.5 py-0.5 text-sm font-mono",
+              className,
+            )}
+            {...props}
+          >
+            {children}
+          </code>
         );
-      }
-    }
-    return (
-      <code
-        className={cn(
-          !isCodeBlock && "aui-md-inline-code rounded bg-muted px-1.5 py-0.5 text-sm font-mono",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  },
+      },
     });
   }
   return cachedBaseComponents;
+}
+
+function getStaticComponents() {
+  if (!cachedStaticComponents) {
+    cachedStaticComponents = {
+      ...sharedComponents(),
+      code: function StaticCode({ className, children, ...props }: any) {
+        const raw = fenceText(children);
+        const language = /language-([\w-]+)/.exec(className || "")?.[1];
+        const isBlock = !!language || raw.includes("\n");
+        if (!isBlock) {
+          return (
+            <code
+              className={cn(
+                "aui-md-inline-code rounded bg-muted px-1.5 py-0.5 text-sm font-mono",
+                className,
+              )}
+              {...props}
+            >
+              {children}
+            </code>
+          );
+        }
+        return <SyntaxHighlighter language={language || "text"} code={raw.replace(/\n$/, "")} />;
+      },
+    };
+  }
+  return cachedStaticComponents;
 }
 
 function getDefaultComponents(): any {
@@ -156,24 +284,37 @@ export let defaultComponents: any = undefined;
 
 export function MarkdownText() {
   if (!defaultComponents) defaultComponents = getDefaultComponents();
-  // File cards live only in the slim PresentedFiles list at the bottom of
-  // the message — strip every [file:]/present_file(...) marker here so
-  // markers never render a second inline copy (or leak as raw text).
   return (
     <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm, remarkFileRefs]}
+      remarkPlugins={[remarkGfm, remarkFileRefs, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
       className="aui-md"
       components={defaultComponents}
-      preprocess={(text) => {
-        const clean = text
-          .replace(/<script[\s\S]*?<\/script>/gi, "")
-          .replace(/<script\b[^>]*\/>/gi, "");
-        FILE_REF_RE.lastIndex = 0;
-        const stripped = clean.replace(FILE_REF_RE, "");
-        return renderLatexShortcuts(stripped);
-      }}
+      preprocess={preprocessMarkdown}
     />
   );
 }
+
+/**
+ * Static markdown for contexts that are not a message part (generative UI
+ * components, subagent steps). Uses the same styling, math delimiters and
+ * syntax highlighting as MarkdownText.
+ */
+const StaticMarkdownImpl = ({ text, className }: { text: string; className?: string }) => {
+  const components = getStaticComponents();
+  return (
+    <div className={cn("aui-md", className)}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={components}
+      >
+        {preprocessMarkdown(text)}
+      </ReactMarkdown>
+    </div>
+  );
+};
+
+export const StaticMarkdown = memo(StaticMarkdownImpl);
 
 export { MarkdownTextPrimitive, remarkGfm };

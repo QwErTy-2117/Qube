@@ -45,9 +45,12 @@ describe("validateDraft", () => {
     assert.equal(validateDraft({ name: "X", instructions: "Y", scheduleKind: "once", runAt: past }).ok, false);
   });
 
-  it("trims strings and passes none through", () => {
-    const r = validateDraft({ name: "  T  ", instructions: " Do. ", scheduleKind: "none" });
+  it("trims strings and defaults a one-shot draft to a future time", () => {
+    const r = validateDraft({ name: "  T  ", instructions: " Do. ", scheduleKind: "once" });
     assert.equal(r.ok, true);
-    assert.equal((r as { draft: TaskDraft }).draft.name, "T");
+    const draft = (r as { draft: TaskDraft }).draft;
+    assert.equal(draft.name, "T");
+    assert.ok(draft.runAt);
+    assert.ok(Date.parse(draft.runAt!) > Date.now());
   });
 });

@@ -47,7 +47,7 @@ export const FRIENDLY_TOOL_LABELS: Record<string, string> = {
   read_memory: "Scratching the brain",
   save_memory: "Remembering that",
   goal: "Working toward the goal",
-  generate_ui: "Cooking up a visual",
+  render_gui: "Cooking up a visual",
   // Apps & services
   connect_service: "Connecting an app",
   mcp_tool_call: "Using an app",

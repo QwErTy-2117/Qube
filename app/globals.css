@@ -1,8 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "tw-shimmer";
-@import "@assistant-ui/react-markdown/styles/dot.css";
-@import "@openuidev/react-ui/styles/index.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -219,3 +217,35 @@ html[data-magicui-theme-vt="active"]::view-transition-new(root) {
 .typing-dots > span:nth-child(2) { animation-delay: 0.15s; }
 .typing-dots > span:nth-child(3) { animation-delay: 0.3s; }
 @media (prefers-reduced-motion: reduce) { .typing-dots > span { animation: none; opacity: 0.7; } }
+/* Streaming prose: each new word eases in on its own instead of a pulsing
+   cursor after the last word. Only words that mount while the part is
+   running animate; finished and historical messages stay completely still. */
+@keyframes aui-word-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.14em);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.aui-md[data-status="running"] .aui-word {
+  display: inline-block;
+  animation: aui-word-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aui-md[data-status="running"] .aui-word {
+    animation: none;
+  }
+}
+
+/* KaTeX display math can be wider than the message column; scroll instead
+   of overflowing the transcript. */
+.aui-md .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}

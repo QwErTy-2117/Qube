@@ -1,4 +1,4 @@
-export type TaskDraftScheduleKind = "once" | "interval" | "none";
+export type TaskDraftScheduleKind = "once" | "interval";
 
 export interface TaskDraft {
   name: string;
@@ -24,17 +24,17 @@ export interface DraftInput {
   monthDay?: number;
 }
 
-const KINDS: TaskDraftScheduleKind[] = ["once", "interval", "none"];
+const KINDS: TaskDraftScheduleKind[] = ["once", "interval"];
 
 /** System prompt for the drafting model. Pure — no I/O, no date mocking inside. */
 export function buildDraftSystemPrompt(): string {
   return [
     "You turn a short task request into a scheduled-task draft.",
     'Reply with ONE JSON object only: {"name": string, "instructions": string,',
-    ' "scheduleKind": "once"|"interval"|"none", "intervalMinutes"?: number, "runAt"?: string (ISO future),',
+    ' "scheduleKind": "once"|"interval", "intervalMinutes"?: number, "runAt"?: string (ISO future),',
     ' "hour"?: 0-23, "minute"?: 0-59, "weekdays"?: [0-6 Sun-Sat], "monthDay"?: 1-31}.',
     "Rules: explicit timing wins; recurring language means interval or wall-clock fields;",
-    "a one-off reminder with no time means scheduleKind none;",
+    "a one-off reminder with no explicit time means scheduleKind once at the next sensible hour;",
     "ambiguous means a sensible default, never an empty schedule.",
     "Name is short (<= 60 chars); instructions tell the agent exactly what to do.",
   ].join(" ");
@@ -66,7 +66,7 @@ export function validateDraft(raw: unknown): ValidateResult {
   if (!name) return { ok: false, error: "Draft needs a non-empty name." };
   if (!instructions) return { ok: false, error: "Draft needs non-empty instructions." };
   if (typeof d.scheduleKind !== "string" || !(KINDS as string[]).includes(d.scheduleKind)) {
-    return { ok: false, error: "Draft needs scheduleKind once|interval|none." };
+    return { ok: false, error: "Draft needs scheduleKind once|interval." };
   }
   const draft: TaskDraft = { name: name.slice(0, 120), instructions, scheduleKind: d.scheduleKind as TaskDraftScheduleKind };
   if (d.intervalMinutes !== undefined) {
@@ -95,6 +95,21 @@ export function validateDraft(raw: unknown): ValidateResult {
   if (d.monthDay !== undefined) {
     if (!isInt(d.monthDay) || d.monthDay < 1 || d.monthDay > 31) return { ok: false, error: "monthDay must be 1-31." };
     draft.monthDay = d.monthDay;
+  }
+  // Never hand the UI a schedule it cannot save: a one-shot without a time
+  // lands on the next full hour, and a recurring task without timing defaults
+  // to a daily cadence.
+  if (draft.scheduleKind === "once" && !draft.runAt) {
+    const next = new Date(Date.now() + 60 * 60 * 1000);
+    next.setMinutes(0, 0, 0);
+    draft.runAt = next.toISOString();
+  }
+  if (
+    draft.scheduleKind === "interval" &&
+    draft.intervalMinutes === undefined &&
+    draft.hour === undefined
+  ) {
+    draft.intervalMinutes = 1440;
   }
   return { ok: true, draft };
 }

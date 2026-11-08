@@ -68,7 +68,6 @@ for the full feature context.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OPENUI_ENABLED` | enabled | Set to `false` to turn off inline generative UI cards/charts and keep plain Markdown plus the `generate_ui` sandbox. |
 | `QUBE_COMPACTION_ENABLED` | enabled | Set to `false` to disable automatic context compaction (the manual compaction endpoint still works). |
 | `QUBE_COMPACTION_CONTEXT_TOKENS` | `128000` | Assumed model context window when the provider reports none. |
 | `QUBE_COMPACTION_RESERVE_TOKENS` | `20000` | Headroom below the window that triggers compaction. |

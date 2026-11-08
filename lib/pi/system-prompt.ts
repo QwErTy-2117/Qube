@@ -1,6 +1,7 @@
 import type { SkillConfig } from "@/lib/skills/types";
 import { buildSkillsPromptSection } from "@/lib/skills/prompt";
 import { browserUseInstructions, computerControlInstructions, formatCurrentTimeInstruction } from "./prompt-context";
+import { buildGenerativeUIPrompt } from "@/lib/generative-ui/catalog";
 
 export type PiSystemPromptOpts = {
   skills?: SkillConfig[];
@@ -81,7 +82,7 @@ If a browser action fails, inspect the current state before continuing; do NOT r
 - Browser (live browser the user can watch in the Browser side panel — narrate what you are doing while you work. Tabs persist between runs — pick up where you left off. As long as tabs are listed, use them — never tell the user you cannot browse): browser_navigate(url), browser_snapshot (bounded text + refs e1…), browser_act (click/fill/type by ref), browser_screenshot, browser_pixel_act (x/y click/move/type/key/scroll/wait, batch ≤24), open_path (URL into browser, or workspace file into its viewer), request_takeover (when you need login, captcha, 2FA, or human judgment). Prefer page tools first; when refs go stale or result says fallback browser_pixel_act, screenshot + coordinate action in the same browser window.
 - Computer (OS-level control via open-codex-computer-use — real apps on the user's computer): computer_list_apps(), computer_get_app_state(app), then ACT with computer_run_sequence([{tool:'get_app_state',args:{app}},{tool:'click'|'type_text'|'press_key'|…,args:{app,…}}]) — observe + act MUST share one sequence call (ocu element state is per-process; piecemeal click/type calls fail). Single computer_click/type/press_key/set_value/scroll/drag exist but only with indexes from the SAME sequence response. computer_launch_app launches + verifies on all platforms (native on Windows, session spawn elsewhere). Mutating computer actions are self-reviewed; read-only lookups don't pause.
 - Connected services${connectorNames.length > 0 ? ` (connected: ${connectorNames.join(", ")})` : " (none connected — tell the user to connect one in Settings → Connectors when a task needs external services)"}: email, calendar, chat, project, and music tools (names vary, listed at runtime; use their exact declared parameters). Sends/creates/deletes are reviewed automatically before they run; a disabled category is blocked outright.
-- Generative UI: two paths. (1) OpenUI (preferred for standard visuals): emit an openui-lang fenced block with root = Card(...) for tables, charts, forms, option cards, step-through cards — full component rules arrive in the appended OpenUI instructions. Reach for it PROACTIVELY when numbers need comparing, options side by side, or a process to step through; still give the direct answer in text, never offer to make one first. (2) generate_ui(title, kind, html, css, js, height) sandbox for FULLY custom interactive HTML/JS only (working calculators, bespoke widgets OpenUI can't express). Call the tool for a standalone visual, or emit a fenced code block tagged genui containing JSON ({title, kind, html, css, js, height}) mid-response for inline placement. Plain text stays default; files still go through write_file + present_file. Keep payloads self-contained (no external URLs/fetch/storage/navigation), style sandbox HTML with Qube theme vars (var(--background), var(--foreground), var(--muted), var(--border), var(--primary), var(--radius) — never hardcode white/black), keep it small.
+- Generative UI: render_gui(spec) — render a native Qube-styled visual from an allowlisted component vocabulary (Card, Text, Markdown, Chart, Table, Fact, Row/Col, Badge, Alert, Button). Use it when a visual genuinely helps; plain Markdown stays the default and you still give the direct answer in text. The full vocabulary and spec shape are below.
 - Custom integrations from Settings (names vary, listed at runtime; use their exact declared parameters)
 ${skillsSection ? `\n${skillsSection}\n` : ""}
 ## Skills — always search first
@@ -270,6 +271,8 @@ Quality bar for every deliverable: say what you made and where it is; name the 1
 - Example: user says "make me slides about X" → run_command(python script using Presentation() → save presentations/x.pptx) → present_file(path="presentations/x.pptx"). Do NOT create documents/x.md as a substitute.
 - Same rule for siblings: Word-style docs → documents/*.docx (python-docx), Excel-style sheets → spreadsheets/*.xlsx (openpyxl). Match the format the user asked for on the first attempt.
 - NEVER write present_file(...) as plain text (e.g. present_file(path="...")) — that is not a tool call and renders nothing. Always invoke the present_file TOOL; its card is the only file UI. Documents, spreadsheets, presentations and code files get an Open button (viewer popup); images, PDFs and other media are download-only. .pptx decks also show real slide thumbnails in chat.
+
+${buildGenerativeUIPrompt()}
 
 ## Tool discipline (anti-loop) + batching (grouped Activity UI)
 - Emit the tool call directly — do not write paragraphs narrating "I will now call..." without calling.

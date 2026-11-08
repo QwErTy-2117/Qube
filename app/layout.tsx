@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import "@fontsource/caveat/600.css";
+import "katex/dist/katex.min.css";
 import { Provider } from "./provider";
 import { Titlebar } from "@/components/tauri/titlebar";
 import { ExternalLinkHandler } from "@/components/tauri/external-link-handler";

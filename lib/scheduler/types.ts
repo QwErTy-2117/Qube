@@ -1,4 +1,4 @@
-export type TaskScheduleKind = "interval" | "once" | "none";
+export type TaskScheduleKind = "interval" | "once";
 
 export type TaskPermissions = {
   runCommands: boolean;
@@ -26,8 +26,21 @@ export type ScheduledTask = {
   createdAt: number;
   updatedAt: number;
   lastRunAt: number | null;
-  // null = manual task, never auto-runs
+  // null = no upcoming run (disabled or exhausted)
   nextRunAt: number | null;
+  /** Calendar presentation: colour token used by the Tasks calendar. */
+  color?: string;
+  /** Optional free-form location/context shown in the task dialog. */
+  location?: string;
+  /** Length of the calendar block in minutes (display + drag/resize). */
+  durationMinutes?: number;
+  /** Renders as a full-day block instead of a timed event. */
+  allDay?: boolean;
+  /**
+   * Set by the store's one-time migration of the removed "none" scheduling
+   * type. These records are kept on disk but hidden from the calendar.
+   */
+  legacyScheduleRemoved?: boolean;
 };
 
 export type TaskLogEntry = {

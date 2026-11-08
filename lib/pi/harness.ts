@@ -445,21 +445,6 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     userAbout: config.userAbout,
   });
 
-  // OpenUI generative UI (https://www.openui.com/): append component library
-  // instructions so the model can emit ```openui-lang fenced visuals for
-  // tables / charts / forms / cards. Inline mode keeps plain Markdown the
-  // default — visuals only when they genuinely help. Disable with
-  // OPENUI_ENABLED=false. Server-only prompt build (lang-core, no React).
-  try {
-    if (process.env.OPENUI_ENABLED !== "false") {
-      const { getOpenUISystemPrompt } = await import("@/lib/openui/prompt");
-      const openuiInstructions = getOpenUISystemPrompt();
-      if (openuiInstructions) systemPrompt += `\n\n${openuiInstructions}`;
-    }
-  } catch (e: any) {
-    console.warn("[pi-harness] OpenUI prompt append failed (non-fatal):", e?.message || String(e));
-  }
-
   // Memory recall (under the hood): relevant memories + past-chat index.
   // Non-fatal by design — an empty context simply means nothing recalled yet.
   // Skipped entirely when long-term memory is disabled in Advanced settings.

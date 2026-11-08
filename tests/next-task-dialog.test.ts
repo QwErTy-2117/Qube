@@ -53,13 +53,13 @@ describe("next task: draft validation", () => {
   });
 
   it("requires a name and instructions (Save stays disabled without them)", () => {
-    assert.equal(validateDraft({ name: " ", instructions: "x", scheduleKind: "none" }).ok, false);
-    assert.equal(validateDraft({ name: "x", instructions: "  ", scheduleKind: "none" }).ok, false);
+    assert.equal(validateDraft({ name: " ", instructions: "x", scheduleKind: "once" }).ok, false);
+    assert.equal(validateDraft({ name: "x", instructions: "  ", scheduleKind: "once" }).ok, false);
   });
 
   it("keeps recurring schedules usable without a runAt", () => {
     assert.equal(validateDraft({ name: "Daily", instructions: "Check the inbox.", scheduleKind: "interval", intervalMinutes: 60 }).ok, true);
-    assert.equal(validateDraft({ name: "Manual", instructions: "Only when I ask.", scheduleKind: "none" }).ok, true);
+    assert.equal(validateDraft({ name: "One-off", instructions: "Run it later.", scheduleKind: "once" }).ok, true);
   });
 
   it("checks the wall-clock ranges a user can type", () => {
@@ -69,7 +69,7 @@ describe("next task: draft validation", () => {
   });
 
   it("trims the name and caps it at 120 characters", () => {
-    const result = validateDraft({ name: `  ${"a".repeat(200)}  `, instructions: "x", scheduleKind: "none" });
+    const result = validateDraft({ name: `  ${"a".repeat(200)}  `, instructions: "x", scheduleKind: "once" });
     assert.equal(result.ok, true);
     assert.equal(result.ok && result.draft.name.length, 120);
     assert.equal(result.ok && result.draft.name.startsWith(" "), false);

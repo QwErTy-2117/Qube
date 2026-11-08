@@ -4,9 +4,7 @@ import React, { useState } from "react";
 import { Loader2Icon } from "lucide-react";
 import { EchoRing } from "@/components/assistant-ui/echo-ring";
 import { cn } from "@/lib/utils";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { SyntaxHighlighter } from "@/components/assistant-ui/shiki-highlighter";
+import { StaticMarkdown } from "@/components/assistant-ui/markdown-text";
 import {
   ToolGroupContent,
   ToolGroupRoot,
@@ -27,97 +25,6 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-// Standalone markdown renderer for tool UI contexts (outside MessagePartText)
-function StaticMarkdown({ text }: { text: unknown }) {
-  const str = typeof text === "string" ? text : String(text ?? "");
-  const clean = str.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<script\b[^>]*\/>/gi, "");
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        h1: ({ className, ...props }: any) => (
-          <h1 className={cn("aui-md-h1 mb-4 mt-6 text-2xl font-bold", className)} {...props} />
-        ),
-        h2: ({ className, ...props }: any) => (
-          <h2 className={cn("aui-md-h2 mb-3 mt-5 text-xl font-semibold", className)} {...props} />
-        ),
-        h3: ({ className, ...props }: any) => (
-          <h3 className={cn("aui-md-h3 mb-2 mt-4 text-lg font-medium", className)} {...props} />
-        ),
-        p: ({ className, ...props }: any) => (
-          <p className={cn("aui-md-p mb-4 leading-7", className)} {...props} />
-        ),
-        a: ({ className, ...props }: any) => (
-          <a className={cn("aui-md-a text-primary underline underline-offset-2", className)} {...props} />
-        ),
-        blockquote: ({ className, ...props }: any) => (
-          <blockquote className={cn("aui-md-blockquote border-l-4 border-primary/30 pl-4 italic text-muted-foreground", className)} {...props} />
-        ),
-        ul: ({ className, ...props }: any) => (
-          <ul className={cn("aui-md-ul mb-4 list-disc pl-6", className)} {...props} />
-        ),
-        ol: ({ className, ...props }: any) => (
-          <ol className={cn("aui-md-ol mb-4 list-decimal pl-6", className)} {...props} />
-        ),
-        li: ({ className, ...props }: any) => (
-          <li className={cn("aui-md-li mb-1", className)} {...props} />
-        ),
-        hr: ({ className, ...props }: any) => (
-          <hr className={cn("aui-md-hr my-6 border-border/50", className)} {...props} />
-        ),
-        table: ({ className, ...props }: any) => (
-          <div className="mb-4 overflow-hidden rounded-lg border">
-            <div className="overflow-x-auto">
-              <table className={cn("aui-md-table w-full border-collapse text-sm", className)} {...props} />
-            </div>
-          </div>
-        ),
-        thead: ({ className, ...props }: any) => (
-          <thead className={cn("aui-md-thead bg-muted/50", className)} {...props} />
-        ),
-        tbody: ({ className, ...props }: any) => (
-          <tbody className={cn("aui-md-tbody", className)} {...props} />
-        ),
-        tr: ({ className, ...props }: any) => (
-          <tr className={cn("aui-md-tr border-b border-border/50 last:border-b-0", className)} {...props} />
-        ),
-        th: ({ className, ...props }: any) => (
-          <th className={cn("aui-md-th px-4 py-2 text-left font-medium", className)} {...props} />
-        ),
-        td: ({ className, ...props }: any) => (
-          <td className={cn("aui-md-td px-4 py-2", className)} {...props} />
-        ),
-        pre: ({ className, children, ...props }: any) => (
-          <pre className={cn("aui-md-pre mb-6", className)} {...props}>
-            {children}
-          </pre>
-        ),
-        code: ({ className, children, ...props }: any) => {
-          const codeString = String(children ?? "");
-          const match = /language-(\w+)/.exec(className || "");
-          const language = match?.[1];
-          const isBlock = !!language || codeString.includes("\n");
-          if (!isBlock) {
-            return (
-              <code
-                className={cn("aui-md-inline-code rounded bg-muted px-1.5 py-0.5 text-sm font-mono", className)}
-                {...props}
-              >
-                {children}
-              </code>
-            );
-          }
-          return (
-            <SyntaxHighlighter language={language || "text"} code={codeString.replace(/\n$/, "")} />
-          );
-        },
-      }}
-    >
-      {clean}
-    </ReactMarkdown>
-  );
-}
 
 const DESTRUCTIVE_KEYWORDS = [
   "send", "create", "post", "delete", "remove",

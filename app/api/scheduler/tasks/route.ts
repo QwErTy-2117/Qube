@@ -33,6 +33,18 @@ export async function POST(req: NextRequest) {
             { status: 400 },
           );
         }
+        if (data.scheduleKind !== "once" && data.scheduleKind !== "interval") {
+          return NextResponse.json(
+            { error: "scheduleKind must be once or interval" },
+            { status: 400 },
+          );
+        }
+        if (data.scheduleKind === "once" && !data.runAt) {
+          return NextResponse.json(
+            { error: "runAt is required for once tasks" },
+            { status: 400 },
+          );
+        }
         const extras: string[] = [];
         if (data.doneCriteria) extras.push(`Done criteria: ${data.doneCriteria}`);
         if (data.condition) extras.push(`Only-report-if: ${data.condition}`);
@@ -49,15 +61,11 @@ export async function POST(req: NextRequest) {
           weekdays: data.weekdays,
           monthDay: data.monthDay,
           permissions: data.permissions,
+          color: data.color,
+          location: data.location,
+          durationMinutes: data.durationMinutes,
+          allDay: data.allDay,
         });
-        if (task.schedule.kind === "none") {
-          try {
-            const { linkManualTaskReminder } = await import(
-              "@/lib/scheduler/manual-tasks"
-            );
-            await linkManualTaskReminder(task.id, task.name, task.instructions);
-          } catch {}
-        }
         return NextResponse.json({ task });
       }
 
@@ -66,7 +74,18 @@ export async function POST(req: NextRequest) {
         if (data.name !== undefined) patch.name = data.name;
         if (data.instructions !== undefined)
           patch.instructions = data.instructions;
+        if (data.color !== undefined) patch.color = data.color;
+        if (data.location !== undefined) patch.location = data.location;
+        if (data.durationMinutes !== undefined)
+          patch.durationMinutes = data.durationMinutes;
+        if (data.allDay !== undefined) patch.allDay = data.allDay;
         if (data.scheduleKind !== undefined) {
+          if (data.scheduleKind !== "once" && data.scheduleKind !== "interval") {
+            return NextResponse.json(
+              { error: "scheduleKind must be once or interval" },
+              { status: 400 },
+            );
+          }
           patch.schedule = {
             kind: data.scheduleKind,
             intervalMinutes: data.intervalMinutes,
@@ -80,30 +99,26 @@ export async function POST(req: NextRequest) {
           };
         }
         if (data.enabled !== undefined) patch.enabled = data.enabled;
+        // Rescheduling a finished one-shot must re-arm it: the scheduler
+        // disables one-shots after they run, so a new future runAt without an
+        // explicit enabled flag is an intent to run again.
+        if (
+          data.enabled === undefined &&
+          data.scheduleKind === "once" &&
+          data.runAt &&
+          new Date(data.runAt).getTime() > Date.now()
+        ) {
+          patch.enabled = true;
+        }
         if (data.permissions !== undefined)
           patch.permissions = data.permissions;
-        const prevTask = data.scheduleKind !== undefined ? await getTask(data.id) : null;
+        if (data.nextRunAt !== undefined) patch.nextRunAt = data.nextRunAt;
         const task = await updateTask(data.id, patch);
         if (!task)
           return NextResponse.json(
             { error: "Task not found" },
             { status: 404 },
           );
-        if (data.scheduleKind !== undefined) {
-          try {
-            const { linkManualTaskReminder, unlinkManualTaskReminder } =
-              await import("@/lib/scheduler/manual-tasks");
-            if (data.scheduleKind === "none") {
-              await linkManualTaskReminder(
-                task.id,
-                task.name,
-                task.instructions,
-              );
-            } else if (prevTask?.schedule.kind === "none") {
-              await unlinkManualTaskReminder(task.id);
-            }
-          } catch {}
-        }
         return NextResponse.json({ task });
       }
 
@@ -117,12 +132,6 @@ export async function POST(req: NextRequest) {
             },
             { status: 400 },
           );
-        try {
-          const { unlinkManualTaskReminder } = await import(
-            "@/lib/scheduler/manual-tasks"
-          );
-          await unlinkManualTaskReminder(data.id);
-        } catch {}
         return NextResponse.json({ success: true });
       }
 
@@ -141,14 +150,6 @@ export async function POST(req: NextRequest) {
           task.id,
           result.status === "success",
         );
-        if (task.schedule.kind === "none" && result.status === "success") {
-          try {
-            const { unlinkManualTaskReminder } = await import(
-              "@/lib/scheduler/manual-tasks"
-            );
-            await unlinkManualTaskReminder(task.id);
-          } catch {}
-        }
         return NextResponse.json({ result });
       }
 

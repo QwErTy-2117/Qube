@@ -38,7 +38,29 @@ async function loadRaw(): Promise<ScheduledTask[]> {
     return defaultTasks;
   }
   const raw = await readFile(TASKS_FILE, "utf-8");
-  return JSON.parse(raw);
+  const parsed = JSON.parse(raw) as ScheduledTask[];
+  let migrated = false;
+  const tasks = parsed.map((task) => {
+    // Legacy "none" (manual) schedules were removed. Keep the record by
+    // turning it into a disabled one-shot parked on the day it was created, so
+    // it neither vanishes nor starts running unexpectedly.
+    if ((task as { schedule?: { kind?: string } }).schedule?.kind === "none") {
+      migrated = true;
+      const runAt = task.createdAt || Date.now();
+      return {
+        ...task,
+        enabled: false,
+        schedule: { kind: "once" as const, runAt },
+        nextRunAt: runAt,
+        legacyScheduleRemoved: true,
+      };
+    }
+    return task;
+  });
+  if (migrated) {
+    await writeFile(TASKS_FILE, JSON.stringify(tasks, null, 2), "utf-8");
+  }
+  return tasks;
 }
 
 export async function loadTasks(): Promise<ScheduledTask[]> {
@@ -76,39 +98,45 @@ export async function createTask(data: {
   weekdays?: number[];
   monthDay?: number;
   permissions?: Partial<TaskPermissions>;
+  color?: string;
+  location?: string;
+  durationMinutes?: number;
+  allDay?: boolean;
 }): Promise<ScheduledTask> {
   const tasks = await getTasks();
   const now = Date.now();
-  let nextRunAt: number | null;
-  if (data.scheduleKind === "none") {
-    nextRunAt = null;
-  } else if (data.scheduleKind === "once" && data.runAt) {
-    nextRunAt = data.runAt;
-  } else {
-    const interval = data.intervalMinutes ?? 30;
-    nextRunAt = now + interval * 60_000;
-  }
+  const schedule: ScheduledTask["schedule"] = {
+    kind: data.scheduleKind,
+    intervalMinutes:
+      data.scheduleKind === "interval" ? data.intervalMinutes : undefined,
+    runAt: data.scheduleKind === "once" ? data.runAt : undefined,
+    hour: data.scheduleKind === "interval" ? data.hour : undefined,
+    minute: data.scheduleKind === "interval" ? data.minute : undefined,
+    weekdays: data.scheduleKind === "interval" ? data.weekdays : undefined,
+    monthDay: data.scheduleKind === "interval" ? data.monthDay : undefined,
+  };
+  const nextRunAt =
+    data.scheduleKind === "once"
+      ? data.runAt ?? now
+      : computeNextRunAtForSchedule(schedule);
   const task: ScheduledTask = {
     id: `task_${now}_${Math.random().toString(36).slice(2, 8)}`,
     type: "scheduled",
     name: data.name,
     instructions: data.instructions,
-    schedule: {
-      kind: data.scheduleKind,
-      intervalMinutes:
-        data.scheduleKind === "interval" ? data.intervalMinutes : undefined,
-      runAt: data.scheduleKind === "once" ? data.runAt : undefined,
-      hour: data.scheduleKind === "interval" ? data.hour : undefined,
-      minute: data.scheduleKind === "interval" ? data.minute : undefined,
-      weekdays: data.scheduleKind === "interval" ? data.weekdays : undefined,
-      monthDay: data.scheduleKind === "interval" ? data.monthDay : undefined,
-    },
+    schedule,
     enabled: true,
     permissions: { ...DEFAULT_TASK_PERMISSIONS, ...data.permissions },
     createdAt: now,
     updatedAt: now,
     lastRunAt: null,
     nextRunAt,
+    ...(data.color ? { color: data.color } : {}),
+    ...(data.location ? { location: data.location } : {}),
+    ...(typeof data.durationMinutes === "number"
+      ? { durationMinutes: data.durationMinutes }
+      : {}),
+    ...(typeof data.allDay === "boolean" ? { allDay: data.allDay } : {}),
   };
   tasks.push(task);
   await persist(tasks);
@@ -120,7 +148,16 @@ export async function updateTask(
   patch: Partial<
     Pick<
       ScheduledTask,
-      "name" | "instructions" | "schedule" | "enabled" | "permissions"
+      | "name"
+      | "instructions"
+      | "schedule"
+      | "enabled"
+      | "permissions"
+      | "color"
+      | "location"
+      | "durationMinutes"
+      | "allDay"
+      | "nextRunAt"
     >
   >,
 ): Promise<ScheduledTask | null> {
@@ -130,15 +167,17 @@ export async function updateTask(
   tasks[idx] = { ...tasks[idx], ...patch, updatedAt: Date.now() };
   if (patch.schedule) {
     const s = patch.schedule;
-    if (s.kind === "none") {
-      tasks[idx].nextRunAt = null;
+    if (s.kind === "interval") {
+      tasks[idx].nextRunAt = computeNextRunAtForSchedule(s);
     }
-    if (s.kind === "interval" && s.intervalMinutes) {
-      tasks[idx].nextRunAt = Date.now() + s.intervalMinutes * 60_000;
+    if (s.kind === "once") {
+      // A once task without a runAt would otherwise keep a stale anchor from
+      // its previous schedule and never fire when the user expects it to.
+      tasks[idx].nextRunAt = s.runAt ?? Date.now();
     }
-    if (s.kind === "once" && s.runAt) {
-      tasks[idx].nextRunAt = s.runAt;
-    }
+  }
+  if (patch.enabled === true && tasks[idx].nextRunAt == null) {
+    tasks[idx].nextRunAt = computeNextRunAtForSchedule(tasks[idx].schedule);
   }
   await persist(tasks);
   return tasks[idx];
@@ -164,9 +203,7 @@ export async function updateTaskRunTime(
   if (!task) return;
   const now = Date.now();
   task.lastRunAt = now;
-  if (task.schedule.kind === "none") {
-    task.nextRunAt = null;
-  } else if (task.schedule.kind === "once") {
+  if (task.schedule.kind === "once") {
     task.enabled = false;
     // For once tasks, nextRunAt stays as runAt but disabled ensures no repeat
   } else if (task.schedule.kind === "interval") {
@@ -239,8 +276,7 @@ function computeNextDailyOccurrence(hour: number, minute: number, weekdays?: num
 }
 
 export function computeNextRunAtForSchedule(schedule: ScheduledTask["schedule"]): number | null {
-  if (schedule.kind === "none") return null;
-  if (schedule.kind === "once" && schedule.runAt) return schedule.runAt;
+  if (schedule.kind === "once") return schedule.runAt ?? Date.now();
   if (schedule.kind === "interval" && schedule.hour !== undefined && schedule.minute !== undefined) {
     return computeNextDailyOccurrence(schedule.hour, schedule.minute, schedule.weekdays, schedule.monthDay);
   }

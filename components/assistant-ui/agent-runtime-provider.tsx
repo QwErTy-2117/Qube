@@ -25,11 +25,11 @@ import {
   ScheduleTaskToolUI,
   UpdateHeartbeatToolUI,
   GoalToolUI,
-  GenerativeUIToolUI,
   ShowFileToolUI,
   ComputerToolUI,
 } from "@/components/assistant-ui/tools";
 import { ConnectorToolUI, ConnectServiceToolUI, CompactionNoticeDataUI } from "@/components/assistant-ui/tools";
+import { RenderGuiToolUI } from "@/components/assistant-ui/generative-ui";
 import { BrowserToolUI } from "@/components/workspace";
 import { useChatGPTProviderSync } from "@/components/chatgpt/chatgpt-provider-sync";
 import { type ReactNode, useEffect, useState } from "react";
@@ -110,8 +110,8 @@ function ToolUIRegistrar() {
   useAssistantToolUI({ toolName: "connect_service", render: ConnectServiceToolUI });
   useAssistantToolUI({ toolName: "composio_search_tools", render: ConnectorToolUI });
   useAssistantToolUI({ toolName: "composio_multi_execute_tool", render: ConnectorToolUI });
-  // Generative UI (OpenIntelligentUI pattern, Qube-styled sandbox)
-  useAssistantToolUI({ toolName: "generate_ui", render: GenerativeUIToolUI });
+  // Generative UI (assistant-ui built-in MessagePrimitive.GenerativeUI)
+  useAssistantToolUI({ toolName: "render_gui", render: RenderGuiToolUI });
   // Computer Use (OS-level control via open-codex-computer-use) — same
   // shared ToolRow card as every other tool call.
   useAssistantToolUI({ toolName: "computer_list_apps", render: ComputerToolUI });

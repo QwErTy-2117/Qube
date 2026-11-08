@@ -5,7 +5,7 @@ import {
   ComposerAttachments,
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
-import { OpenUIText } from "@/components/assistant-ui/openui-text";
+import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
@@ -113,7 +113,12 @@ const messageGroupBy = (part: any, context: any) => {
   // tool groups. TodoWrite + present_file render null inline, so they JOIN
   // the surrounding tool group instead of splitting it — otherwise one
   // invisible part would turn a single Activity group into two.
-  if (part.type === "tool-call" && part.toolName === "subagent") return [];
+  if (
+    part.type === "tool-call" &&
+    (part.toolName === "subagent" || part.toolName === "render_gui")
+  ) {
+    return [];
+  }
   return baseToolGroupBy(part as any, context as any);
 };
 
@@ -876,9 +881,8 @@ const MessageError: FC = () => {
 };
 
 // Assistant text part that hides agent error notices (they surface via the
-// red error toast instead of inside the reply bubble).
-// Renders OpenUI generative UI when the reply carries an ```openui-lang
-// program, plain Markdown otherwise (see openui-text.tsx).
+// red error toast instead of inside the reply bubble). MarkdownText renders
+// markdown + LaTeX; generative visuals come from the render_gui tool below.
 const AssistantText: FC = () => {
   const text = useAuiState((s) => {
     try {
@@ -890,7 +894,7 @@ const AssistantText: FC = () => {
     }
   });
   if (typeof text === "string" && isAgentErrorText(text)) return null;
-  return <OpenUIText />;
+  return <MarkdownText />;
 };
 
 // Friendly group titles live in the shared module so every surface

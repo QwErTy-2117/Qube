@@ -1,757 +1,1196 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { Loader2, Check, Plus, Trash2, Clock, Calendar as CalendarIcon, CalendarDays, CalendarRange } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import {
+  addDays,
+  addMinutes,
+  differenceInCalendarDays,
+  format,
+  setHours,
+  startOfDay,
+} from "date-fns";
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Play,
+  Plus,
+  RepeatIcon,
+  Trash2,
+  X,
+} from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { PromptPill } from "@/components/shared/prompt-pill";
+import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 import {
-  Column,
-  gentleSpring,
-  type ColumnData,
-  type ColumnStatus,
-  type DragState,
-} from "@/components/ui/kanban-board";
-import { isTaskDone } from "@/lib/scheduler/board-status";
+  EventCalendar,
+  useEventCalendarNavigation,
+  useEventCalendarView,
+} from "@/components/reui/event-calendar/event-calendar";
+import { EventCalendarContent } from "@/components/reui/event-calendar/event-calendar-content";
+import type {
+  CalendarEvent,
+  CalendarView,
+  EventCalendarOccurrence,
+  EventCalendarProposedUpdate,
+  EventCalendarSlotInfo,
+} from "@/components/reui/event-calendar/event-calendar-types";
 
-interface ScheduledTask {
-  id: string;
-  type: "heartbeat" | "scheduled";
-  name: string;
-  instructions: string;
-  schedule: {
-    kind: "interval" | "once" | "none";
-    intervalMinutes?: number;
-    runAt?: number;
+import type { ScheduledTask } from "@/lib/scheduler/types";
+import {
+  compactTime,
+  repeatValueFor,
+  taskBlock,
+  taskOccurrencesInRange,
+  type RepeatValue,
+} from "@/lib/scheduler/calendar";
+
+type TaskEventData = { task: ScheduledTask };
+type TaskCalendarEvent = CalendarEvent<TaskEventData>;
+
+const TASK_COLORS = [
+  { value: "blue", label: "Blue", css: "var(--color-blue-500)" },
+  { value: "yellow", label: "Yellow", css: "var(--color-yellow-500)" },
+  { value: "purple", label: "Purple", css: "var(--color-violet-500)" },
+  { value: "pink", label: "Pink", css: "var(--color-rose-500)" },
+  { value: "green", label: "Green", css: "var(--color-emerald-500)" },
+  { value: "orange", label: "Orange", css: "var(--color-orange-500)" },
+] as const;
+
+const VIEW_ORDER: Array<{ value: CalendarView; label: string; shortcut: string }> = [
+  { value: "month", label: "Month", shortcut: "M" },
+  { value: "week", label: "Week", shortcut: "W" },
+  { value: "day", label: "Day", shortcut: "D" },
+  { value: "agenda", label: "Agenda", shortcut: "A" },
+];
+
+const REPEAT_OPTIONS: Array<{ value: RepeatValue; label: string }> = [
+  { value: "once", label: "Once" },
+  { value: "hourly", label: "Hourly" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "custom", label: "Custom" },
+];
+
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+  const minutes = index * 30;
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const value = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  const label = format(new Date(2000, 0, 1, hour, minute), "h:mm a");
+  return { value, label };
+});
+
+const CALENDAR_INTERACTIONS = {
+  drag: true,
+  resize: true,
+  selectSlot: false,
+} as const;
+
+// Stable identity: the calendar diffs option props by reference, so a fresh
+// Date/array on every render would reset state.
+const TODAY = new Date();
+const TASK_VIEWS: CalendarView[] = ["month", "week", "day", "agenda"];
+const CALENDAR_CLASS_NAMES = {
+  // Reference layout: the day number sits at the top-left of each cell, with
+  // event chips stacked underneath. The footer is normally a flow row under
+  // the chips, so pin it to the corner and reserve that space in the content.
+  monthCellFooter: "absolute left-1.5 top-1 px-1 pb-0",
+  monthCellContent: "pt-7",
+  monthDayHeader: "truncate px-2 py-2 text-center font-medium",
+  // Multi-day bars are absolutely positioned from the row top, so they must
+  // clear the pinned day-number row as well.
+  monthBarOverlay: "pt-7",
+};
+
+function colorToken(task: Pick<ScheduledTask, "id" | "color">): string {
+  const match = TASK_COLORS.find((color) => color.value === task.color);
+  if (match) return match.value;
+  let hash = 0;
+  for (let i = 0; i < task.id.length; i += 1) {
+    hash = (hash * 31 + task.id.charCodeAt(i)) >>> 0;
+  }
+  return TASK_COLORS[hash % TASK_COLORS.length].value;
+}
+
+function colorCss(value: string): string {
+  return TASK_COLORS.find((color) => color.value === value)?.css ?? TASK_COLORS[0].css;
+}
+
+function taskToEvent(task: ScheduledTask): TaskCalendarEvent {
+  const block = taskBlock(task);
+  return {
+    id: task.id,
+    title: task.name,
+    start: block.start,
+    end: block.end,
+    allDay: block.allDay,
+    color: colorCss(colorToken(task)),
+    data: { task },
+    // Pure interval tasks have no wall-clock anchor that can be moved; they
+    // can still be resized but not dragged onto another day.
+    draggable:
+      task.schedule.kind === "once" ||
+      task.schedule.hour !== undefined ||
+      task.schedule.minute !== undefined,
   };
-  enabled: boolean;
-  lastRunAt: number | null;
-  // null = manual task, never auto-runs (matches lib/scheduler/types.ts).
-  nextRunAt: number | null;
+}
+
+function getTaskOccurrences(
+  event: TaskCalendarEvent,
+  range: { start: Date; end: Date },
+) {
+  const task = event.data?.task;
+  if (!task) return null;
+  return taskOccurrencesInRange(task, range);
+}
+
+/**
+ * Module-level so its identity never changes: the calendar memoizes event
+ * content on this function, and an inline arrow would re-render every chip on
+ * every drag frame.
+ */
+function renderTaskEvent({
+  occurrence,
+  view,
+}: {
+  occurrence: EventCalendarOccurrence<TaskEventData>;
+  view: CalendarView;
+}) {
+  const task = occurrence.event.data?.task;
+  // A one-shot that already ran keeps its block on the calendar so the history
+  // is visible; strike it through instead of hiding it.
+  const completed = task?.schedule.kind === "once" && task.lastRunAt != null;
+  return (
+    <span
+      className={cn(
+        "flex min-w-0 items-center gap-1 truncate",
+        task?.enabled === false && "opacity-50",
+        completed && "line-through opacity-60",
+      )}
+      // Blend the event colour toward the foreground so the chip text stays a
+      // legible, darker shade of the tint in light mode and lifts in dark.
+      style={{
+        color: `color-mix(in oklab, ${occurrence.event.color} 62%, var(--foreground))`,
+      }}
+    >
+      {view === "month" && !occurrence.allDay && (
+        <span className="shrink-0">{compactTime(occurrence.start)}</span>
+      )}
+      <span className="truncate">{occurrence.event.title}</span>
+      {occurrence.isRecurring && (
+        <RepeatIcon className="size-2.5 shrink-0 opacity-60" aria-hidden="true" />
+      )}
+    </span>
+  );
+}
+
+interface TaskEditor {
+  task: ScheduledTask | null;
+  title: string;
+  description: string;
+  start: Date;
+  end: Date;
+  allDay: boolean;
+  location: string;
+  color: string;
+  repeat: RepeatValue;
 }
 
 export function SchedulingTab() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
-  // Re-evaluate interval windows while the tab stays open, so a recurring
-  // task leaves Done when its period rolls over.
-  const [now, setNow] = useState(() => Date.now());
-  const [dragState, setDragState] = useState<DragState>(null);
-  // Ids of tasks currently executing (triggered via the board).
-  const [runningIds, setRunningIds] = useState<string[]>([]);
-  const runningRef = useRef<Set<string>>(new Set());
-  // Delete-zone highlight while a dragged card hovers it.
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editor, setEditor] = useState<TaskEditor | null>(null);
+  const [editorError, setEditorError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
-  const deleteTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Create-task dialog.
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createInstructions, setCreateInstructions] = useState("");
-  const [createKind, setCreateKind] = useState<"once" | "interval" | "none">("once");
-  const [createRunAt, setCreateRunAt] = useState("");
-  const [createInterval, setCreateInterval] = useState(1440);
-  // Wall-clock fields from AI drafts (hour/minute/weekdays/monthDay) that the
-  // form has no widgets for — carried through to the create body.
-  const [createClock, setCreateClock] = useState<{
-    hour?: number;
-    minute?: number;
-    weekdays?: number[];
-    monthDay?: number;
-  } | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  // AI draft flow: prompt -> generating -> review (prefilled form).
-  const [draftStage, setDraftStage] = useState<"prompt" | "generating" | "review">("prompt");
-  const [draftError, setDraftError] = useState<string | null>(null);
-  const [drafting, setDrafting] = useState(false);
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch("/api/scheduler/tasks", { cache: "no-store" });
-      const data = await res.json();
-      setTasks(data.tasks || []);
-    } catch {}
+      const response = await fetch("/api/scheduler/tasks", { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Could not load tasks.");
+      }
+      // Legacy "none" (manual) tasks were migrated to hidden one-shots so the
+      // removed scheduling type never resurfaces on the calendar.
+      const nextTasks = (data?.tasks ?? []).filter(
+        (task: ScheduledTask) =>
+          task.type === "scheduled" && task.legacyScheduleRemoved !== true,
+      );
+      setTasks(nextTasks);
+      setFetchError(null);
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : String(error));
+    }
   }, []);
 
   useEffect(() => {
-    // Placements are state-driven now — drop the old manual-position store.
-    try {
-      localStorage.removeItem("qube-tasks-board");
-    } catch {}
     (async () => {
       await fetchTasks();
       setLoading(false);
     })();
+    const timer = setInterval(fetchTasks, 60_000);
+    return () => clearInterval(timer);
   }, [fetchTasks]);
 
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  // The calendar derives its events from the task list; drag/resize keeps the
+  // local task state as the single source of truth so nothing snaps back.
+  const events = useMemo(() => tasks.map(taskToEvent), [tasks]);
 
-  // Every scheduled task lives on the board — pending interval (recurring)
-  // tasks as well as one-shots. Ran one-shots and recurring tasks that
-  // already ran in their current interval window count as Done.
-  const boardTasks = useMemo(
-    () => tasks.filter((t) => t.type === "scheduled"),
-    [tasks]
-  );
-
-  // Columns always match task state: done when ran, in progress while the
-  // execution triggered from the board is running, to do otherwise. Done
-  // covers current-period runs — rerunnable recurring cards can be dragged
-  // back to In progress.
-  const columns: ColumnData[] = useMemo(() => {
-    const buckets: Record<ColumnStatus, ScheduledTask[]> = {
-      todo: [],
-      "in-progress": [],
-      done: [],
-    };
-    for (const task of boardTasks) {
-      if (isTaskDone(task, now)) {
-        buckets.done.push(task);
-      } else if (runningIds.includes(task.id)) {
-        buckets["in-progress"].push(task);
-      } else {
-        buckets.todo.push(task);
-      }
-    }
-    // Newest completion first, so a just-finished task is always visible
-    // at the top and the oldest is the one that falls off past the cap.
-    buckets.done.sort((a, b) => (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0));
-    return [
-      {
-        id: "todo",
-        title: "To do",
-        status: "todo",
-        cards: buckets.todo.map((t) => ({ id: t.id, title: t.name, done: false })),
-      },
-      {
-        id: "in-progress",
-        title: "In progress",
-        status: "in-progress",
-        cards: buckets["in-progress"].map((t) => ({ id: t.id, title: t.name, done: false })),
-      },
-      {
-        id: "done",
-        title: "Done",
-        status: "done",
-        cards: buckets.done.map((t) => ({
-          id: t.id,
-          title: t.name,
-          done: true,
-          persist: t.schedule.kind === "interval",
-          // Recurring cards can be dragged Done -> In progress to re-run.
-          // One-shots stay locked (terminal).
-          rerunnable: t.schedule.kind === "interval",
-        })),
-      },
-    ];
-  }, [boardTasks, runningIds, now]);
-
-  // Dropping a card into In progress triggers the task for real. Anything
-  // else is a no-op — placement always derives from task state.
-  const triggerTask = useCallback(
-    async (id: string) => {
-      if (runningRef.current.has(id)) return;
-      const task = boardTasks.find((t) => t.id === id);
-      if (!task) return;
-      // Finished one-shots are terminal; recurring tasks stay re-runnable and
-      // fresh timestamps keep them in Done.
-      if (task.schedule.kind === "once" && isTaskDone(task, Date.now())) return;
-      runningRef.current.add(id);
-      setRunningIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  const persistUpdate = useCallback(
+    async (body: Record<string, unknown>) => {
       try {
-        await fetch("/api/scheduler/tasks", {
+        const response = await fetch("/api/scheduler/tasks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "trigger", id }),
+          body: JSON.stringify({ action: "update", ...body }),
         });
-      } catch {}
-      runningRef.current.delete(id);
-      setRunningIds((prev) => prev.filter((rid) => rid !== id));
-      fetchTasks();
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.task) {
+          throw new Error(data?.error || "Could not update the task.");
+        }
+        await fetchTasks();
+      } catch (error) {
+        setFetchError(error instanceof Error ? error.message : String(error));
+        // Revert the optimistic calendar write by reloading persisted tasks.
+        await fetchTasks();
+      }
     },
-    [boardTasks, fetchTasks]
+    [fetchTasks],
   );
 
-  // A Done card that slid out (past the cap of 5) is deleted for good —
-  // removed locally at once, deleted server-side in the background.
-  const handleCardGone = useCallback((cardId: string) => {
-    // Safety net: recurring tasks are never deleted by the Done-column
-    // overflow — they return to To do when their period rolls over.
-    const task = tasks.find((t) => t.id === cardId);
-    if (task && task.schedule.kind === "interval") return;
-    setTasks((prev) => prev.filter((t) => t.id !== cardId));
-    fetch("/api/scheduler/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "delete", id: cardId }),
-    }).catch(() => {});
-  }, [tasks]);
+  // Drag/resize must not snap back while the PATCH is in flight, so the local
+  // task list mirrors the change immediately; a failed request re-fetches and
+  // restores the persisted truth.
+  const applyOptimisticTaskPatch = useCallback(
+    (id: string, body: Record<string, unknown>) => {
+      setTasks((current) =>
+        current.map((task) => {
+          if (task.id !== id) return task;
+          const next: ScheduledTask = { ...task };
+          if (typeof body.name === "string") next.name = body.name;
+          if (typeof body.instructions === "string") next.instructions = body.instructions;
+          if (typeof body.color === "string") next.color = body.color;
+          if (typeof body.location === "string") next.location = body.location;
+          if (typeof body.durationMinutes === "number") {
+            next.durationMinutes = body.durationMinutes;
+          }
+          if (typeof body.allDay === "boolean") next.allDay = body.allDay;
+          if (body.scheduleKind === "once" || body.scheduleKind === "interval") {
+            const runAt =
+              typeof body.runAt === "string" ? Date.parse(body.runAt) : undefined;
+            next.schedule = {
+              kind: body.scheduleKind,
+              intervalMinutes:
+                body.scheduleKind === "interval"
+                  ? (body.intervalMinutes as number | undefined)
+                  : undefined,
+              runAt: body.scheduleKind === "once" ? runAt : undefined,
+              hour: body.scheduleKind === "interval" ? (body.hour as number | undefined) : undefined,
+              minute: body.scheduleKind === "interval" ? (body.minute as number | undefined) : undefined,
+              weekdays: body.scheduleKind === "interval" ? (body.weekdays as number[] | undefined) : undefined,
+              monthDay: body.scheduleKind === "interval" ? (body.monthDay as number | undefined) : undefined,
+            };
+            next.nextRunAt =
+              body.scheduleKind === "once" && runAt
+                ? runAt
+                : next.nextRunAt ?? Date.now();
+            if (body.scheduleKind === "interval" && body.hour === undefined) {
+              next.nextRunAt =
+                Date.now() + (body.intervalMinutes as number ?? 30) * 60_000;
+            }
+          }
+          return next;
+        }),
+      );
+    },
+    [],
+  );
 
-  const handleDrop = useCallback(
-    (cardId: string, fromColumnId: ColumnStatus, toColumnId: ColumnStatus) => {
-      if (fromColumnId === toColumnId) return;
-      // Done is locked except for re-runs: a rerunnable (recurring) card may
-      // move Done -> In progress. No manual moves into Done.
-      if (toColumnId === "done") return;
-      if (fromColumnId === "done") {
-        const task = boardTasks.find((t) => t.id === cardId);
-        if (!task || task.schedule.kind !== "interval") return;
-        if (toColumnId !== "in-progress") return;
-        triggerTask(cardId);
+  const handleEventUpdate = useCallback(
+    (update: EventCalendarProposedUpdate<TaskEventData>) => {
+      const task = update.event.data?.task;
+      if (!task) return false;
+      const durationMinutes = Math.max(
+        5,
+        Math.round((update.end.getTime() - update.start.getTime()) / 60_000),
+      );
+      const moved =
+        update.source === "drag" ||
+        update.source === "keyboard" ||
+        update.source === "resize-start";
+
+      // Month-view drags are day-granular: the calendar reports a midnight
+      // start. Keep the task's original wall-clock time and apply only the day
+      // delta, so dragging a 9am task to another date doesn't silently move it
+      // to midnight.
+      const occurrenceStart = update.occurrence?.start;
+      const startIsMidnight =
+        update.start.getHours() === 0 && update.start.getMinutes() === 0;
+      const occurrenceHasTime =
+        occurrenceStart != null &&
+        (occurrenceStart.getHours() !== 0 || occurrenceStart.getMinutes() !== 0);
+      let effectiveStart = update.start;
+      if (moved && occurrenceStart && startIsMidnight && occurrenceHasTime) {
+        const dayDelta = differenceInCalendarDays(update.start, occurrenceStart);
+        effectiveStart = addDays(occurrenceStart, dayDelta);
+      }
+
+      if (task.schedule.kind === "once") {
+        const body: Record<string, unknown> = moved
+          ? {
+              id: task.id,
+              scheduleKind: "once",
+              runAt: effectiveStart.toISOString(),
+              durationMinutes,
+              allDay: update.allDay,
+            }
+          : { id: task.id, durationMinutes, allDay: update.allDay };
+        applyOptimisticTaskPatch(task.id, body);
+        void persistUpdate(body);
+        return true;
+      }
+
+      if (moved) {
+        if (task.schedule.hour === undefined && task.schedule.minute === undefined) {
+          return false;
+        }
+        const schedule: Record<string, unknown> = {
+          id: task.id,
+          scheduleKind: "interval",
+          intervalMinutes: task.schedule.intervalMinutes,
+          hour: effectiveStart.getHours(),
+          minute: effectiveStart.getMinutes(),
+          durationMinutes,
+          allDay: update.allDay,
+        };
+        if (task.schedule.weekdays && task.schedule.weekdays.length > 0) {
+          schedule.weekdays = [effectiveStart.getDay()];
+        }
+        if (task.schedule.monthDay !== undefined) {
+          schedule.monthDay = effectiveStart.getDate();
+        }
+        applyOptimisticTaskPatch(task.id, schedule);
+        void persistUpdate(schedule);
+      } else {
+        const body = { id: task.id, durationMinutes, allDay: update.allDay };
+        applyOptimisticTaskPatch(task.id, body);
+        void persistUpdate(body);
+      }
+      return true;
+    },
+    [persistUpdate, applyOptimisticTaskPatch],
+  );
+
+  const openCreate = useCallback((seed?: { start: Date; end: Date; allDay?: boolean }) => {
+    let start: Date;
+    let end: Date;
+    if (seed) {
+      start = seed.start;
+      end = seed.end;
+    } else {
+      start = new Date();
+      start.setMinutes(0, 0, 0);
+      start.setHours(start.getHours() + 1);
+      end = addMinutes(start, 60);
+    }
+    setEditor({
+      task: null,
+      title: "",
+      description: "",
+      start,
+      end,
+      allDay: seed?.allDay ?? false,
+      location: "",
+      color: TASK_COLORS[0].value,
+      repeat: "once",
+    });
+    setEditorError(null);
+    setDeleteArmed(false);
+    setEditorOpen(true);
+  }, []);
+
+  const openEdit = useCallback((occurrence: EventCalendarOccurrence<TaskEventData>) => {
+    const task = occurrence.event.data?.task;
+    if (!task) return;
+    setEditor({
+      task,
+      title: task.name,
+      description: task.instructions,
+      start: new Date(occurrence.start),
+      end: new Date(occurrence.end),
+      allDay: occurrence.allDay,
+      location: task.location ?? "",
+      color: colorToken(task),
+      repeat: repeatValueFor(task),
+    });
+    setEditorError(null);
+    setDeleteArmed(false);
+    setEditorOpen(true);
+  }, []);
+
+  // Stable identity: the calendar diffs option props by reference.
+  const handleEventClick = useCallback(
+    (occurrence: EventCalendarOccurrence<TaskEventData>, event: MouseEvent) => {
+      // Opt out of the built-in selection tint; a click opens the editor.
+      event.preventDefault();
+      openEdit(occurrence);
+    },
+    [openEdit],
+  );
+
+  const handleCreateClick = useCallback(() => openCreate(), [openCreate]);
+
+  const handleSlotClick = useCallback(
+    (slot: EventCalendarSlotInfo) => {
+      if (slot.view === "month") {
+        const start = setHours(startOfDay(slot.date), 9);
+        openCreate({ start, end: addMinutes(start, 60) });
         return;
       }
-      if (toColumnId === "in-progress" && fromColumnId === "todo") {
-        triggerTask(cardId);
+      if (slot.allDay) {
+        const start = startOfDay(slot.date);
+        openCreate({ start, end: addDays(start, 1), allDay: true });
+        return;
       }
+      const start = new Date(slot.date);
+      openCreate({ start, end: slot.end ?? addMinutes(start, 60) });
     },
-    [triggerTask, boardTasks]
+    [openCreate],
   );
 
-  function resetCreateForm() {
-    setCreateName("");
-    setCreateInstructions("");
-    setCreateKind("once");
-    setCreateRunAt("");
-    setCreateInterval(1440);
-    setCreateClock(null);
-    setCreateError(null);
-    setDraftStage("prompt");
-    setDraftError(null);
-    setDrafting(false);
-  }
+  const patchEditor = useCallback((patch: Partial<TaskEditor>) => {
+    setEditor((current) => (current ? { ...current, ...patch } : current));
+    setEditorError(null);
+  }, []);
 
-  const canCreate =
-    createName.trim().length > 0 &&
-    createInstructions.trim().length > 0 &&
-    (createKind === "interval" ||
-      createKind === "none" ||
-      (createRunAt !== "" && new Date(createRunAt).getTime() > Date.now()));
+  const setStartDate = useCallback((date: Date) => {
+    setEditor((current) => {
+      if (!current) return current;
+      const delta =
+        startOfDay(date).getTime() - startOfDay(current.start).getTime();
+      const start = new Date(current.start.getTime() + delta);
+      let end = new Date(current.end.getTime() + delta);
+      if (end.getTime() <= start.getTime()) end = addMinutes(start, 60);
+      return { ...current, start, end };
+    });
+    setEditorError(null);
+  }, []);
 
-  const HOUR = 60;
-  const WEEK = 10080;
-  const MONTH = 43200;
+  const setStartTime = useCallback((value: string) => {
+    setEditor((current) => {
+      if (!current) return current;
+      const [hour, minute] = value.split(":").map(Number);
+      const delta =
+        hour * 3_600_000 + minute * 60_000 -
+        (current.start.getHours() * 3_600_000 + current.start.getMinutes() * 60_000);
+      const start = new Date(current.start.getTime() + delta);
+      let end = new Date(current.end.getTime() + delta);
+      if (end.getTime() <= start.getTime()) end = addMinutes(start, 60);
+      return { ...current, start, end };
+    });
+    setEditorError(null);
+  }, []);
 
-  const clockHour = createClock?.hour ?? 9;
-  const clockMinute = createClock?.minute ?? 0;
-  const clockTime = `${String(clockHour).padStart(2, "0")}:${String(clockMinute).padStart(2, "0")}`;
-  const clockWeekday = createClock?.weekdays?.[0] ?? 1;
-  const clockMonthDay = createClock?.monthDay ?? 1;
+  const setEndDate = useCallback((date: Date) => {
+    setEditor((current) => {
+      if (!current) return current;
+      const end = new Date(current.end);
+      end.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+      // A recurring task's end is its block length: never let a picked date
+      // land before the start, or the duration would go negative.
+      if (end.getTime() <= current.start.getTime()) {
+        return { ...current, end: addMinutes(current.start, 60) };
+      }
+      return { ...current, end };
+    });
+    setEditorError(null);
+  }, []);
 
-  function setClockTime(value: string) {
-    const [h, m] = value.split(":").map(Number);
-    if (!Number.isFinite(h) || !Number.isFinite(m)) return;
-    setCreateClock((prev) => ({ ...(prev ?? {}), hour: h, minute: m }));
-  }
+  const setEndTime = useCallback((value: string) => {
+    setEditor((current) => {
+      if (!current) return current;
+      const [hour, minute] = value.split(":").map(Number);
+      const end = new Date(current.end);
+      end.setHours(hour, minute, 0, 0);
+      return { ...current, end };
+    });
+    setEditorError(null);
+  }, []);
 
-  function setClockWeekday(value: number) {
-    setCreateClock((prev) => ({ ...(prev ?? {}), weekdays: [value] }));
-  }
+  const setAllDay = useCallback((allDay: boolean) => {
+    setEditor((current) => {
+      if (!current) return current;
+      if (allDay) {
+        const days = Math.max(
+          1,
+          Math.ceil((current.end.getTime() - current.start.getTime()) / 86_400_000),
+        );
+        const start = startOfDay(current.start);
+        return { ...current, allDay: true, start, end: addDays(start, days) };
+      }
+      const start = setHours(startOfDay(current.start), 9);
+      return { ...current, allDay: false, start, end: addMinutes(start, 60) };
+    });
+    setEditorError(null);
+  }, []);
 
-  function setClockMonthDay(value: number) {
-    setCreateClock((prev) => ({ ...(prev ?? {}), monthDay: value }));
-  }
+  const setRepeat = useCallback((repeat: RepeatValue) => {
+    setEditor((current) => {
+      if (!current) return current;
+      if (repeat === "once") return { ...current, repeat };
+      const start = new Date(current.start);
+      const duration = Math.max(
+        30,
+        Math.round((current.end.getTime() - current.start.getTime()) / 60_000),
+      );
+      return { ...current, repeat, end: addMinutes(start, duration) };
+    });
+    setEditorError(null);
+  }, []);
 
-  // Hourly repeats keep the raw interval. Daily/weekly/monthly are wall-clock
-  // schedules: the backend needs hour/minute (plus weekday/month-day) and
-  // then ignores intervalMinutes, so never send a clock with the hourly path.
-  function intervalSchedule() {
-    if (createInterval === HOUR) return { intervalMinutes: HOUR };
-    return {
-      intervalMinutes: createInterval,
-      hour: clockHour,
-      minute: clockMinute,
-      ...(createInterval === WEEK ? { weekdays: [clockWeekday] } : {}),
-      ...(createInterval === MONTH ? { monthDay: clockMonthDay } : {}),
+  const closeEditor = useCallback(() => {
+    if (saving) return;
+    setEditorOpen(false);
+    setEditor(null);
+    setEditorError(null);
+    setDeleteArmed(false);
+  }, [saving]);
+
+  async function saveEditor() {
+    if (!editor || saving) return;
+    const title = editor.title.trim();
+    const description = editor.description.trim();
+    if (!title) {
+      setEditorError("Give the task a title.");
+      return;
+    }
+    if (!description) {
+      setEditorError("Describe what the agent should do.");
+      return;
+    }
+    if (editor.end.getTime() <= editor.start.getTime()) {
+      setEditorError("The end time must be after the start time.");
+      return;
+    }
+    if (editor.repeat === "once" && editor.start.getTime() <= Date.now()) {
+      setEditorError("Pick a time in the future for a one-off task.");
+      return;
+    }
+
+    const start = editor.allDay ? startOfDay(editor.start) : editor.start;
+    const end = editor.allDay
+      ? addDays(startOfDay(editor.start), Math.max(
+          1,
+          Math.ceil((editor.end.getTime() - editor.start.getTime()) / 86_400_000),
+        ))
+      : editor.end;
+    const durationMinutes = Math.max(
+      5,
+      Math.round((end.getTime() - start.getTime()) / 60_000),
+    );
+    const hour = editor.allDay ? 0 : start.getHours();
+    const minute = editor.allDay ? 0 : start.getMinutes();
+
+    let schedule: Record<string, unknown>;
+    switch (editor.repeat) {
+      case "once":
+        schedule = { scheduleKind: "once", runAt: start.toISOString() };
+        break;
+      case "hourly":
+        schedule = { scheduleKind: "interval", intervalMinutes: 60 };
+        break;
+      case "daily":
+        schedule = {
+          scheduleKind: "interval",
+          intervalMinutes: 1440,
+          hour,
+          minute,
+        };
+        break;
+      case "weekly":
+        schedule = {
+          scheduleKind: "interval",
+          intervalMinutes: 10_080,
+          hour,
+          minute,
+          weekdays: [start.getDay()],
+        };
+        break;
+      case "monthly":
+        schedule = {
+          scheduleKind: "interval",
+          intervalMinutes: 43_200,
+          hour,
+          minute,
+          monthDay: start.getDate(),
+        };
+        break;
+      default: {
+        const original = editor.task?.schedule;
+        schedule = {
+          scheduleKind: "interval",
+          intervalMinutes: original?.intervalMinutes ?? 1440,
+          hour: original?.hour ?? hour,
+          minute: original?.minute ?? minute,
+          weekdays: original?.weekdays,
+          monthDay: original?.monthDay,
+        };
+      }
+    }
+
+    const payload = {
+      ...(editor.task
+        ? { action: "update", id: editor.task.id }
+        : { action: "create" }),
+      name: title,
+      instructions: description,
+      color: editor.color,
+      location: editor.location.trim() || undefined,
+      durationMinutes,
+      allDay: editor.allDay,
+      ...schedule,
     };
-  }
 
-  async function handleCreate() {
-    if (!canCreate || creating || drafting) return;
-    setCreating(true);
-    setCreateError(null);
+    setSaving(true);
+    setEditorError(null);
     try {
-      const body: Record<string, unknown> =
-        createKind === "once"
-          ? {
-              action: "create",
-              name: createName.trim(),
-              instructions: createInstructions.trim(),
-              scheduleKind: "once",
-              runAt: new Date(createRunAt).toISOString(),
-            }
-          : createKind === "none"
-            ? {
-                action: "create",
-                name: createName.trim(),
-                instructions: createInstructions.trim(),
-                scheduleKind: "none",
-              }
-            : {
-                action: "create",
-                name: createName.trim(),
-                instructions: createInstructions.trim(),
-                scheduleKind: "interval",
-                ...intervalSchedule(),
-              };
-      const res = await fetch("/api/scheduler/tasks", {
+      const response = await fetch("/api/scheduler/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.task) {
-        throw new Error(data?.error || "Failed to create task.");
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.task) {
+        throw new Error(data?.error || "Could not save the task.");
       }
-      setCreateOpen(false);
-      resetCreateForm();
-      fetchTasks();
-    } catch (e) {
-      setCreateError(e instanceof Error ? e.message : String(e));
+      setEditorOpen(false);
+      setEditor(null);
+      await fetchTasks();
+    } catch (error) {
+      setEditorError(error instanceof Error ? error.message : String(error));
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
   }
 
-  function currentDraftInput() {
-    const base = { name: createName, instructions: createInstructions, scheduleKind: createKind };
-    return createKind === "once"
-      ? { ...base, runAt: createRunAt ? new Date(createRunAt).toISOString() : undefined }
-      : createKind === "none"
-        ? { ...base }
-        : { ...base, ...intervalSchedule() };
-  }
-
-  async function runDraft(prompt: string, current: unknown) {
-    setDrafting(true);
-    setDraftError(null);
-    setDraftStage("generating");
+  async function runNow() {
+    if (!editor?.task || saving) return;
+    setSaving(true);
+    setEditorError(null);
     try {
-      const res = await fetch("/api/scheduler/draft", {
+      const response = await fetch("/api/scheduler/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, current }),
+        body: JSON.stringify({ action: "trigger", id: editor.task.id }),
       });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.draft) throw new Error(data?.error || "Could not draft the task.");
-      applyDraft(data.draft as DraftFromServer);
-      setDraftStage("review");
-    } catch (e) {
-      setDraftError(e instanceof Error ? e.message : String(e));
-      setDraftStage("prompt");
-    } finally {
-      setDrafting(false);
-    }
-  }
-
-  type DraftFromServer = { name: string; instructions: string; scheduleKind: "once" | "interval" | "none"; intervalMinutes?: number; runAt?: string; hour?: number; minute?: number; weekdays?: number[]; monthDay?: number };
-
-  function applyDraft(d: DraftFromServer) {
-    setCreateName(d.name);
-    setCreateInstructions(d.instructions);
-    setCreateKind(d.scheduleKind === "none" ? "none" : d.scheduleKind);
-    if (typeof d.intervalMinutes === "number") setCreateInterval(d.intervalMinutes);
-    if (d.hour !== undefined || d.minute !== undefined || d.weekdays !== undefined || d.monthDay !== undefined) {
-      setCreateClock({
-        ...(d.hour !== undefined ? { hour: d.hour } : {}),
-        ...(d.minute !== undefined ? { minute: d.minute } : {}),
-        ...(d.weekdays !== undefined ? { weekdays: d.weekdays } : {}),
-        ...(d.monthDay !== undefined ? { monthDay: d.monthDay } : {}),
-      });
-    } else {
-      setCreateClock(null);
-    }
-    if (d.runAt) {
-      const t = new Date(d.runAt);
-      if (!Number.isNaN(t.getTime())) {
-        const pad = (n: number) => String(n).padStart(2, "0");
-        setCreateRunAt(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`);
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Could not run the task.");
       }
+      setEditorOpen(false);
+      setEditor(null);
+      await fetchTasks();
+    } catch (error) {
+      setEditorError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
     }
   }
+
+  async function deleteTask() {
+    if (!editor?.task) return;
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      return;
+    }
+    setSaving(true);
+    setEditorError(null);
+    try {
+      const response = await fetch("/api/scheduler/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id: editor.task.id }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Could not delete the task.");
+      }
+      setEditorOpen(false);
+      setEditor(null);
+      await fetchTasks();
+    } catch (error) {
+      setEditorError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const canSave = useMemo(() => {
+    if (!editor || saving) return false;
+    return (
+      editor.title.trim().length > 0 &&
+      editor.description.trim().length > 0 &&
+      editor.end.getTime() > editor.start.getTime() &&
+      (editor.repeat !== "once" || editor.start.getTime() > Date.now())
+    );
+  }, [editor, saving]);
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center">
+      <div className="flex h-full flex-1 items-center justify-center">
         <Loader2 className="size-5 animate-spin text-muted-foreground/40" />
       </div>
     );
   }
 
   return (
-    <MotionConfig transition={gentleSpring}>
-      <motion.div
-        initial={{ opacity: 0, filter: "blur(4px)" }}
-        animate={{ opacity: 1, filter: "blur(0px)" }}
-        transition={{ duration: 0.2 }}
-        className="flex min-h-[500px] w-full flex-1 items-start justify-center px-6 py-8 antialiased"
-        style={{
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif',
-          WebkitFontSmoothing: "antialiased",
-        }}
-      >
-        <div className="w-full space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold tracking-tight">Tasks</h3>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                resetCreateForm();
-                setCreateOpen(true);
-              }}
-              className="h-8 text-xs rounded-full"
-            >
-              <Plus className="size-3.5 mr-1" />
-              New task
-            </Button>
-          </div>
-          <div className="grid grid-cols-3 gap-5">
-            {columns.map((col) => (
-              <Column
-                column={col}
-                dragState={dragState}
-                key={col.id}
-                onCardGone={handleCardGone}
-                onDrop={handleDrop}
-                setDragState={setDragState}
-              />
-            ))}
-          </div>
-          {/* Delete zone — slides up from the bottom while dragging a card */}
-          <AnimatePresence initial={false}>
-            {dragState && (
-              <motion.div
-                key="delete-zone"
-                initial={{ opacity: 0, height: 0, y: 16 }}
-                animate={{ opacity: 1, height: "auto", y: 0 }}
-                exit={{ opacity: 0, height: 0, y: 16 }}
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                className="overflow-hidden"
-              >
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                    if (deleteTimeout.current) clearTimeout(deleteTimeout.current);
-                    setDeleteArmed(true);
-                  }}
-                  onDragLeave={() => {
-                    deleteTimeout.current = setTimeout(() => setDeleteArmed(false), 60);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDeleteArmed(false);
-                    const cardId =
-                      dragState?.cardId || e.dataTransfer.getData("text/plain");
-                    if (cardId) handleCardGone(cardId);
-                    setDragState(null);
-                  }}
-                  className={cn(
-                    "flex items-center justify-center gap-2 rounded-2xl border border-dashed px-4 py-3 text-sm font-medium transition-colors",
-                    deleteArmed
-                      ? "border-red-500 bg-red-500/20 text-red-600 dark:text-red-400"
-                      : "border-red-500/40 bg-red-500/10 text-red-600/80 dark:text-red-400/80"
-                  )}
-                >
-                  <Trash2 className="size-4" />
-                  Drop here to delete
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+    <div className="flex h-full min-h-0 w-full flex-col gap-2">
+      {fetchError && (
+        <p className="shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
+          {fetchError}
+        </p>
+      )}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background">
+        <EventCalendar
+          events={events}
+          defaultDate={TODAY}
+          weekStartsOn={0}
+          views={TASK_VIEWS}
+          defaultView="month"
+          interactions={CALENDAR_INTERACTIONS}
+          onSlotClick={handleSlotClick}
+          onEventClick={handleEventClick}
+          onEventUpdate={handleEventUpdate}
+          getOccurrences={getTaskOccurrences}
+          loading={loading}
+          maxEventsPerCell="auto"
+          offDays={false}
+          classNames={CALENDAR_CLASS_NAMES}
+          renderEvent={renderTaskEvent}
+          className="h-full min-h-0 w-full"
+        >
+          <TaskCalendarHeader onCreate={handleCreateClick} />
+          <EventCalendarContent className="min-h-0 flex-1" />
+        </EventCalendar>
 
-        {/* Create task dialog */}
-        <Dialog
-          open={createOpen}
-          onOpenChange={(v) => {
-            setCreateOpen(v);
-            if (!v) resetCreateForm();
+        <Sheet
+          open={editorOpen}
+          onOpenChange={(open) => {
+            if (!open) closeEditor();
           }}
         >
-          <DialogContent className="sm:max-w-md rounded-3xl h-[640px] max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-none">
-            <DialogHeader>
-              <DialogTitle>New task</DialogTitle>
-              <DialogDescription className="sr-only">
-                Schedule a task.
-              </DialogDescription>
-            </DialogHeader>
+          {editor && (
+            <SheetContent
+              side="right"
+              showCloseButton={false}
+              className="flex w-full flex-col gap-0 p-0 sm:max-w-[520px]"
+            >
+              <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
+                <SheetTitle className="text-lg font-semibold tracking-tight">
+                  {editor.task ? "Edit task" : "Create task"}
+                </SheetTitle>
+                <SheetDescription className="sr-only">
+                  Schedule a task for the agent.
+                </SheetDescription>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={closeEditor}
+                  className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
 
-            <div className="space-y-4 py-2 flex-1 overflow-y-auto min-h-0">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground">Name</label>
-                <input
-                  type="text"
-                  placeholder="What needs doing?"
-                  value={createName}
-                  aria-label="Task name"
-                  onChange={(e) => {
-                    setCreateName(e.target.value);
-                    if (createError) setCreateError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void handleCreate();
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+                <div className="space-y-2">
+                  <Label htmlFor="task-title" className="text-sm font-semibold">
+                    Title
+                  </Label>
+                  <Input
+                    id="task-title"
+                    autoFocus
+                    value={editor.title}
+                    placeholder="What needs doing?"
+                    onChange={(event) => patchEditor({ title: event.target.value })}
+                    className="h-10 rounded-lg"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="task-description" className="text-sm font-semibold">
+                    Description
+                  </Label>
+                  <Textarea
+                    id="task-description"
+                    value={editor.description}
+                    placeholder="What should the agent do?"
+                    rows={4}
+                    onChange={(event) =>
+                      patchEditor({ description: event.target.value })
                     }
-                  }}
-                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
+                    className="min-h-[92px] resize-none rounded-lg"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground">
-                  Instructions
-                </label>
-                <textarea
-                  placeholder="What should the agent do?"
-                  value={createInstructions}
-                  aria-label="Task instructions"
-                  onChange={(e) => {
-                    setCreateInstructions(e.target.value);
-                    if (createError) setCreateError(null);
-                  }}
-                  rows={3}
-                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring resize-none"
-                />
-              </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Start Date</Label>
+                    <DateField value={editor.start} onChange={setStartDate} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Start Time</Label>
+                    <TimeField
+                      value={editor.start}
+                      onChange={setStartTime}
+                      disabled={editor.allDay}
+                    />
+                  </div>
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground">Run</label>
-                <div className="grid grid-cols-3 gap-1 rounded-xl border border-border bg-muted/30 p-1">
-                  {(["once", "interval", "none"] as const).map((kind) => (
-                    <button
-                      key={kind}
-                      type="button"
-                      onClick={() => { setCreateKind(kind); setCreateClock(null); }}
-                      className={cn(
-                        "rounded-lg py-1.5 text-xs font-semibold transition-colors",
-                        createKind === kind
-                          ? "bg-background text-foreground"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">End Date</Label>
+                    <DateField value={editor.end} onChange={setEndDate} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">End Time</Label>
+                    <TimeField
+                      value={editor.end}
+                      onChange={setEndTime}
+                      disabled={editor.allDay}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={editor.allDay}
+                      onCheckedChange={(checked) => setAllDay(checked === true)}
+                    />
+                    All day
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">Repeat</span>
+                    <Select
+                      value={editor.repeat}
+                      onValueChange={(value) => setRepeat(value as RepeatValue)}
                     >
-                      {kind === "once" ? "Once" : kind === "interval" ? "Recurring" : "None"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {createKind === "once" ? (
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">
-                    Run at
-                  </label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring hover:bg-muted/50 transition-colors"
-                      >
-                        <span className={createRunAt ? "text-foreground" : "text-muted-foreground"}>
-                          {createRunAt
-                            ? new Date(createRunAt).toLocaleString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })
-                            : "Pick a date and time"}
-                        </span>
-                        <CalendarIcon className="size-4 text-muted-foreground" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={createRunAt ? new Date(createRunAt) : undefined}
-                        onSelect={(d) => {
-                          if (!d) return;
-                          const pad = (n: number) => String(n).padStart(2, "0");
-                          // Keep an already chosen time; otherwise default to the
-                          // next full hour so a same-day pick is never "in the past".
-                          const defaultTime =
-                            createRunAt && createRunAt.length >= 16
-                              ? createRunAt.slice(11, 16)
-                              : `${pad(new Date(Date.now() + 60 * 60 * 1000).getHours())}:00`;
-                          const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${defaultTime}`;
-                          setCreateRunAt(local);
-                          setCreateError(null);
-                        }}
-                        initialFocus
-                      />
-                      <div className="p-3 border-t border-border">
-                        <input
-                          type="time"
-                          value={createRunAt ? createRunAt.slice(11, 16) : ""}
-                          onChange={(e) => {
-                            if (!createRunAt) {
-                              const d = new Date();
-                              const pad = (n: number) => String(n).padStart(2, "0");
-                              const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${e.target.value}`;
-                              setCreateRunAt(local);
-                            } else {
-                              setCreateRunAt(`${createRunAt.slice(0, 11)}${e.target.value}`);
+                      <SelectTrigger className="h-9 w-[108px] rounded-lg">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {REPEAT_OPTIONS.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            disabled={
+                              option.value === "custom" && editor.repeat !== "custom"
                             }
-                          }}
-                          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-1 focus:ring-ring"
-                        />
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              ) : createKind === "interval" ? (
+
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">
-                    Repeat every
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { label: "Hour", minutes: 60, icon: Clock },
-                      { label: "Day", minutes: 1440, icon: CalendarIcon },
-                      { label: "Week", minutes: 10080, icon: CalendarDays },
-                      { label: "Month", minutes: 43200, icon: CalendarRange },
-                    ].map((opt) => {
-                      const Icon = opt.icon;
+                  <Label htmlFor="task-location" className="text-sm font-semibold">
+                    Location
+                  </Label>
+                  <Input
+                    id="task-location"
+                    value={editor.location}
+                    placeholder="Optional workspace path or context"
+                    onChange={(event) =>
+                      patchEditor({ location: event.target.value })
+                    }
+                    className="h-10 rounded-lg"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Color</Label>
+                  <div className="flex items-center gap-2.5 py-1">
+                    {TASK_COLORS.map((color) => {
+                      const selected = editor.color === color.value;
                       return (
                         <button
-                          key={opt.minutes}
+                          key={color.value}
                           type="button"
-                          onClick={() => setCreateInterval(opt.minutes)}
-                          className={cn(
-                            "flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors",
-                            createInterval === opt.minutes
-                              ? "border-primary bg-primary/10 text-foreground"
-                              : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                          )}
+                          aria-label={color.label}
+                          aria-pressed={selected}
+                          onClick={() => patchEditor({ color: color.value })}
+                          className="flex size-7 items-center justify-center rounded-full transition-shadow"
+                          style={{
+                            backgroundColor: color.css,
+                            ...(selected
+                              ? {
+                                  boxShadow: `0 0 0 2px var(--background), 0 0 0 4px ${color.css}`,
+                                }
+                              : {}),
+                          }}
                         >
-                          <Icon className="size-4 shrink-0" />
-                          {opt.label}
+                          {selected && <span className="size-2 rounded-full bg-white" />}
                         </button>
                       );
                     })}
                   </div>
+                </div>
 
-                  {createInterval === HOUR ? (
-                    <p className="text-xs text-muted-foreground">
-                      Runs every hour.
+                {editor.repeat === "once" &&
+                  editor.start.getTime() <= Date.now() && (
+                    <p className="text-xs text-muted-foreground" role="status">
+                      One-off tasks need a start time in the future. Switch
+                      Repeat to a recurring option to keep a past time.
                     </p>
-                  ) : (
-                    <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
-                      <div className="flex items-center gap-2">
-                        <label
-                          className="text-xs font-medium text-muted-foreground"
-                          htmlFor="task-interval-time"
-                        >
-                          At
-                        </label>
-                        <input
-                          className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-                          id="task-interval-time"
-                          onChange={(e) => setClockTime(e.target.value)}
-                          type="time"
-                          value={clockTime}
-                        />
-                      </div>
-                      {createInterval === WEEK && (
-                        <div className="flex items-center gap-2">
-                          <label
-                            className="text-xs font-medium text-muted-foreground"
-                            htmlFor="task-weekday"
-                          >
-                            On
-                          </label>
-                          <select
-                            className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-                            id="task-weekday"
-                            onChange={(e) => setClockWeekday(Number(e.target.value))}
-                            value={clockWeekday}
-                          >
-                            {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map(
-                              (day, index) => (
-                                <option key={day} value={index}>
-                                  {day}
-                                </option>
-                              ),
-                            )}
-                          </select>
-                        </div>
-                      )}
-                      {createInterval === MONTH && (
-                        <div className="flex items-center gap-2">
-                          <label
-                            className="text-xs font-medium text-muted-foreground"
-                            htmlFor="task-monthday"
-                          >
-                            On day
-                          </label>
-                          <select
-                            className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-                            id="task-monthday"
-                            onChange={(e) => setClockMonthDay(Number(e.target.value))}
-                            value={clockMonthDay}
-                          >
-                            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                              <option key={day} value={day}>
-                                {day}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="text-xs text-muted-foreground">of the month</span>
-                        </div>
-                      )}
-                    </div>
+                  )}
+                {editorError && (
+                  <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+                    {editorError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-6 py-4">
+                <div className="flex items-center gap-1">
+                  {editor.task && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={runNow}
+                        disabled={saving}
+                        className="rounded-lg"
+                      >
+                        <Play className="mr-1 size-3.5" />
+                        Run now
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={deleteTask}
+                        disabled={saving}
+                        className={cn(
+                          "rounded-lg text-red-600 hover:bg-red-500/10 hover:text-red-600 dark:text-red-400",
+                          deleteArmed && "bg-red-500/10",
+                        )}
+                      >
+                        <Trash2 className="mr-1 size-3.5" />
+                        {deleteArmed ? "Confirm delete" : "Delete"}
+                      </Button>
+                    </>
                   )}
                 </div>
-              ) : null}
-
-              {createKind === "once" && (!createRunAt || new Date(createRunAt).getTime() <= Date.now()) && (
-                <p className="text-xs text-muted-foreground" role="status">
-                  Pick a date and time in the future to save this task.
-                </p>
-              )}
-              {createError && (
-                <p className="text-xs text-red-600 dark:text-red-400" role="alert">
-                  {createError}
-                </p>
-              )}
-            </div>
-
-            <div className="shrink-0 flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <PromptPill busy={drafting} onSend={(t) => runDraft(t, currentDraftInput())} placeholder="Describe an edit…" />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-lg"
+                    onClick={closeEditor}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    className="rounded-lg"
+                    onClick={saveEditor}
+                    disabled={!canSave}
+                  >
+                    {saving ? <Loader2 className="size-4 animate-spin" /> : "Save"}
+                  </Button>
+                </div>
               </div>
-              <button
-                onClick={handleCreate}
-                disabled={!canCreate || creating || drafting}
-                aria-label="Save task"
-                className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+            </SheetContent>
+          )}
+        </Sheet>
+      </div>
+    </div>
+  );
+}
+
+function TaskCalendarHeader({ onCreate }: { onCreate: () => void }) {
+  const { title, prev, next, today } = useEventCalendarNavigation();
+  const { view, setView } = useEventCalendarView();
+  const viewLabel = VIEW_ORDER.find((item) => item.value === view)?.label ?? "Month";
+
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 rounded-lg px-3 text-xs font-semibold"
+        onClick={today}
+      >
+        Today
+      </Button>
+      <div className="flex items-center">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Previous period"
+          onClick={prev}
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Next period"
+          onClick={next}
+        >
+          <ChevronRight className="size-4" />
+        </Button>
+      </div>
+      <h2 className="ml-1.5 min-w-0 truncate text-lg font-semibold tracking-tight">
+        {title}
+      </h2>
+      <div className="ml-auto flex items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 rounded-lg px-3 text-xs font-semibold"
+            >
+              {viewLabel}
+              <ChevronDown className="size-3.5 opacity-60" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40 rounded-lg">
+            {VIEW_ORDER.map((item) => (
+              <DropdownMenuItem
+                key={item.value}
+                onSelect={() => setView(item.value)}
+                className="flex items-center justify-between"
               >
-                {creating ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" strokeWidth={3} />}
-              </button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </motion.div>
-    </MotionConfig>
+                <span>{item.label}</span>
+                <span className="text-xs text-muted-foreground">{item.shortcut}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 gap-1.5 rounded-lg px-3 text-xs font-semibold"
+          onClick={onCreate}
+        >
+          <Plus className="size-3.5" />
+          New task
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function DateField({
+  value,
+  onChange,
+}: {
+  value: Date;
+  onChange: (date: Date) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-left text-sm outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <span className="truncate">{format(value, "MMMM do, yyyy")}</span>
+          <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto rounded-xl p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={value}
+          onSelect={(date) => {
+            if (!date) return;
+            onChange(date);
+            setOpen(false);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TimeField({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: Date;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const selected = `${String(value.getHours()).padStart(2, "0")}:${String(
+    value.getMinutes(),
+  ).padStart(2, "0")}`;
+  return (
+    <Select value={selected} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className="h-10 rounded-lg">
+        <SelectValue>
+          {TIME_OPTIONS.find((option) => option.value === selected)?.label ?? selected}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent className="max-h-72">
+        {TIME_OPTIONS.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

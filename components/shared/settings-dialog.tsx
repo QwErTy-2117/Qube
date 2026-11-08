@@ -1974,8 +1974,11 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
       <DialogContent
         showCloseButton={false}
-        className="sm:max-w-4xl max-w-4xl w-full p-0 flex flex-col rounded-3xl border border-border bg-background shadow-2xl overflow-hidden"
-        style={{ height: "min(660px, 90vh)" }}
+        className={cn(
+          "max-w-4xl w-full p-0 flex flex-col rounded-3xl border border-border bg-background shadow-2xl overflow-hidden",
+          tabValue === "scheduling" ? "sm:max-w-5xl" : "sm:max-w-4xl",
+        )}
+        style={{ height: tabValue === "scheduling" ? "min(760px, 92vh)" : "min(660px, 90vh)" }}
       >
         <Tabs value={tabValue} onValueChange={handleTabChange} className="flex flex-col flex-1 overflow-hidden">
     <div className="flex items-center px-6 py-3">

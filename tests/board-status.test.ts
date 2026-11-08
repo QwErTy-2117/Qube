@@ -33,6 +33,12 @@ describe("isTaskDone", () => {
     assert.equal(isTaskDone(t, NOW), true);
   });
 
+  it("marks manual heartbeat reminders done once they have run", () => {
+    const t = base({ schedule: { kind: "none" }, lastRunAt: NOW, nextRunAt: null });
+    assert.equal(isTaskDone(t, NOW), true);
+    assert.equal(isTaskDone(base({ schedule: { kind: "none" }, nextRunAt: null }), NOW), false);
+  });
+
   it("marks interval tasks done inside the window", () => {
     const t = base({ lastRunAt: NOW - 1_000, nextRunAt: NOW + 3_599_000 });
     assert.equal(isTaskDone(t, NOW), true);

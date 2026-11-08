@@ -11,7 +11,7 @@ export const scheduleTaskTool = defineTool({
   description:
     "Manage scheduled automations. Use ONLY for exact-timing work with an explicit recurring/one-shot-future cue: daily reports, reminders, weekly reviews, one-shot follow-ups. " +
     "One-shot reads ('check the price of X') must run INLINE with web_search/web_fetch — never create a task for them. " +
-    "Actions: create (name, instructions, scheduleKind interval|once, ...), list, get, update, delete, trigger (run now). " +
+    "Actions: create (name, instructions, scheduleKind interval|once|none, ...), list, get, update, delete, trigger (run now). " +
     "Scheduled work runs inside Qube, so it only runs while Qube is open and running. (Never auto-replayed after a crash.)",
   parameters: Type.Object({
     action: Type.Union([
@@ -21,7 +21,7 @@ export const scheduleTaskTool = defineTool({
     id: Type.Optional(Type.String({ description: "Task id for get/update/delete/trigger" })),
     name: Type.Optional(Type.String()),
     instructions: Type.Optional(Type.String()),
-    scheduleKind: Type.Optional(Type.Union([Type.Literal("interval"), Type.Literal("once")])),
+    scheduleKind: Type.Optional(Type.Union([Type.Literal("interval"), Type.Literal("once"), Type.Literal("none")])),
     intervalMinutes: Type.Optional(Type.Number()),
     runAt: Type.Optional(Type.String({ description: "ISO date for once tasks" })),
     enabled: Type.Optional(Type.Boolean()),
@@ -45,7 +45,7 @@ export const scheduleTaskTool = defineTool({
       if (args.action === "create") {
         const text = `${args.name || ""} ${args.instructions || ""} ${args.doneCriteria || ""} ${args.condition || ""}`;
         const isFutureOnce = args.scheduleKind === "once" && !!args.runAt;
-        if (!hasSchedulingCue(text) && !isFutureOnce) {
+        if (args.scheduleKind !== "none" && !hasSchedulingCue(text) && !isFutureOnce) {
           return textOut({
             error: "Not a schedule: this looks like a one-shot lookup. Do it inline now with web_search/web_fetch instead of creating a task. Only create a task with an explicit recurring cue or a future runAt.",
           });
@@ -88,6 +88,12 @@ export const scheduleTaskTool = defineTool({
             monthDay: args.monthDay,
             permissions: args.permissions,
           });
+          if (task.schedule.kind === "none") {
+            try {
+              const { linkManualTaskReminder } = await import("@/lib/scheduler/manual-tasks");
+              await linkManualTaskReminder(task.id, task.name, task.instructions);
+            } catch {}
+          }
           return textOut({ message: `Scheduled task "${task.name}" created. It runs inside Qube, so it only runs while Qube is open and running.`, task });
         }
         case "update": {
@@ -129,12 +135,26 @@ export const scheduleTaskTool = defineTool({
           if (args.enabled !== undefined) patch.enabled = args.enabled;
           const t = await store.updateTask(args.id, patch as never);
           if (!t) return textOut({ error: "Task not found" });
+          try {
+            const { linkManualTaskReminder, unlinkManualTaskReminder } = await import("@/lib/scheduler/manual-tasks");
+            if (t.schedule.kind === "none") {
+              if (args.scheduleKind !== undefined || args.name !== undefined || args.instructions !== undefined) {
+                await linkManualTaskReminder(t.id, t.name, t.instructions);
+              }
+            } else if (args.scheduleKind !== undefined) {
+              await unlinkManualTaskReminder(t.id);
+            }
+          } catch {}
           return textOut({ message: `Task "${t.name}" updated.`, task: t });
         }
         case "delete": {
           if (!args.id) return textOut({ error: "id is required for delete" });
           const ok = await store.deleteTask(args.id);
           if (!ok) return textOut({ error: "Task not found or heartbeat cannot be deleted" });
+          try {
+            const { unlinkManualTaskReminder } = await import("@/lib/scheduler/manual-tasks");
+            await unlinkManualTaskReminder(args.id);
+          } catch {}
           return textOut({ message: "Task deleted." });
         }
         case "trigger": {
@@ -146,6 +166,12 @@ export const scheduleTaskTool = defineTool({
           try {
             await store.updateTaskRunTime(t.id, result.status === "success");
           } catch {}
+          if (t.schedule.kind === "none" && result.status === "success") {
+            try {
+              const { unlinkManualTaskReminder } = await import("@/lib/scheduler/manual-tasks");
+              await unlinkManualTaskReminder(t.id);
+            } catch {}
+          }
           return textOut({ message: `Task "${t.name}" triggered: ${result.status}.`, output: result.output.slice(0, 2000) });
         }
         default:

@@ -3,10 +3,7 @@ import { approvalMemoKey } from "@/lib/pi/durable-registry";
 import { classifyLocalTool, isSensitiveConnectorTool } from "@/lib/permissions/sensitive";
 import { checkActionPolicy, getPermissionSettings } from "@/lib/permissions/policy";
 import { reviewAction } from "@/lib/permissions/reviewer";
-import { isDestructiveCommand } from "@/lib/middleware/workspace";
 import { Approvals } from "@/lib/pi/durable-docs";
-
-const COMPUTER_READONLY = new Set(["computer_list_apps", "computer_get_app_state", "computer_clipboard_read"]);
 
 /**
  * Mirror of the foreground permission policy for the durable path:
@@ -15,18 +12,14 @@ const COMPUTER_READONLY = new Set(["computer_list_apps", "computer_get_app_state
  * lib/permissions/sensitive.ts (connector classifier).
  */
 export function isSensitiveDurableTool(toolName: string, args?: unknown): boolean {
-  if (toolName === "delete_file") return true;
-  if (toolName.startsWith("computer_") && !COMPUTER_READONLY.has(toolName)) return true;
-  if (toolName === "run_command") {
-    const command = (args as { command?: unknown } | null)?.command;
-    return typeof command === "string" && isDestructiveCommand(command);
-  }
   try {
-    if (isSensitiveConnectorTool(toolName)) return true;
+    const input = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+    return classifyLocalTool(toolName, input).sensitive;
   } catch {
-    // Classifier must never break tool execution; fail open to allow.
+    // Classifier must never break tool execution; fail closed for the
+    // unambiguous destructive cases.
+    return toolName === "delete_file" || toolName.startsWith("computer_");
   }
-  return false;
 }
 
 export function argsHash(args: unknown): string {

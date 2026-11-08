@@ -134,8 +134,116 @@ export const DESTRUCTIVE_PATTERNS = [
   /del\s+\/[s|q]/i,
   /rmdir\s+\/s/i,
   /format\s+[a-z]:/i,
+  // Pipe downloaded content straight into an interpreter (supply-chain risk).
+  /(?:curl|wget)\b[^|]*\|\s*(?:sudo\s+)?(?:bash|sh|zsh|python\d?|node|perl|ruby)\b/i,
+  // Classic fork bomb.
+  /:\s*\(\s*\)\s*\{.*:\s*\|\s*:.*&.*\}\s*;?\s*:/,
 ];
 
+/** Shell separators that start a new command segment. */
+const SHELL_SEGMENT_RE = /&&|\|\||[;|\n]/;
+
+/** Per-segment patterns; applied after wrappers/env assignments are stripped. */
+const DESTRUCTIVE_SEGMENT_PATTERNS: RegExp[] = [
+  /^(?:sudo|doas)\b/i,
+  /^(?:shutdown|reboot|halt|poweroff)\b/i,
+  /^(?:mkfs(?:\.\w+)?|fdisk|parted|wipefs)\b/i,
+  /^dd\b.*\bof=\/dev\//i,
+  /^chmod\s+(?:-[A-Za-z]+\s+)*777\b/,
+  /^(?:del\s+\/[sq]|rmdir\s+\/s|format\s+[a-z]:)/i,
+  /^powershell\b.*-EncodedCommand/i,
+];
+
+/**
+ * Strip shell wrappers and absolute binary prefixes from one command segment
+ * so `cd x && sudo rm -rf /` and `/bin/rm -rf /` classify like `rm -rf /`.
+ */
+function normalizeCommandSegment(segment: string): string {
+  let s = segment.trim().replace(/^[({]\s*/, "");
+  for (let i = 0; i < 6; i++) {
+    const before = s;
+    // Leading env assignments: FOO=1 BAR=2 command ...
+    s = s.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s;|&]+)\s+)+/, "");
+    // Wrappers. sudo is deliberately NOT stripped: privilege escalation is
+    // itself destructive and must remain visible to the pattern below.
+    s = s.replace(/^(?:command|builtin|exec|nohup|time|nice|stdbuf|timeout\s+\S+)\s+/, "");
+    s = s.replace(/^\/(?:usr\/)?(?:local\/)?s?bin\//, "");
+    if (s === before) break;
+  }
+  return s.trim();
+}
+
+/** True for recursive+force deletes or any recursive delete of a root. */
+function isDangerousRm(segment: string): boolean {
+  if (!/^rm\b/i.test(segment)) return false;
+  const words = segment.split(/\s+/).slice(1);
+  let recursive = false;
+  let force = false;
+  const targets: string[] = [];
+  for (const word of words) {
+    if (!word || word === "--") continue;
+    if (word.startsWith("-")) {
+      if (/^--recursive$/i.test(word) || /^-[a-zA-Z]*[rR][a-zA-Z]*$/.test(word)) recursive = true;
+      if (/^--force$/i.test(word) || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(word)) force = true;
+    } else {
+      targets.push(word);
+    }
+  }
+  if (recursive && force) return true;
+  return recursive && targets.some((t) => /^(?:\/|\/\*|~|~\/\*)$/.test(t));
+}
+
+/**
+ * Deterministic destructive-command classification. Chained commands are
+ * checked segment by segment, so wrapping a destructive call in `cd … &&`
+ * or `FOO=1` no longer hides it. False positives here cause an approval
+ * prompt (or a default deny when destructive actions are disabled), never
+ * silent execution.
+ */
 export function isDestructiveCommand(command: string): boolean {
-  return DESTRUCTIVE_PATTERNS.some((pattern) => pattern.test(command.trim()));
+  const raw = String(command || "").trim();
+  if (!raw) return false;
+  if (DESTRUCTIVE_PATTERNS.some((pattern) => pattern.test(raw))) return true;
+  for (const segment of raw.split(SHELL_SEGMENT_RE)) {
+    const normalized = normalizeCommandSegment(segment);
+    if (!normalized) continue;
+    if (isDangerousRm(normalized)) return true;
+    if (DESTRUCTIVE_SEGMENT_PATTERNS.some((pattern) => pattern.test(normalized))) return true;
+  }
+  return false;
+}
+
+/**
+ * Paths where a direct write can persist code execution or expose
+ * credentials. These are never silently writable through file tools: the
+ * classifier marks them destructive, so the hard policy (destructive actions
+ * off by default) denies them unless the user explicitly enabled destructive
+ * actions. Reads are unaffected; `git` commands are the supported way to
+ * change repository metadata.
+ */
+const PROTECTED_PATH_RULES: Array<{ re: RegExp; label: string }> = [
+  {
+    re: /(^|\/)\.git\/(?:hooks|config|objects|refs|logs|HEAD|index|packed-refs|modules)(?:\/|$)/i,
+    label: "Git internals",
+  },
+  { re: /(^|\/)\.ssh(?:\/|$)/i, label: "SSH keys" },
+  { re: /(^|\/)\.gnupg(?:\/|$)/i, label: "GPG keys" },
+  { re: /(^|\/)\.aws(?:\/|$)/i, label: "AWS credentials" },
+  { re: /(^|\/)\.kube\/config$/i, label: "Kubernetes credentials" },
+  { re: /(^|\/)\.docker\/config\.json$/i, label: "Docker credentials" },
+  { re: /(^|\/)\.netrc$/i, label: "netrc credentials" },
+  { re: /(^|\/)\.config\/gh\/hosts\.yml$/i, label: "GitHub CLI credentials" },
+  {
+    re: /^([a-z]:)?\/(?:etc|usr|bin|sbin|boot|dev|proc|sys|windows|program files)(?:\/|$)/i,
+    label: "system directory",
+  },
+];
+
+export function classifyProtectedPath(targetPath: string): { protected: boolean; reason?: string } {
+  const p = String(targetPath || "").replace(/\\/g, "/");
+  if (!p) return { protected: false };
+  for (const rule of PROTECTED_PATH_RULES) {
+    if (rule.re.test(p)) return { protected: true, reason: rule.label };
+  }
+  return { protected: false };
 }

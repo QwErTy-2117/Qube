@@ -141,6 +141,8 @@ describe("maxSilentRounds", () => {
       assert.equal(maxSilentRounds(), 5);
       process.env.QUBE_SILENT_CONTINUATIONS = "bogus";
       assert.equal(maxSilentRounds(), 8);
+      process.env.QUBE_SILENT_CONTINUATIONS = "100000";
+      assert.equal(maxSilentRounds(), 100);
     } finally {
       if (prev === undefined) delete process.env.QUBE_SILENT_CONTINUATIONS;
       else process.env.QUBE_SILENT_CONTINUATIONS = prev;

@@ -11,8 +11,19 @@ A scheduled task runs your instructions on a recurring schedule or once at a
 future time. Create one by simply asking — *“every weekday at 8, summarize my
 unread Gmail”*, *“remind me to submit expenses on the 25th”*, *“check this
 page every hour and tell me if the price drops”* — or manage them manually in
-**Settings → Tasks**, which shows every task on a calendar. Click any day to
-create one there, click a task to edit it, and drag a block to reschedule it.
+**Settings → Tasks**, where the lower calendar shows every scheduled task.
+Click any day to create one there, click a task to edit it, and drag a block
+to reschedule it.
+
+### Reminders (non-scheduled tasks)
+
+The upper board in **Settings → Tasks** holds reminders for the check-in.
+They have no clock: every enabled reminder is handed to the heartbeat, which
+does the work with the task's own permissions and marks the card **Done** once
+it has executed. Instructions should say both what to do and where/how to do
+it. New reminders need only a title and instructions; leave the title blank and
+Qube generates one. The input bar below the board drafts a reminder from plain
+language, and the same bar inside the task dialog edits an existing one.
 
 ### Supported schedules
 
@@ -23,9 +34,9 @@ create one there, click a task to edit it, and drag a block to reschedule it.
 - **Monthly** — a given day of the month.
 - **One-shot** — run once at a future date and time.
 
-Every task also carries a colour, an optional location/context note, and a
-block length. In the calendar you can drag a task to another day or time and
-resize it to change how long its block lasts; both are saved immediately.
+Every task also carries a colour and a block length. In the calendar you can
+drag a task to another day or time and resize it to change how long its block
+lasts; both are saved immediately.
 
 Qube only creates a schedule when your request clearly implies one (“every…”,
 “remind me…”, “keep an eye…”, “tell me when…”, “monitor…”). A one-off

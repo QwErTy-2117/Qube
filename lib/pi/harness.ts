@@ -32,6 +32,40 @@ import {
 } from "./continuation";
 import type { McpServerConfig } from "./mcp-store";
 import type { SkillConfig } from "@/lib/skills/types";
+import {
+  beginRun,
+  findReplayableResult,
+  finishRun,
+  heartbeatRun,
+  isMutatingToolName,
+  recordEvidence,
+  recordFileTouched,
+  setRunTodos,
+  sweepOrphanRuns,
+  toolFinished,
+  toolJournalKey,
+  toolStarted,
+  type ResumeInfo,
+} from "@/lib/agent/execution-ledger";
+import { buildVerificationNudge, formatUnverifiedNote, verifyCompletion, type VerificationResult } from "@/lib/agent/completion-verifier";
+import {
+  createTraceId,
+  logContextBudget,
+  logEvent,
+  logModelUsage,
+  logVerification,
+  startSpan,
+} from "@/lib/agent/observability";
+import {
+  estimateModelMessagesTokens,
+  estimateTokens,
+  estimateToolDefinitionsTokens,
+  recordContextCalibration,
+  resolveContextWindow,
+} from "./context-budget";
+import { getWorkspacePath } from "@/lib/middleware/workspace";
+import { boundToolOutput } from "./tool-output";
+import { computeRoundLimit, maxConcurrentRuns, maxStepsPerRound, maxVerificationRounds } from "./execution-limits";
 
 export type PiConfig = {
   messages: Array<Record<string, unknown>>;
@@ -158,7 +192,7 @@ type ActiveRun = {
 };
 
 const activeRuns = new Map<string, ActiveRun>();
-const MAX_CONCURRENT_RUNS = 32;
+const MAX_CONCURRENT_RUNS = maxConcurrentRuns();
 
 // Graceful shutdown: abort all active runs on process termination (Node server)
 // Guard for Next.js edge / multiple registrations
@@ -317,7 +351,30 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
     throw err;
   }
 
-  // 4) Set up cancellation / timeout / interruption
+  // 4) Durable run record: sweeps stale runs, returns a one-time resume
+  // notice when the previous execution died, and enables idempotent replay
+  // of file mutations across restarts.
+  let resumeInfo: ResumeInfo | undefined;
+  try {
+    void sweepOrphanRuns().catch(() => {});
+    const started = await beginRun({ threadId, modelName: effectiveModel });
+    resumeInfo = started.resume;
+    if (resumeInfo) {
+      console.log(`[pi-harness] Resuming interrupted run [${threadId}] previous=${resumeInfo.runId}`);
+    }
+  } catch (e: any) {
+    console.warn("[pi-harness] Execution ledger start failed (non-fatal):", e?.message || String(e));
+  }
+  const traceId = createTraceId();
+  const runSpan = startSpan(threadId, "pi.run", { model: effectiveModel }, traceId);
+  const heartbeatId = setInterval(() => {
+    void heartbeatRun(threadId);
+  }, 15_000);
+  try {
+    (heartbeatId as any).unref?.();
+  } catch {}
+
+  // 5) Set up cancellation / timeout / interruption
   const abortController = new AbortController();
   // Wire external request abort (client disconnect / cancellation)
   let externalAbortHandler: (() => void) | null = null;
@@ -362,6 +419,7 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
     if (cleaned) return;
     cleaned = true;
     if (timeoutId) clearTimeout(timeoutId);
+    try { clearInterval(heartbeatId); } catch {}
     if (externalAbortHandler && config.request?.signal) {
       try {
         (config.request.signal as AbortSignal).removeEventListener("abort", externalAbortHandler);
@@ -381,7 +439,32 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
   );
 
   try {
-    await runPiWithVercel(writer, { ...config, threadId, modelName: effectiveModel }, abortController.signal);
+    const outcome = await runPiWithVercel(
+      writer,
+      {
+        ...config,
+        threadId,
+        modelName: effectiveModel,
+        resumeNotice: resumeInfo?.notice,
+        traceId,
+      },
+      abortController.signal,
+    );
+    if (abortController.signal.aborted) {
+      await finishRun(threadId, "cancelled", { error: String((abortController.signal as any).reason?.message || "Aborted") });
+      await runSpan.end("cancelled");
+    } else if (outcome?.verification?.checked && !outcome.verification.complete) {
+      // The model stopped, but independent checks say the work is not done.
+      // Record it as interrupted so the next run resumes from real state
+      // instead of pretending the task completed.
+      const reasons = outcome.verification.reasons.join("; ").slice(0, 800);
+      await finishRun(threadId, "interrupted", { error: `Completion unverified: ${reasons}` });
+      await runSpan.end("error", { verification: "unverified", reasons: reasons.slice(0, 300) });
+    } else {
+      await finishRun(threadId, "completed");
+      await heartbeatRun(threadId);
+      await runSpan.end("ok");
+    }
   } catch (e: any) {
     // Distinguish cancellation vs timeout vs init failure vs tool/stream failure
     const isAbort =
@@ -393,6 +476,8 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
       const reason = (abortController.signal as any).reason?.message || e?.message || "Cancelled";
       const isTimeout = /timed out/i.test(reason);
       console.warn(`[pi-harness] Run ${isTimeout ? "timeout" : "cancelled"} [${threadId}]:`, reason);
+      await finishRun(threadId, isTimeout ? "failed" : "cancelled", { error: reason });
+      await runSpan.end("cancelled", { reason, timeout: isTimeout });
       try {
         const id = `pi-${isTimeout ? "timeout" : "cancel"}-${Date.now()}`;
         writer.write({ type: "text-start", id } as any);
@@ -412,6 +497,8 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
     // but ensure we log and propagate explicitly
     const msg = e?.message || String(e);
     console.error(`[pi-harness] Run failed [${threadId}]:`, msg.slice(0, 1000));
+    await finishRun(threadId, "failed", { error: msg });
+    await runSpan.end("error", { error: msg.slice(0, 500) });
     // If inner didn't write, ensure error visible
     try {
       // Heuristic: if nothing was written, writer will have no text; try to emit error text
@@ -426,7 +513,11 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
   }
 }
 
-async function runPiWithVercel(writer: any, config: PiConfig & { threadId: string; modelName: string }, signal: AbortSignal) {
+async function runPiWithVercel(
+  writer: any,
+  config: PiConfig & { threadId: string; modelName: string; resumeNotice?: string; traceId?: string },
+  signal: AbortSignal,
+): Promise<{ verification: VerificationResult | null; sawError: boolean }> {
   const { streamText } = await import("ai");
 
   // Skills + connectors resolve before prompt build (progressive disclosure)
@@ -444,6 +535,22 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
     userName: config.userName,
     userAbout: config.userAbout,
   });
+
+  // Repository-local guidance (AGENTS.md / CLAUDE.md / .qube rules), bounded
+  // and cached. It is user-provided project context, not a system override.
+  try {
+    const { loadProjectInstructions } = await import("./project-instructions");
+    const project = await loadProjectInstructions(getWorkspacePath());
+    if (project.block) systemPrompt += `\n\n${project.block}`;
+  } catch (e: any) {
+    console.warn("[pi-harness] Project instructions load failed (non-fatal):", e?.message || String(e));
+  }
+
+  // One-time resume notice from the execution ledger. Bounded, verified
+  // history — the model is told to check the real state before continuing.
+  if (config.resumeNotice) {
+    systemPrompt += `\n\n## Resumed execution state\n${config.resumeNotice}`;
+  }
 
   // Memory recall (under the hood): relevant memories + past-chat index.
   // Non-fatal by design — an empty context simply means nothing recalled yet.
@@ -699,28 +806,102 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
   // The transcript remains the store — this is just an in-run observer.
   let lastTodoSnapshot: TodoSnapshotItem[] | null = null;
   let lastToolError: string | null = null;
+  let toolCallTotal = 0;
+  let successfulToolCalls = 0;
+  const filesTouched: string[] = [];
+  const SELF_BOUNDED = new Set(["read_file", "read_tool_output", "list_directory", "run_command"]);
   try {
     for (const [toolName, toolDef] of Object.entries(tools as Record<string, any>)) {
       const origExecute = (toolDef as any)?.execute;
       if (typeof origExecute !== "function") continue;
       (toolDef as any).execute = async (...args: any[]) => {
+        const startedAt = Date.now();
+        const input = args?.[0];
+        let writeAheadKey: string | null = null;
         try {
-          const input = args?.[0];
           if (toolName === "TodoWrite" && input && Array.isArray(input.todos)) {
             lastTodoSnapshot = input.todos as TodoSnapshotItem[];
+            void setRunTodos(config.threadId, lastTodoSnapshot);
           }
         } catch {}
+
+        // Idempotent replay: a file mutation from an interrupted run with the
+        // same arguments returns its recorded result instead of writing twice.
         try {
+          const replay = await findReplayableResult(config.threadId, toolName, input);
+          if (replay) {
+            toolCallTotal++;
+            successfulToolCalls++;
+            void logEvent({
+              threadId: config.threadId,
+              type: "tool_replay",
+              status: "success",
+              metadata: { tool: toolName, key: replay.key },
+            });
+            return replay.result;
+          }
+        } catch {}
+
+        try {
+          if (isMutatingToolName(toolName)) {
+            writeAheadKey = await toolStarted(config.threadId, toolName, input, toolJournalKey(toolName, input));
+          }
           const out = await (origExecute as (...a: any[]) => unknown)(...args);
           // Single source of truth for "did this tool call fail" (see
           // extractToolError): covers MCP isError, Pi JSON errors, and the
           // kernel's repeat-block/deny shapes, so a blocked repeat or a
           // denied action feeds recovery instead of looking clean.
-          lastToolError = extractToolError(toolName, out);
-          return out;
+          const err = extractToolError(toolName, out);
+          lastToolError = err;
+          toolCallTotal++;
+          if (!err) successfulToolCalls++;
+          if (!err) {
+            try {
+              const parsed = typeof out === "string" ? JSON.parse(out) : null;
+              if (parsed?.path && (toolName === "write_file" || toolName === "edit_file")) {
+                filesTouched.push(String(parsed.path));
+                void recordFileTouched(config.threadId, String(parsed.path));
+                void recordEvidence(config.threadId, "file_written", `${toolName}: ${parsed.path} (${parsed.size ?? "?"} bytes)`);
+              }
+              if (toolName === "run_command" && parsed?.exitCode === 0) {
+                void recordEvidence(config.threadId, "command_ok", `${String(input?.command || "command").slice(0, 200)} (exit 0)`);
+              }
+              if (toolName === "delete_file" && parsed?.path) {
+                void recordEvidence(config.threadId, "file_deleted", String(parsed.path));
+              }
+            } catch {}
+          }
+          if (writeAheadKey) {
+            const preview = typeof out === "string" ? out.slice(0, 4_000) : JSON.stringify(out ?? "").slice(0, 4_000);
+            void toolFinished(config.threadId, toolName, writeAheadKey, { ok: !err, result: preview, durationMs: Date.now() - startedAt });
+          }
+          if (toolCallTotal % 5 === 0) void heartbeatRun(config.threadId, { iterations: toolCallTotal });
+          void logEvent({
+            threadId: config.threadId,
+            type: "tool_exec",
+            status: err ? "error" : "success",
+            latencyMs: Date.now() - startedAt,
+            metadata: { tool: toolName, chars: typeof out === "string" ? out.length : undefined, error: err?.slice(0, 300) },
+          });
+          const bounded =
+            typeof out === "string" && !SELF_BOUNDED.has(toolName)
+              ? (await boundToolOutput(config.threadId, toolName, out)).text
+              : out;
+          return bounded;
         } catch (e: any) {
           const msg = e instanceof Error ? e.message : String(e);
           lastToolError = `${toolName}: ${msg.slice(0, 400)}`;
+          toolCallTotal++;
+          if (writeAheadKey) {
+            void toolFinished(config.threadId, toolName, writeAheadKey, { ok: false, result: msg.slice(0, 1_000), durationMs: Date.now() - startedAt });
+          }
+          void logEvent({
+            threadId: config.threadId,
+            type: "tool_exec",
+            status: "error",
+            latencyMs: Date.now() - startedAt,
+            metadata: { tool: toolName, error: msg.slice(0, 300) },
+          });
           throw e;
         }
       };
@@ -767,18 +948,50 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
       } as any);
     } catch {}
   };
+  let estimatedPromptTokens = 0;
+  let toolTokensEstimate = 0;
+  const contextWindowTokens = resolveContextWindow(config.modelName).tokens;
   try {
     const { maybeCompactMessages } = await import("./compaction");
+    const compactionSpan = startSpan(config.threadId, "context.compaction", { phase: "preflight" });
     const pre = await maybeCompactMessages({
       messages: activeUiMessages,
       threadId: config.threadId,
       systemPrompt,
       modelName: config.modelName,
       request: config.request,
+      tools: tools as Record<string, unknown>,
     });
     if (pre.summaryBlock) systemPrompt += `\n\n${pre.summaryBlock}`;
     activeUiMessages = pre.messages;
+    estimatedPromptTokens = pre.stats.estimatedTotalTokens;
+    toolTokensEstimate = pre.stats.toolTokens ?? estimateToolDefinitionsTokens(tools as Record<string, any>).tokens;
+    void logContextBudget(config.threadId, {
+      estimatedTokens: pre.stats.estimatedTotalTokens,
+      contextWindow: pre.stats.contextWindow || 0,
+      thresholdTokens: pre.stats.thresholdTokens,
+      toolTokens: pre.stats.toolTokens,
+      calibrationFactor: pre.stats.calibrationFactor,
+      compacted: pre.compacted,
+      freshSummary: pre.freshSummary,
+      hardCut: pre.hardCut,
+    });
+    if (pre.compacted) {
+      try {
+        const { buildContextManifest } = await import("./context-manifest");
+        const manifest = await buildContextManifest({ threadId: config.threadId });
+        if (manifest) systemPrompt += `\n\n${manifest}`;
+      } catch {}
+    }
     if (pre.freshSummary) notifyCompaction(pre);
+    await compactionSpan.end("ok", {
+      estimatedTokens: pre.stats.estimatedTotalTokens,
+      thresholds: pre.stats.thresholdTokens,
+      kept: pre.stats.keptMessages,
+      dropped: pre.stats.droppedMessages,
+      fresh: pre.freshSummary,
+      validated: pre.stats.summaryValidated,
+    });
   } catch (e: any) {
     console.warn("[pi-harness] Compaction preflight failed (non-fatal):", (e?.message || String(e)).slice(0, 200));
   }
@@ -808,7 +1021,15 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
   let reader: ReadableStreamDefaultReader<any> | null = null;
   let overflowRetried = false;
   let silentRounds = 0;
+  let completionVerification: VerificationResult | null = null;
   const silentBudget = maxSilentRounds();
+  let verificationRounds = 0;
+  const verificationBudget = maxVerificationRounds();
+  const stepBudget = maxStepsPerRound();
+  // Hard ceiling on rounds: initial + one overflow retry + silent budget +
+  // verification budget + slack. Guarantees the outer loop is bounded even if
+  // every continuation path somehow keeps returning.
+  const roundLimit = computeRoundLimit(silentBudget, verificationBudget);
   // Server-side-only continuation history: this round's assistant/tool
   // messages plus the silent nudge. Never merged into activeUiMessages
   // (the client-visible history), so the nudge stays invisible in the UI.
@@ -816,8 +1037,27 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
 
   try {
     for (let attempt = 0; ; attempt++) {
+      if (attempt > roundLimit) {
+        console.warn(
+          `[pi-harness] Round limit (${roundLimit}) reached [${config.threadId}] — stopping to avoid an unbounded loop`,
+        );
+        // Never let a safety stop look like a verified completion.
+        completionVerification = {
+          checked: true,
+          complete: false,
+          reasons: [`round limit (${roundLimit}) reached before completion could be verified`],
+          evidence: [],
+        };
+        break;
+      }
       const baseMessages = await toModelMessages(activeUiMessages);
       const modelMessages = [...baseMessages, ...pendingNudge];
+      // Estimate what this round actually sends (system + tools + messages)
+      // so provider prompt tokens can calibrate the estimator.
+      estimatedPromptTokens =
+        estimateTokens(systemPrompt) +
+        toolTokensEstimate +
+        estimateModelMessagesTokens(modelMessages);
 
       let result: any;
       try {
@@ -827,7 +1067,7 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
           messages: modelMessages as any,
           maxRetries: 2,
           abortSignal: signal,
-          stopWhen: async ({ steps }: { steps: any[] }) => steps.length >= 40,
+          stopWhen: async ({ steps }: { steps: any[] }) => steps.length >= stepBudget,
           temperature: config.temperature !== undefined ? config.temperature : 0.3,
           ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
           tools: tools as any,
@@ -912,6 +1152,54 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
         }
       }
 
+      // Provider usage is the ground truth for prompt size. Log it and fold
+      // the estimated/actual ratio into the per-thread calibration (EWMA) so
+      // compaction thresholds track the real tokenizer instead of chars/4.
+      if (!attemptOverflow && !signal.aborted) {
+        try {
+          const usage = await Promise.resolve((result as any)?.usage);
+          if (usage) {
+            const promptTokens = Number(usage.inputTokens ?? usage.promptTokens ?? 0);
+            const completionTokens = Number(usage.outputTokens ?? usage.completionTokens ?? 0);
+            const totalTokens = Number(usage.totalTokens ?? (promptTokens + completionTokens));
+            const cachedInputTokens = Number(
+              usage.cachedInputTokens ?? usage.cachedInputTokenCount ?? usage.cacheReadInputTokens ?? 0,
+            );
+            // Some gateways (OpenRouter, custom OpenAI-compatible proxies)
+            // return a real USD cost alongside usage. Prefer it over list-price
+            // math; otherwise the UI hides cost entirely when no price data is
+            // configured.
+            const rawCost =
+              (usage as any)?.cost ??
+              (usage as any)?.totalCost ??
+              (usage as any)?.raw?.cost ??
+              (result as any)?.providerMetadata?.openrouter?.usage?.cost;
+            const reportedCost = Number(rawCost);
+            let calibrationFactor: number | undefined;
+            if (promptTokens > 0) {
+              calibrationFactor = await recordContextCalibration(
+                config.threadId,
+                estimatedPromptTokens,
+                promptTokens,
+              );
+            }
+            void logModelUsage(config.threadId, {
+              promptTokens: promptTokens || undefined,
+              completionTokens: completionTokens || undefined,
+              totalTokens: totalTokens || undefined,
+              cachedInputTokens: cachedInputTokens || undefined,
+              estimatedTokens: estimatedPromptTokens || undefined,
+              calibrationFactor,
+              ...(Number.isFinite(reportedCost) && reportedCost >= 0 ? { cost: reportedCost } : {}),
+              model: config.modelName,
+              round: attempt + 1,
+            });
+          }
+        } catch {
+          // Usage is telemetry only — never fail a run over it.
+        }
+      }
+
       if (attemptOverflow && !overflowRetried) {
         overflowRetried = true;
         console.warn(`[pi-harness] Context overflow [${config.threadId}] — compacting + retrying`);
@@ -986,6 +1274,75 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
         console.log(`[pi-harness] Idle stall recovery ${silentRounds}/${silentBudget} [${config.threadId}] — no text or tools produced`);
         continue;
       }
+
+      // Programmatic completion gate. A turn is not complete because the model
+      // says so: todos, successful tool calls, the last error and the files
+      // claimed on disk are checked independently. Pure Q&A turns (no tools,
+      // todos or files) are "not checked" and pass straight through.
+      const verification = await verifyCompletion({
+        todos: lastTodoSnapshot,
+        toolCalls: toolCallTotal,
+        successfulToolCalls,
+        producedText,
+        sawError,
+        lastToolError,
+        filesTouched,
+      });
+      completionVerification = verification;
+      void logVerification(config.threadId, verification);
+      if (verification.checked) {
+        try {
+          writer.write({
+            type: "data-verification",
+            data: {
+              checked: true,
+              complete: verification.complete,
+              reasons: verification.reasons.slice(0, 6),
+            },
+          } as any);
+        } catch {}
+        if (verification.complete) {
+          void recordEvidence(config.threadId, "task_verified", verification.evidence.join("; ").slice(0, 600));
+        } else {
+          void recordEvidence(
+            config.threadId,
+            "verification_failed",
+            verification.reasons.join("; ").slice(0, 600),
+          );
+        }
+      }
+      if (verification.checked && !verification.complete && !sawError && !signal.aborted) {
+        if (verificationRounds < verificationBudget) {
+          verificationRounds++;
+          let roundMessages: Array<Record<string, unknown>> = [];
+          try {
+            const response = await result?.response;
+            if (response && Array.isArray((response as any).messages)) {
+              roundMessages = (response as any).messages as Array<Record<string, unknown>>;
+            }
+          } catch {}
+          pendingNudge = [
+            ...pendingNudge,
+            ...roundMessages,
+            { role: "user", content: buildVerificationNudge(verification) } as Record<string, unknown>,
+          ];
+          console.log(
+            `[pi-harness] Completion verification failed ${verificationRounds}/${verificationBudget} [${config.threadId}] — ${verification.reasons.slice(0, 3).join("; ").slice(0, 240)}`
+          );
+          continue;
+        }
+        // Retry budget exhausted: never silently claim success. Put the
+        // unverified note in the visible answer and keep the ledger honest.
+        try {
+          const id = `pi-verify-${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
+          writer.write({ type: "text-start", id } as any);
+          writer.write({ type: "text-delta", id, delta: `\n\n${formatUnverifiedNote(verification)}` } as any);
+          writer.write({ type: "text-end", id } as any);
+        } catch {}
+        console.warn(
+          `[pi-harness] Completion unverified after ${verificationBudget} retry round(s) [${config.threadId}] — ${verification.reasons.slice(0, 3).join("; ").slice(0, 240)}`
+        );
+      }
       break;
     }
 
@@ -1000,12 +1357,21 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
           systemPrompt,
           modelName: config.modelName,
           request: config.request,
+          tools: tools as Record<string, unknown>,
           force: true,
           aggressive: true,
         });
         if (rec.compacted && rec.messages.length < uiMessages.length) {
           if (rec.summaryBlock) systemPrompt += `\n\n${rec.summaryBlock}`;
           activeUiMessages = rec.messages;
+          estimatedPromptTokens = rec.stats.estimatedTotalTokens;
+          toolTokensEstimate = rec.stats.toolTokens ?? toolTokensEstimate;
+          // Summaries are lossy; re-inject authoritative machine state.
+          try {
+            const { buildContextManifest } = await import("./context-manifest");
+            const manifest = await buildContextManifest({ threadId: config.threadId });
+            if (manifest) systemPrompt += `\n\n${manifest}`;
+          } catch {}
           notifyCompaction({ ...rec, retried: true });
           return true;
         }
@@ -1085,6 +1451,7 @@ async function runPiWithVercel(writer: any, config: PiConfig & { threadId: strin
       } catch {}
     }
   }
+  return { verification: completionVerification, sawError };
 }
 
 // ---------- Public control plane for Pi ----------

@@ -14,6 +14,14 @@ export async function GET() {
     ensureSchedulerStarted();
   } catch {}
   const tasks = await getTasks();
+  // Repair reminder links for manual tasks created before this build (or
+  // migrated back from the short-lived hidden-one-shot format).
+  try {
+    const { syncManualTaskReminders } = await import(
+      "@/lib/scheduler/manual-tasks"
+    );
+    await syncManualTaskReminders();
+  } catch {}
   return NextResponse.json({ tasks });
 }
 
@@ -33,9 +41,13 @@ export async function POST(req: NextRequest) {
             { status: 400 },
           );
         }
-        if (data.scheduleKind !== "once" && data.scheduleKind !== "interval") {
+        if (
+          data.scheduleKind !== "once" &&
+          data.scheduleKind !== "interval" &&
+          data.scheduleKind !== "none"
+        ) {
           return NextResponse.json(
-            { error: "scheduleKind must be once or interval" },
+            { error: "scheduleKind must be once, interval, or none" },
             { status: 400 },
           );
         }
@@ -66,6 +78,14 @@ export async function POST(req: NextRequest) {
           durationMinutes: data.durationMinutes,
           allDay: data.allDay,
         });
+        if (task.schedule.kind === "none") {
+          try {
+            const { linkManualTaskReminder } = await import(
+              "@/lib/scheduler/manual-tasks"
+            );
+            await linkManualTaskReminder(task.id, task.name, task.instructions);
+          } catch {}
+        }
         return NextResponse.json({ task });
       }
 
@@ -80,9 +100,13 @@ export async function POST(req: NextRequest) {
           patch.durationMinutes = data.durationMinutes;
         if (data.allDay !== undefined) patch.allDay = data.allDay;
         if (data.scheduleKind !== undefined) {
-          if (data.scheduleKind !== "once" && data.scheduleKind !== "interval") {
+          if (
+            data.scheduleKind !== "once" &&
+            data.scheduleKind !== "interval" &&
+            data.scheduleKind !== "none"
+          ) {
             return NextResponse.json(
-              { error: "scheduleKind must be once or interval" },
+              { error: "scheduleKind must be once, interval, or none" },
               { status: 400 },
             );
           }
@@ -113,12 +137,42 @@ export async function POST(req: NextRequest) {
         if (data.permissions !== undefined)
           patch.permissions = data.permissions;
         if (data.nextRunAt !== undefined) patch.nextRunAt = data.nextRunAt;
+        const prevTask =
+          data.scheduleKind !== undefined ||
+          data.name !== undefined ||
+          data.instructions !== undefined
+            ? await getTask(data.id)
+            : null;
         const task = await updateTask(data.id, patch);
         if (!task)
           return NextResponse.json(
             { error: "Task not found" },
             { status: 404 },
           );
+        // Keep the heartbeat reminder attached to manual tasks, and detach it
+        // when a task becomes scheduled or is renamed/edited.
+        try {
+          const { linkManualTaskReminder, unlinkManualTaskReminder } =
+            await import("@/lib/scheduler/manual-tasks");
+          if (task.schedule.kind === "none") {
+            if (!task.enabled) {
+              await unlinkManualTaskReminder(task.id);
+            } else if (
+              data.scheduleKind !== undefined ||
+              data.name !== undefined ||
+              data.instructions !== undefined ||
+              data.enabled !== undefined
+            ) {
+              await linkManualTaskReminder(
+                task.id,
+                task.name,
+                task.instructions,
+              );
+            }
+          } else if (prevTask?.schedule.kind === "none") {
+            await unlinkManualTaskReminder(task.id);
+          }
+        } catch {}
         return NextResponse.json({ task });
       }
 
@@ -132,6 +186,12 @@ export async function POST(req: NextRequest) {
             },
             { status: 400 },
           );
+        try {
+          const { unlinkManualTaskReminder } = await import(
+            "@/lib/scheduler/manual-tasks"
+          );
+          await unlinkManualTaskReminder(data.id);
+        } catch {}
         return NextResponse.json({ success: true });
       }
 
@@ -150,6 +210,14 @@ export async function POST(req: NextRequest) {
           task.id,
           result.status === "success",
         );
+        if (task.schedule.kind === "none" && result.status === "success") {
+          try {
+            const { unlinkManualTaskReminder } = await import(
+              "@/lib/scheduler/manual-tasks"
+            );
+            await unlinkManualTaskReminder(task.id);
+          } catch {}
+        }
         return NextResponse.json({ result });
       }
 

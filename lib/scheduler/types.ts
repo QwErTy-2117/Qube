@@ -1,4 +1,4 @@
-export type TaskScheduleKind = "interval" | "once";
+export type TaskScheduleKind = "interval" | "once" | "none";
 
 export type TaskPermissions = {
   runCommands: boolean;
@@ -26,7 +26,7 @@ export type ScheduledTask = {
   createdAt: number;
   updatedAt: number;
   lastRunAt: number | null;
-  // null = no upcoming run (disabled or exhausted)
+  // null = manual task, never auto-runs (heartbeat reminders) or no upcoming run
   nextRunAt: number | null;
   /** Calendar presentation: colour token used by the Tasks calendar. */
   color?: string;
@@ -37,8 +37,8 @@ export type ScheduledTask = {
   /** Renders as a full-day block instead of a timed event. */
   allDay?: boolean;
   /**
-   * Set by the store's one-time migration of the removed "none" scheduling
-   * type. These records are kept on disk but hidden from the calendar.
+   * Historical marker from the short-lived migration that hid manual tasks.
+   * The store now restores these records as normal "none" reminders.
    */
   legacyScheduleRemoved?: boolean;
 };

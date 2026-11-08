@@ -108,6 +108,7 @@ type CardProps = {
       cards are never rerunnable — only visible Done cards can be re-run. */
   vanish?: boolean
   onVanished?: (id: string) => void
+  onClick?: () => void
 }
 
 type DropIndicatorProps = {
@@ -126,6 +127,12 @@ export type ColumnProps = {
   /** Fired when an overflow Done card finishes sliding out — parent
       permanently deletes it. */
   onCardGone?: (cardId: string) => void
+  /** Per-column visible-card caps (defaults match the original board). */
+  limits?: Partial<Record<ColumnStatus, number>>
+  /** When false, overflow cards stay in the data and are hidden behind +N. */
+  deleteOverflow?: boolean
+  /** Optional click-to-edit affordance (dragging never triggers it). */
+  onCardClick?: (cardId: string) => void
 }
 
 const springTransition = {
@@ -192,8 +199,10 @@ function Card({
   enterFromBelow,
   vanish,
   onVanished,
+  onClick,
 }: CardProps) {
   const shouldReduce = useReducedMotion()
+  const suppressClick = useRef(false)
   // Circle shows the task's own state (backend truth), not the column:
   // a pending task dragged to another column keeps its outline ring, a
   // completed task keeps its filled check.
@@ -206,7 +215,7 @@ function Card({
   const containerStyle = {
     borderRadius: 14,
     background: "var(--muted)",
-    padding: "8px 10px",
+    padding: "6px 9px",
   } as const
 
   // Overflow card: slides to the right and disappears, then unmounts.
@@ -277,8 +286,19 @@ function Card({
             : "flex select-none flex-row items-start gap-2"
         }
         draggable={draggable}
-        onDragEnd={onDragEnd}
-        onDragStart={onDragStart}
+        onDragEnd={() => {
+          setTimeout(() => {
+            suppressClick.current = false
+          }, 0)
+          onDragEnd()
+        }}
+        onDragStart={(e) => {
+          suppressClick.current = true
+          onDragStart(e)
+        }}
+        onClick={() => {
+          if (!suppressClick.current) onClick?.()
+        }}
         style={{
           ...containerStyle,
           boxShadow: isDragging
@@ -343,6 +363,9 @@ export function Column({
   dragState,
   setDragState,
   onCardGone,
+  limits,
+  deleteOverflow = true,
+  onCardClick,
 }: ColumnProps) {
   const [dragOver, setDragOver] = useState(false)
   const meta = COLUMN_META[column.status] || COLUMN_META.todo
@@ -352,16 +375,21 @@ export function Column({
   // Done is backend-truth only: capped at 5 visible, extras slide out.
   // To do shows the top 7; the rest queue up and rise from the bottom
   // as space frees.
-  const DONE_VISIBLE = 5
-  const TODO_VISIBLE = 7
+  const DONE_VISIBLE = limits?.done ?? 5
+  const TODO_VISIBLE = limits?.todo ?? 7
+  const IN_PROGRESS_VISIBLE = limits?.["in-progress"] ?? Number.POSITIVE_INFINITY
   const isTodo = column.status === "todo"
   const [vanishedIds, setVanishedIds] = useState<string[]>([])
   const liveCards = column.cards.filter((c) => !vanishedIds.includes(c.id))
-  const cap = isDone ? DONE_VISIBLE : isTodo ? TODO_VISIBLE : liveCards.length
+  const cap = isDone
+    ? DONE_VISIBLE
+    : isTodo
+      ? TODO_VISIBLE
+      : IN_PROGRESS_VISIBLE
   // Recurring (persist) cards are always visible in Done: they must never
   // slide out and be deleted — they return to To do at the next period.
   let visibleCards = liveCards.slice(0, cap)
-  let overflowCards = isDone ? liveCards.slice(cap) : []
+  let overflowCards: CardData[] = isDone || !isTodo ? liveCards.slice(cap) : []
   if (isDone) {
     const keepCards = liveCards.filter((c) => c.persist)
     const regularCards = liveCards.filter((c) => !c.persist)
@@ -374,7 +402,10 @@ export function Column({
       (c) => !visibleIds.has(c.id) && !c.persist
     )
   }
-  const queuedCount = liveCards.length - visibleCards.length - overflowCards.length
+  // Boards that keep completed history hidden behind +N instead of deleting it.
+  const vanishingCards = deleteOverflow ? overflowCards : []
+  const queuedCount =
+    liveCards.length - visibleCards.length - vanishingCards.length
 
   // Staged refill for To do: when a card leaves, the rest slide up first
   // and the next queued card is held back briefly, then rises from the
@@ -469,7 +500,7 @@ export function Column({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       {/* Header — no entrance animation (tab-level intro covers it) */}
-      <div className="mb-[14px] flex items-center gap-[7px] px-[2px]">
+      <div className="mb-2 flex items-center gap-[7px] px-[2px]">
         {meta.icon}
         <span
           className="font-bold text-[13px] tracking-[-0.01em]"
@@ -497,7 +528,7 @@ export function Column({
             : "rgba(0,0,0,0)",
           scale: showOver ? 1.012 : 1,
         }}
-        className="flex min-h-0 flex-1 flex-col gap-2 rounded-2xl p-0.5"
+        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto rounded-2xl p-0.5"
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
@@ -532,12 +563,13 @@ export function Column({
                 e.dataTransfer.effectAllowed = "move"
                 setDragState({ cardId: card.id, fromColumn: column.id })
               }}
+              onClick={() => onCardClick?.(card.id)}
               spinning={column.status === "in-progress"}
             />
           ))}
         </AnimatePresence>
 
-        {isTodo && queuedCount > 0 && !holdingBack && (
+        {(isTodo || isDone) && queuedCount > 0 && !holdingBack && (
           <div
             className="px-1 pb-0.5 pt-1 text-center text-[11px] font-medium"
             style={{ color: "var(--muted-foreground)" }}
@@ -546,7 +578,7 @@ export function Column({
           </div>
         )}
 
-        {overflowCards.map((card) => (
+        {vanishingCards.map((card) => (
           <Card
             card={card}
             index={0}

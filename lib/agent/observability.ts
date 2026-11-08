@@ -116,6 +116,122 @@ export function getExecutionId(): string {
   return `exec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+export function createTraceId(): string {
+  return `trace_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export type SpanHandle = {
+  traceId: string;
+  spanId: string;
+  threadId: string;
+  name: string;
+  startedAt: number;
+  /** Emit a span_end event; safe to call more than once (only first wins). */
+  end: (status?: "ok" | "error" | "cancelled", metadata?: Record<string, unknown>) => Promise<void>;
+};
+
+/**
+ * Lightweight structured span. Start/end are JSONL events with a shared
+ * trace id, so a run's model rounds, compaction, tools and verification can
+ * be reconstructed without adding an external tracing dependency.
+ */
+export function startSpan(
+  threadId: string,
+  name: string,
+  metadata?: Record<string, unknown>,
+  traceId = createTraceId(),
+): SpanHandle {
+  const spanId = `span_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = Date.now();
+  void logEvent({
+    threadId,
+    type: "span_start",
+    metadata: { ...safeMeta(metadata), name, spanId, traceId },
+  });
+  let ended = false;
+  return {
+    traceId,
+    spanId,
+    threadId,
+    name,
+    startedAt,
+    end: async (status = "ok", extra?: Record<string, unknown>) => {
+      if (ended) return;
+      ended = true;
+      await logEvent({
+        threadId,
+        type: "span_end",
+        status,
+        latencyMs: Date.now() - startedAt,
+        metadata: { ...safeMeta(metadata), ...safeMeta(extra), name, spanId, traceId },
+      });
+    },
+  };
+}
+
+export async function logContextBudget(
+  threadId: string,
+  info: {
+    estimatedTokens: number;
+    contextWindow: number;
+    thresholdTokens: number;
+    toolTokens?: number;
+    calibrationFactor?: number;
+    compacted?: boolean;
+    freshSummary?: boolean;
+    hardCut?: boolean;
+  },
+): Promise<void> {
+  await logEvent({
+    threadId,
+    type: "context_budget",
+    metadata: {
+      ...info,
+      utilization: info.contextWindow > 0 ? Number((info.estimatedTokens / info.contextWindow).toFixed(3)) : 0,
+    },
+  });
+}
+
+export async function logModelUsage(
+  threadId: string,
+  usage: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    cachedInputTokens?: number;
+    estimatedTokens?: number;
+    calibrationFactor?: number;
+    /** Provider-reported cost in USD, when the gateway exposes it. */
+    cost?: number;
+    model?: string;
+    round?: number;
+  },
+): Promise<void> {
+  await logEvent({
+    threadId,
+    type: "model_usage",
+    metadata: {
+      ...usage,
+      estimateRatio:
+        usage.estimatedTokens && usage.promptTokens
+          ? Number((usage.promptTokens / usage.estimatedTokens).toFixed(3))
+          : undefined,
+    },
+  });
+}
+
+export async function logVerification(
+  threadId: string,
+  result: { checked: boolean; complete: boolean; reasons: string[]; evidence: string[] },
+): Promise<void> {
+  await logEvent({
+    threadId,
+    type: "completion_verification",
+    status: result.complete ? "success" : result.checked ? "error" : "skipped",
+    metadata: { checked: result.checked, reasons: result.reasons.slice(0, 10), evidence: result.evidence.slice(0, 10) },
+  });
+}
+
 function matchesType(e: any, type?: string | string[]): boolean {
   if (!type) return true;
   const want = Array.isArray(type) ? type : [type];
@@ -168,6 +284,17 @@ export async function readRecentEvents(threadId: string, limit = 50): Promise<an
     const safeThread = String(threadId || "global").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
     const raw = await readFile(join(dir(), `${safeThread}.jsonl`), "utf-8");
     return raw.trim().split("\n").slice(-limit).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** Read every event for a thread (usage/cost aggregation needs the full log). */
+export async function readAllEvents(threadId: string): Promise<any[]> {
+  try {
+    const safeThread = String(threadId || "global").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+    const raw = await readFile(join(dir(), `${safeThread}.jsonl`), "utf-8");
+    return raw.trim().split("\n").map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
   } catch {
     return [];
   }

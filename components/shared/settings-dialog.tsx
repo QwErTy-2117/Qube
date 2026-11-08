@@ -195,6 +195,14 @@ export interface ProviderConfig {
     imageInput?: boolean;
     reasoning?: boolean;
     isBuiltIn?: boolean;
+    /** Optional provider-reported context window (tokens). */
+    contextWindow?: number;
+    /** Optional provider-reported list price in USD per 1M tokens. */
+    pricing?: {
+      input: number;
+      output: number;
+      cachedInput?: number;
+    };
   }[];
 }
 
@@ -737,6 +745,19 @@ interface FetchedModel {
   id: string;
   imageInput: boolean;
   reasoning: boolean;
+  contextWindow?: number;
+  pricing?: { input: number; output: number; cachedInput?: number };
+}
+
+function positiveNumber(value: unknown): number | undefined {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** OpenRouter quotes USD per token; Qube stores USD per 1M tokens. */
+function openRouterPrice(value: unknown): number | undefined {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n >= 0 ? n * 1_000_000 : undefined;
 }
 
 async function fetchProviderModels(baseURL: string, apiKey: string, providerId?: string): Promise<FetchedModel[]> {
@@ -794,7 +815,36 @@ async function fetchProviderModels(baseURL: string, apiKey: string, providerId?:
             m?.reasoning === true ||
             m?.architecture?.reasoning === true ||
             detectModelThinkingSupport(modelId)));
-      models.push({ id: modelId, imageInput, reasoning });
+      const contextWindow = positiveNumber(
+        m?.context_length ??
+          m?.context_window ??
+          m?.top_provider?.context_length ??
+          m?.limit?.context ??
+          m?.limits?.context,
+      );
+      const pricing =
+        providerId === "openrouter" && m?.pricing
+          ? (() => {
+              const input = openRouterPrice(m.pricing.prompt ?? m.pricing.input);
+              const output = openRouterPrice(m.pricing.completion ?? m.pricing.output);
+              const cachedInput = openRouterPrice(
+                m.pricing.input_cache_read ?? m.pricing.cached_input ?? m.pricing.cache_read,
+              );
+              if (input === undefined || output === undefined) return undefined;
+              return {
+                input,
+                output,
+                ...(cachedInput !== undefined ? { cachedInput } : {}),
+              };
+            })()
+          : undefined;
+      models.push({
+        id: modelId,
+        imageInput,
+        reasoning,
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
+        ...(pricing ? { pricing } : {}),
+      });
     }
     if (models.length === 0) {
       throw new Error(
@@ -1442,6 +1492,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         icon: autoDetectIcons.includes(provId) ? detectModelIcon(model.id, provId) : providerIcon,
         imageInput: model.imageInput,
         reasoning: model.reasoning,
+        ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}),
+        ...(model.pricing ? { pricing: model.pricing } : {}),
       }));
 
       if (fetchedModels.length === 0) {
@@ -1668,6 +1720,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
           icon: autoDetectIcons.includes(provId) ? detectModelIcon(model.id, provId) : providerIcon,
           imageInput: model.imageInput,
           reasoning: model.reasoning,
+          ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}),
+          ...(model.pricing ? { pricing: model.pricing } : {}),
         };
       });
       setManageModels(qualified);
@@ -1721,6 +1775,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const handleSetDefaultModel = (modelId: string) => {
     localStorage.setItem("qube-default-model", modelId);
     setDefaultModel(modelId);
+    window.dispatchEvent(new Event("qube-model-changed"));
 
     // Sync change to backend immediately
     fetch("/api/providers/sync", {

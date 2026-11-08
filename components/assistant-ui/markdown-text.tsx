@@ -11,14 +11,9 @@ import {
 import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import {
-  Children,
-  cloneElement,
-  isValidElement,
   memo,
   useState,
   type FC,
-  type ReactElement,
-  type ReactNode,
   useCallback,
 } from "react";
 import ReactMarkdown from "react-markdown";
@@ -80,90 +75,38 @@ export function preprocessMarkdown(text: string): string {
 }
 
 /**
- * Wrap words in spans so each newly streamed word can fade in on its own.
- * Keys are stable per text position, so React reuses the existing spans as
- * more text arrives and only genuinely new words play the appear animation.
- * The CSS lives in app/globals.css and only animates while the markdown
- * container carries data-status="running".
+ * The streaming reveal is handled by assistant-ui's smooth text animator:
+ * characters are committed on a steady cadence, so prose grows as one
+ * continuous stream instead of mounting word-sized blocks. Per-word spans are
+ * deliberately not used here — they caused the visible chunking and re-wrapped
+ * mid-animation. Finished messages render statically.
  */
-const WORD_GAP_RE = /(\s+)/;
-const ANIMATABLE_INLINE = new Set([
-  "a",
-  "b",
-  "strong",
-  "i",
-  "em",
-  "u",
-  "s",
-  "del",
-  "mark",
-  "sup",
-  "sub",
-  "span",
-]);
-
-function splitWords(text: string, prefix: string): ReactNode[] {
-  const pieces = text.split(WORD_GAP_RE);
-  const nodes: ReactNode[] = [];
-  let word = 0;
-  for (const piece of pieces) {
-    if (!piece) continue;
-    if (/^\s+$/.test(piece)) {
-      nodes.push(piece);
-      continue;
-    }
-    nodes.push(
-      <span key={`${prefix}-w${word++}`} className="aui-word">
-        {piece}
-      </span>,
-    );
-  }
-  return nodes;
-}
-
-function withWordAnimation(children: ReactNode): ReactNode {
-  return Children.map(children, (child, index) => {
-    if (typeof child === "string") return splitWords(child, `t${index}`);
-    if (!isValidElement(child)) return child;
-    const element = child as ReactElement<{ className?: string; children?: ReactNode }>;
-    const type = element.type;
-    if (typeof type !== "string" || !ANIMATABLE_INLINE.has(type)) return child;
-    if (/katex|math/i.test(element.props.className || "")) return child;
-    return cloneElement(
-      element,
-      { key: element.key ?? `e${index}` },
-      withWordAnimation(element.props.children),
-    );
-  });
-}
-
-// Shared element styling for the context-bound primitive and static
 // markdown (generative UI components, subagent steps).
 function sharedComponents() {
   return {
     h1: ({ className, children, ...props }: any) => (
       <h1 className={cn("aui-md-h1 mb-4 mt-6 text-2xl font-bold", className)} {...props}>
-        {withWordAnimation(children)}
+        {children}
       </h1>
     ),
     h2: ({ className, children, ...props }: any) => (
       <h2 className={cn("aui-md-h2 mb-3 mt-5 text-xl font-semibold", className)} {...props}>
-        {withWordAnimation(children)}
+        {children}
       </h2>
     ),
     h3: ({ className, children, ...props }: any) => (
       <h3 className={cn("aui-md-h3 mb-2 mt-4 text-lg font-medium", className)} {...props}>
-        {withWordAnimation(children)}
+        {children}
       </h3>
     ),
     p: ({ className, children, ...props }: any) => (
       <p className={cn("aui-md-p mb-4 leading-7", className)} {...props}>
-        {withWordAnimation(children)}
+        {children}
       </p>
     ),
     a: ({ className, children, ...props }: any) => (
       <a className={cn("aui-md-a text-primary underline underline-offset-2", className)} {...props}>
-        {withWordAnimation(children)}
+        {children}
       </a>
     ),
     blockquote: ({ className, ...props }: any) => (
@@ -177,7 +120,7 @@ function sharedComponents() {
     ),
     li: ({ className, children, ...props }: any) => (
       <li className={cn("aui-md-li mb-1", className)} {...props}>
-        {withWordAnimation(children)}
+        {children}
       </li>
     ),
     hr: ({ className, ...props }: any) => (
@@ -201,12 +144,12 @@ function sharedComponents() {
     ),
     th: ({ className, children, ...props }: any) => (
       <th className={cn("aui-md-th px-4 py-2 text-left font-medium", className)} {...props}>
-        {withWordAnimation(children)}
+        {children}
       </th>
     ),
     td: ({ className, children, ...props }: any) => (
       <td className={cn("aui-md-td px-4 py-2", className)} {...props}>
-        {withWordAnimation(children)}
+        {children}
       </td>
     ),
     pre: ({ className, ...props }: any) => (
@@ -291,6 +234,7 @@ export function MarkdownText() {
       className="aui-md"
       components={defaultComponents}
       preprocess={preprocessMarkdown}
+      smooth={{ drainMs: 280, maxCharIntervalMs: 5, minCommitMs: 16 }}
     />
   );
 }

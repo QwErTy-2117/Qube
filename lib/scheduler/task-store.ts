@@ -41,19 +41,29 @@ async function loadRaw(): Promise<ScheduledTask[]> {
   const parsed = JSON.parse(raw) as ScheduledTask[];
   let migrated = false;
   const tasks = parsed.map((task) => {
-    // Legacy "none" (manual) schedules were removed. Keep the record by
-    // turning it into a disabled one-shot parked on the day it was created, so
-    // it neither vanishes nor starts running unexpectedly.
-    if ((task as { schedule?: { kind?: string } }).schedule?.kind === "none") {
-      migrated = true;
-      const runAt = task.createdAt || Date.now();
-      return {
-        ...task,
-        enabled: false,
-        schedule: { kind: "once" as const, runAt },
-        nextRunAt: runAt,
-        legacyScheduleRemoved: true,
-      };
+    // "none" (manual) tasks are heartbeat reminders again. Older builds
+    // briefly migrated them to hidden disabled one-shots; restore those
+    // records so the board doesn't lose the user's reminders.
+    if (
+      (task as { schedule?: { kind?: string } }).schedule?.kind === "none" ||
+      task.legacyScheduleRemoved === true
+    ) {
+      const { legacyScheduleRemoved: _legacy, ...rest } = task;
+      const alreadyManual =
+        rest.schedule.kind === "none" &&
+        rest.nextRunAt == null &&
+        rest.enabled === true;
+      if (!alreadyManual) {
+        migrated = true;
+        return {
+          ...rest,
+          enabled: true,
+          schedule: { kind: "none" as const },
+          nextRunAt: null,
+        };
+      }
+      if (_legacy !== undefined) migrated = true;
+      return rest;
     }
     return task;
   });
@@ -116,9 +126,11 @@ export async function createTask(data: {
     monthDay: data.scheduleKind === "interval" ? data.monthDay : undefined,
   };
   const nextRunAt =
-    data.scheduleKind === "once"
-      ? data.runAt ?? now
-      : computeNextRunAtForSchedule(schedule);
+    data.scheduleKind === "none"
+      ? null
+      : data.scheduleKind === "once"
+        ? data.runAt ?? now
+        : computeNextRunAtForSchedule(schedule);
   const task: ScheduledTask = {
     id: `task_${now}_${Math.random().toString(36).slice(2, 8)}`,
     type: "scheduled",
@@ -167,6 +179,9 @@ export async function updateTask(
   tasks[idx] = { ...tasks[idx], ...patch, updatedAt: Date.now() };
   if (patch.schedule) {
     const s = patch.schedule;
+    if (s.kind === "none") {
+      tasks[idx].nextRunAt = null;
+    }
     if (s.kind === "interval") {
       tasks[idx].nextRunAt = computeNextRunAtForSchedule(s);
     }
@@ -203,7 +218,9 @@ export async function updateTaskRunTime(
   if (!task) return;
   const now = Date.now();
   task.lastRunAt = now;
-  if (task.schedule.kind === "once") {
+  if (task.schedule.kind === "none") {
+    task.nextRunAt = null;
+  } else if (task.schedule.kind === "once") {
     task.enabled = false;
     // For once tasks, nextRunAt stays as runAt but disabled ensures no repeat
   } else if (task.schedule.kind === "interval") {
@@ -276,6 +293,7 @@ function computeNextDailyOccurrence(hour: number, minute: number, weekdays?: num
 }
 
 export function computeNextRunAtForSchedule(schedule: ScheduledTask["schedule"]): number | null {
+  if (schedule.kind === "none") return null;
   if (schedule.kind === "once") return schedule.runAt ?? Date.now();
   if (schedule.kind === "interval" && schedule.hour !== undefined && schedule.minute !== undefined) {
     return computeNextDailyOccurrence(schedule.hour, schedule.minute, schedule.weekdays, schedule.monthDay);

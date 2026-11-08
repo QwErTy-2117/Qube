@@ -144,20 +144,18 @@ describe("streaming text: word appear animation", () => {
     assert.ok(!css.includes("\\25cf"));
   });
 
-  it("wraps streamed words in stable animation spans", async () => {
+  it("streams prose via the smooth character animator, not per-word spans", async () => {
     const src = await read("components/assistant-ui/markdown-text.tsx");
-    assert.ok(src.includes("withWordAnimation"));
-    assert.ok(src.includes('className="aui-word"'));
-    // Applied to prose blocks, not code/pre (code must never be re-wrapped).
-    assert.ok(src.includes("withWordAnimation(children)"));
+    assert.ok(!src.includes("withWordAnimation"));
+    assert.ok(!src.includes('className="aui-word"'));
+    assert.ok(src.includes("smooth={{"));
   });
 
-  it("animates only running messages with a clean fade/rise", async () => {
+  it("keeps globals.css free of per-word animation keyframes", async () => {
     const css = await read("app/globals.css");
-    assert.ok(css.includes("@keyframes aui-word-in"));
-    assert.ok(css.includes('.aui-md[data-status="running"] .aui-word'));
-    assert.ok(css.includes("animation: aui-word-in 180ms"));
+    assert.ok(!css.includes("aui-word"));
+    assert.ok(!css.includes("@keyframes aui-word-in"));
+    assert.ok(css.includes("smooth character animator"));
     assert.ok(css.includes("prefers-reduced-motion: reduce"));
-    assert.ok(!css.includes("animation: aui-pulse"));
   });
 });

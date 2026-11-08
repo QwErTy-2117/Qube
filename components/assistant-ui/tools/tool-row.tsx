@@ -75,8 +75,9 @@ export function ToolRow({
     threadRunning &&
     !hasResult;
   const isComplete = status?.type === "complete" || hasResult;
+  const shimmerVerb = isRunning && typeof verb === "string";
   return (
-    <div data-slot="tool-row" className={cn("mt-2 w-full rounded-xl border border-border/60 bg-background px-3 py-2 text-sm", className)}>
+    <div data-slot="tool-row" className={cn("mt-2 w-full rounded-xl border border-border/60 bg-background px-2.5 py-1.5 text-sm", className)}>
       <button
         type="button"
         onClick={() => {
@@ -88,7 +89,14 @@ export function ToolRow({
           hasDetail ? "cursor-pointer" : "cursor-default"
         )}
       >
-        <span className="shrink-0 text-xs font-medium text-foreground/80">{verb}</span>
+        <span
+          className={cn(
+            "shrink-0 text-xs font-medium text-foreground/80",
+            shimmerVerb && "shimmer motion-reduce:animate-none",
+          )}
+        >
+          {verb}
+        </span>
         {summary ? (
           <span className="min-w-0 flex-1 truncate text-[11px] font-normal text-muted-foreground/60">
             {summary}
@@ -107,7 +115,7 @@ export function ToolRow({
           />
         )}
       </button>
-      {hasDetail && open && <div className="mt-2 border-t border-border/50 pt-2">{children}</div>}
+      {hasDetail && open && <div className="mt-1.5 border-t border-border/50 pt-1.5">{children}</div>}
     </div>
   );
 }
@@ -142,7 +150,7 @@ export function ToolCardHeader({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 border-b border-border/60 px-3 py-2 text-sm",
+        "flex items-center gap-2 border-b border-border/60 px-2.5 py-1.5 text-sm",
         className
       )}
     >

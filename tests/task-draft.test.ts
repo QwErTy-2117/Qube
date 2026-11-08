@@ -26,6 +26,25 @@ describe("validateDraft", () => {
     assert.deepEqual(validateDraft(good).ok, true);
   });
 
+  it("accepts heartbeat reminders only when the caller allows manual tasks", () => {
+    const manual = { name: "Water plants", instructions: "Water the plants on the balcony.", scheduleKind: "none" };
+    assert.equal(validateDraft(manual).ok, false);
+    const allowed = validateDraft(manual, { allowManual: true });
+    assert.equal(allowed.ok, true);
+    if (allowed.ok) {
+      assert.equal(allowed.draft.scheduleKind, "none");
+      assert.equal(allowed.draft.intervalMinutes, undefined);
+      assert.equal(allowed.draft.runAt, undefined);
+    }
+  });
+
+  it("validates title-only drafts for blank reminder titles", async () => {
+    const { validateTitleDraft } = await import("@/lib/scheduler/task-draft");
+    assert.deepEqual(validateTitleDraft({ name: "  Water the plants  " }), { ok: true, name: "Water the plants" });
+    assert.equal(validateTitleDraft({ name: " " }).ok, false);
+    assert.equal(validateTitleDraft("nope").ok, false);
+  });
+
   it("rejects empty name/instructions", () => {
     assert.equal(validateDraft({ ...good, name: " " }).ok, false);
     assert.equal(validateDraft({ ...good, instructions: "" }).ok, false);

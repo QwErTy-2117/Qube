@@ -20,7 +20,7 @@
  * shouldGateConnectorTool and task-runner.
  */
 
-import { isDestructiveCommand } from "@/lib/middleware/workspace";
+import { isDestructiveCommand, classifyProtectedPath } from "@/lib/middleware/workspace";
 
 export type SensitiveKind =
   | "send_email"
@@ -32,6 +32,7 @@ export type SensitiveKind =
   | "merge_pull_request"
   | "close_issue"
   | "destructive_command"
+  | "protected_path"
   | "outside_workspace"
   | "purchase"
   | "share_private"
@@ -148,6 +149,21 @@ export function classifyLocalTool(
   if (toolName === "delete_file") {
     const p = (args.path as string) || (args.filepath as string) || "this file";
     return { sensitive: true, kind: "delete_file", purpose: `Delete file "${String(p).slice(0, 160)}" — this cannot be undone` };
+  }
+  // Direct writes to protected paths can persist code execution (Git hooks)
+  // or expose credentials. Marked destructive so the hard policy applies
+  // before any reviewer/prompt; git commands remain the supported path for
+  // repository metadata.
+  if (toolName === "write_file" || toolName === "edit_file") {
+    const p = (args.path as string) || (args.filepath as string) || "";
+    const prot = classifyProtectedPath(p);
+    if (prot.protected) {
+      return {
+        sensitive: true,
+        kind: "protected_path",
+        purpose: `Modify protected ${prot.reason} at "${String(p).slice(0, 160)}" — changes here can execute code or expose credentials`,
+      };
+    }
   }
   // Computer Use: OS-level control always pauses except read-only lookups.
   // list_apps / get_app_state / window reads / doctor / capabilities auto-allow.

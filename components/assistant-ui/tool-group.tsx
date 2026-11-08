@@ -193,7 +193,7 @@ function ToolGroupContent({
     >
       <div
         className={cn(
-          "ml-5 flex flex-col gap-3.5 pt-2 pb-2",
+          "ml-5 flex flex-col gap-2.5 pt-1.5 pb-1.5",
           "[&_[data-slot=tool-row]]:mt-0",
           "[&_[data-slot=browser-tool]]:mt-0",
           "[&>*]:animate-in [&>*]:fade-in-0 [&>*]:blur-in-[2px] [&>*]:slide-in-from-top-1 [&>*]:duration-(--animation-duration) [&>*]:ease-[cubic-bezier(0.32,0.72,0,1)]",

@@ -34,6 +34,12 @@ import {
   saveCompaction,
   clearCompaction,
   maybeCompactMessages,
+  SUMMARY_SECTIONS,
+  validateCompactionSummary,
+  ensureSummaryObjective,
+  capSummary,
+  extractSummarySection,
+  type SummaryFn,
   type UiMessage,
 } from "@/lib/pi/compaction";
 import {
@@ -46,6 +52,19 @@ const assistant = (text: string): UiMessage => ({ role: "assistant", parts: [{ t
 
 function bigUser(n: number, chars = 4000): UiMessage {
   return { role: "user", parts: [{ type: "text", text: `question ${n}: ${"x".repeat(chars)}` }] };
+}
+
+/** A structurally complete summary, as the summarizer is instructed to emit. */
+function makeSummary(objective: string): string {
+  return [
+    `## Objective\n${objective}`,
+    "## Requirements & Constraints\nKeep existing APIs working.",
+    "## Decisions\nCheckpoint the boundary instead of rewriting history.",
+    "## Work State\nCompleted: unit tests. In Progress: documentation.",
+    "## Next Move\nRun the full suite.",
+    "## Relevant Files\nlib/pi/compaction.ts",
+    "## Important Context\nNone.",
+  ].join("\n\n");
 }
 
 describe("estimateTokens", () => {
@@ -137,9 +156,9 @@ describe("anchors", () => {
 });
 
 describe("summary prompt", () => {
-  it("contains the structured sections", () => {
+  it("contains every structured section", () => {
     const p = buildSummaryPrompt({});
-    for (const h of ["## Objective", "## Requirements", "## Key Decisions", "## Progress", "## Next Steps", "## Critical Context"]) {
+    for (const h of SUMMARY_SECTIONS) {
       assert.ok(p.includes(h), `missing ${h}`);
     }
   });
@@ -154,6 +173,44 @@ describe("summary prompt", () => {
     const b = formatSummaryBlock("did things");
     assert.ok(b.includes("did things"));
     assert.ok(b.includes("not new instructions"));
+    assert.ok(b.includes("authoritative task state"));
+  });
+});
+
+describe("summary validation", () => {
+  it("accepts a complete summary and extracts the objective", () => {
+    const check = validateCompactionSummary(makeSummary("Ship the parser"));
+    assert.equal(check.valid, true);
+    assert.equal(check.objective, "Ship the parser");
+    assert.equal(check.missing.length, 0);
+  });
+
+  it("rejects a summary missing essential sections", () => {
+    const check = validateCompactionSummary("## Objective\nShip it\n\nSome rambling prose.");
+    assert.equal(check.valid, false);
+    assert.ok(check.missing.includes("## Work State"));
+    assert.ok(check.missing.includes("## Next Move"));
+  });
+
+  it("accepts a summary that inherits the objective from the previous one", () => {
+    const previous = makeSummary("Original objective");
+    const revised = makeSummary("Original objective").replace("## Objective\nOriginal objective", "## Objective\n");
+    const check = validateCompactionSummary(revised, previous);
+    assert.equal(check.valid, true);
+    assert.equal(check.objective, "");
+  });
+
+  it("restores a dropped objective instead of losing user intent", () => {
+    const previous = makeSummary("Original objective");
+    const withoutObjective = makeSummary("ignored").replace(/## Objective\n[^\n]*\n\n/, "");
+    const restored = ensureSummaryObjective(withoutObjective, previous);
+    assert.equal(extractSummarySection(restored, "## Objective"), "Original objective");
+  });
+
+  it("caps an oversized summary", () => {
+    const capped = capSummary("x".repeat(10_000), 1_000);
+    assert.ok(capped.length < 1_200);
+    assert.ok(capped.includes("Summary truncated"));
   });
 });
 
@@ -257,6 +314,201 @@ describe("maybeCompactMessages", () => {
         if (v === undefined) delete process.env[k];
         else process.env[k] = v;
       }
+    }
+  });
+});
+
+describe("compaction under repeated pressure", () => {
+  const savedKeep = process.env.QUBE_COMPACTION_KEEP_RECENT_TOKENS;
+  const restoreKeep = () => {
+    if (savedKeep === undefined) delete process.env.QUBE_COMPACTION_KEEP_RECENT_TOKENS;
+    else process.env.QUBE_COMPACTION_KEEP_RECENT_TOKENS = savedKeep;
+  };
+
+  it("updates one anchored summary across repeated compactions", async () => {
+    process.env.QUBE_COMPACTION_KEEP_RECENT_TOKENS = "3000";
+    const tid = `repeat_${Date.now()}`;
+    try {
+      const turns: UiMessage[] = [];
+      for (let i = 0; i < 8; i++) {
+        turns.push(bigUser(i, 4000), assistant(`answer ${i} ${"y".repeat(4000)}`));
+      }
+      let calls = 0;
+      const seenPrevious: Array<string | undefined> = [];
+      const summarize: SummaryFn = async ({ previousSummary }) => {
+        calls += 1;
+        seenPrevious.push(previousSummary);
+        return makeSummary(`Ship objective ${calls}`);
+      };
+
+      const first = await maybeCompactMessages({
+        messages: turns,
+        threadId: tid,
+        systemPrompt: "sys",
+        force: true,
+        summarize,
+      });
+      assert.equal(first.freshSummary, true);
+      assert.equal(first.compacted, true);
+      assert.ok(first.messages.length < turns.length);
+      assert.ok(first.summaryBlock.includes("Ship objective 1"));
+      assert.equal(first.stats.keptMessages, first.messages.length);
+
+      // Next turns: the client resends the full history. The stored anchor
+      // re-applies the checkpoint with no second LLM call.
+      const next = [
+        ...turns,
+        bigUser(101), assistant(`next answer 1 ${"z".repeat(4000)}`),
+        bigUser(102), assistant(`next answer 2 ${"z".repeat(4000)}`),
+        bigUser(103), assistant(`next answer 3 ${"z".repeat(4000)}`),
+      ];
+      const steady = await maybeCompactMessages({ messages: next, threadId: tid, systemPrompt: "sys", summarize });
+      assert.equal(steady.freshSummary, false);
+      assert.equal(steady.compacted, true);
+      assert.ok(steady.summaryBlock.includes("Ship objective 1"));
+      assert.equal(calls, 1);
+
+      // Forced compaction under new pressure produces a fresh summary,
+      // iterating from the previous one rather than stacking summaries.
+      const third = await maybeCompactMessages({
+        messages: next,
+        threadId: tid,
+        systemPrompt: "sys",
+        force: true,
+        summarize,
+      });
+      assert.equal(third.freshSummary, true);
+      assert.equal(calls, 2);
+      assert.ok(seenPrevious[1]?.includes("Ship objective 1"));
+      assert.ok(third.summaryBlock.includes("Ship objective 2"));
+      assert.ok(!third.summaryBlock.includes("Ship objective 1"));
+
+      const rec = await loadCompaction(tid);
+      assert.equal(rec!.count, 2);
+      assert.equal(rec!.objective, "Ship objective 2");
+      await clearCompaction(tid);
+    } finally {
+      restoreKeep();
+    }
+  });
+
+  it("survives twelve consecutive compaction cycles with one evolving summary", async () => {
+    process.env.QUBE_COMPACTION_KEEP_RECENT_TOKENS = "3000";
+    const tid = `many_${Date.now()}`;
+    try {
+      const history: UiMessage[] = [];
+      for (let i = 0; i < 24; i++) {
+        history.push(bigUser(i, 4000), assistant(`answer ${i} ${"y".repeat(4000)}`));
+      }
+      for (let cycle = 1; cycle <= 12; cycle++) {
+        history.push(bigUser(1000 + cycle, 4000), assistant(`cycle ${cycle} ${"z".repeat(4000)}`));
+        let seenPrevious: string | undefined;
+        const res = await maybeCompactMessages({
+          messages: history,
+          threadId: tid,
+          systemPrompt: "sys",
+          force: true,
+          summarize: async ({ previousSummary }) => {
+            seenPrevious = previousSummary;
+            return makeSummary(`Objective cycle ${cycle}`);
+          },
+        });
+        assert.equal(res.freshSummary, true, `cycle ${cycle} should summarize`);
+        assert.ok(res.messages.length < history.length);
+        assert.ok(res.summaryBlock.includes(`Objective cycle ${cycle}`));
+        if (cycle > 1) assert.ok(seenPrevious?.includes(`Objective cycle ${cycle - 1}`));
+      }
+      const rec = await loadCompaction(tid);
+      assert.ok(rec);
+      assert.equal(rec!.count, 12);
+      assert.equal(rec!.objective, "Objective cycle 12");
+      assert.ok(rec!.summary.length <= 24_000);
+      await clearCompaction(tid);
+    } finally {
+      restoreKeep();
+    }
+  });
+
+  it("retries once when the summarizer drops required sections", async () => {
+    process.env.QUBE_COMPACTION_KEEP_RECENT_TOKENS = "3000";
+    const tid = `retry_${Date.now()}`;
+    try {
+      const msgs = [
+        bigUser(1, 4000), assistant("a"),
+        bigUser(2, 4000), assistant("b"),
+        bigUser(3, 4000), assistant("c"),
+        user("latest"),
+      ];
+      let calls = 0;
+      const summarize: SummaryFn = async () => {
+        calls += 1;
+        return calls === 1 ? "## Objective\nOnly the goal" : makeSummary("Recovered objective");
+      };
+      const res = await maybeCompactMessages({ messages: msgs, threadId: tid, systemPrompt: "sys", force: true, summarize });
+      assert.equal(calls, 2);
+      assert.equal(res.freshSummary, true);
+      assert.equal(res.stats.summaryValidated, true);
+      assert.ok(res.summaryBlock.includes("Recovered objective"));
+      await clearCompaction(tid);
+    } finally {
+      restoreKeep();
+    }
+  });
+
+  it("counts tool schemas against the trigger budget", async () => {
+    process.env.QUBE_COMPACTION_KEEP_RECENT_TOKENS = "3000";
+    const tid = `tools_${Date.now()}`;
+    try {
+      const msgs = [bigUser(1, 4000), assistant("a"), bigUser(2, 4000), assistant("b"), user("latest")];
+      const tools = {
+        heavy_tool: {
+          description: "d".repeat(8000),
+          inputSchema: { type: "object", properties: { path: { type: "string" } } },
+        },
+      };
+      const res = await maybeCompactMessages({
+        messages: msgs,
+        threadId: tid,
+        systemPrompt: "sys",
+        tools,
+        force: true,
+        summarize: async () => makeSummary("tool accounting"),
+      });
+      assert.ok((res.stats.toolTokens || 0) > 1_500);
+      assert.ok(res.stats.estimatedTotalTokens >= res.stats.toolTokens!);
+      await clearCompaction(tid);
+    } finally {
+      restoreKeep();
+    }
+  });
+
+  it("falls back to a deterministic hard cut when summarization fails", async () => {
+    process.env.QUBE_COMPACTION_KEEP_RECENT_TOKENS = "3000";
+    const tid = `hardcut_${Date.now()}`;
+    try {
+      const msgs: UiMessage[] = [];
+      for (let i = 0; i < 6; i++) msgs.push(bigUser(i, 4000), assistant(`answer ${i}`));
+      const res = await maybeCompactMessages({
+        messages: msgs,
+        threadId: tid,
+        systemPrompt: "sys",
+        aggressive: true,
+        force: true,
+        summarize: async () => {
+          throw new Error("summarizer unavailable");
+        },
+      });
+      assert.equal(res.hardCut, true);
+      assert.equal(res.compacted, true);
+      assert.ok(res.messages.length < msgs.length);
+      assert.ok(res.summaryBlock.includes("automatic summary unavailable"));
+      assert.equal(res.stats.summaryValidated, false);
+      const rec = await loadCompaction(tid);
+      assert.ok(rec);
+      assert.equal(rec!.count, 1);
+      await clearCompaction(tid);
+    } finally {
+      restoreKeep();
     }
   });
 });

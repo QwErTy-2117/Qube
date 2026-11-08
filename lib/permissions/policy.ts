@@ -32,6 +32,7 @@ export type PolicyDecision =
 const DESTRUCTIVE_KINDS = new Set<SensitiveKind>([
   "delete_file",
   "destructive_command",
+  "protected_path",
   "delete_external",
   "purchase",
   "merge_pull_request",

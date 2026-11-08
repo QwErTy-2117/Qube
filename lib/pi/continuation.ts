@@ -18,7 +18,9 @@ export type TodoSnapshotItem = {
 export function maxSilentRounds(): number {
   const n = parseInt(process.env.QUBE_SILENT_CONTINUATIONS || "8", 10);
   if (!Number.isFinite(n) || n < 0) return 8;
-  return Math.floor(n);
+  // Keep a hard ceiling: a typo or an over-optimistic value must not turn the
+  // continuation loop into an unbounded one.
+  return Math.min(Math.floor(n), 100);
 }
 
 /** Items in a TodoWrite snapshot that are not yet completed. */

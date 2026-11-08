@@ -6,8 +6,8 @@ import {
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
-import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
+import { SessionUsage } from "@/components/assistant-ui/session-usage";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
 import { finishedGroupTitle } from "@/components/assistant-ui/tools/group-title";
@@ -236,6 +236,7 @@ const ModelPicker: FC = () => {
   const handleValueChange = (val: string) => {
     setModel(val);
     localStorage.setItem("qube-default-model", val);
+    window.dispatchEvent(new Event("qube-model-changed"));
   };
 
   const selectedModel = models.find((m) => m.id === model);
@@ -427,7 +428,10 @@ const Thread: FC = () => {
       </ThreadPrimitive.Viewport>
 
       {/* Goals float top-right, overlaying the thread — never docked over the composer. */}
-      <div className="pointer-events-none absolute top-4 right-4 z-20 flex justify-end">
+      <div className="pointer-events-none absolute top-4 right-4 z-20 flex items-center justify-end gap-2">
+        <div className="pointer-events-auto">
+          <SessionUsage />
+        </div>
         <div className="pointer-events-auto">
           <GoalsPanel />
         </div>
@@ -1134,10 +1138,9 @@ const AssistantWorkingIndicator: FC = () => {
   return (
     <span
       data-slot="aui_assistant-message-indicator"
-      className="text-muted-foreground inline-flex items-center gap-2 align-middle"
+      className="text-muted-foreground inline-flex items-center gap-2 align-middle py-0.5 text-sm font-medium"
     >
-      <DotMatrix state="connecting" aria-hidden />
-      <span className="text-sm">Connecting</span>
+      <span className="shimmer motion-reduce:animate-none">Working</span>
     </span>
   );
 };

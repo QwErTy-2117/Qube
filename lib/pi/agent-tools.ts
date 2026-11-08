@@ -37,14 +37,14 @@ export function createPiAgentTools(ctx: AgentToolsContext): Record<string, any> 
     description:
       "Manage scheduled automations (OpenClaw-style cron). Use ONLY for exact-timing work with an explicit recurring/one-shot-future cue from the user: daily reports, reminders, weekly reviews, one-shot follow-ups at a future time. " +
       "ONE-SHOT READS ARE NOT SCHEDULES: 'check the price of X', 'what does X cost', 'look up…' with no every/keep-an-eye/tell-me-when/monitor cue must be done INLINE now with web_search/web_fetch — never create a task for them. " +
-      "Actions: create (name, instructions, scheduleKind interval|once, intervalMinutes|runAt ISO, doneCriteria, condition/onlyReportIf, deliverablePath, hour/minute/weekdays/monthDay, permissions), list, get, update, delete, trigger (run now). " +
+      "Actions: create (name, instructions, scheduleKind interval|once|none, intervalMinutes|runAt ISO, doneCriteria, condition/onlyReportIf, deliverablePath, hour/minute/weekdays/monthDay, permissions), list, get, update, delete, trigger (run now). " +
       "Recurring checks belong here — NOT in heartbeat scratch. Scheduled work runs inside Qube, so it only runs while Qube is open and running — tell the user that when you create one. Returns JSON.",
     inputSchema: z.object({
       action: z.enum(["create", "list", "get", "update", "delete", "trigger"]).describe("Action to perform"),
       id: z.string().optional().describe("Task id for get/update/delete/trigger"),
       name: z.string().optional().describe("Task name for create/update"),
       instructions: z.string().optional().describe("What the agent should do when the task runs"),
-      scheduleKind: z.enum(["interval", "once"]).optional().describe("interval=recurring, once=future one-shot run"),
+      scheduleKind: z.enum(["interval", "once", "none"]).optional().describe("interval=recurring, once=future one-shot run, none=heartbeat reminder with no schedule"),
       intervalMinutes: z.number().optional().describe("Recurring interval in minutes"),
       runAt: z.string().optional().describe("ISO date for once tasks"),
       enabled: z.boolean().optional().describe("Enable/disable (update only)"),
@@ -70,7 +70,7 @@ export function createPiAgentTools(ctx: AgentToolsContext): Record<string, any> 
         if (args.action === "create") {
           const text = `${args.name || ""} ${args.instructions || ""} ${args.doneCriteria || ""} ${args.condition || ""}`;
           const isFutureOnce = args.scheduleKind === "once" && !!args.runAt;
-          if (!hasSchedulingCue(text) && !isFutureOnce) {
+          if (args.scheduleKind !== "none" && !hasSchedulingCue(text) && !isFutureOnce) {
             return JSON.stringify({
               error: "Not a schedule: this looks like a one-shot lookup. Do it inline now with web_search/web_fetch instead of creating a task. Only create a task when the user gave an explicit recurring cue (every…, remind me…, keep an eye…, tell me when…, monitor…) or a future runAt.",
             });
@@ -119,6 +119,12 @@ export function createPiAgentTools(ctx: AgentToolsContext): Record<string, any> 
               monthDay: args.monthDay,
               permissions: args.permissions,
             });
+            if (task.schedule.kind === "none") {
+              try {
+                const { linkManualTaskReminder } = await import("@/lib/scheduler/manual-tasks");
+                await linkManualTaskReminder(task.id, task.name, task.instructions);
+              } catch {}
+            }
             return JSON.stringify({ message: `Scheduled task "${task.name}" created. It runs inside Qube, so it only runs while Qube is open and running.`, task });
           }
           case "update": {
@@ -158,12 +164,26 @@ export function createPiAgentTools(ctx: AgentToolsContext): Record<string, any> 
             if (args.enabled !== undefined) patch.enabled = args.enabled;
             const t = await store.updateTask(args.id, patch);
             if (!t) return JSON.stringify({ error: "Task not found" });
+            try {
+              const { linkManualTaskReminder, unlinkManualTaskReminder } = await import("@/lib/scheduler/manual-tasks");
+              if (t.schedule.kind === "none") {
+                if (args.scheduleKind !== undefined || args.name !== undefined || args.instructions !== undefined) {
+                  await linkManualTaskReminder(t.id, t.name, t.instructions);
+                }
+              } else if (args.scheduleKind !== undefined) {
+                await unlinkManualTaskReminder(t.id);
+              }
+            } catch {}
             return JSON.stringify({ message: `Task "${t.name}" updated.`, task: t });
           }
           case "delete": {
             if (!args.id) return JSON.stringify({ error: "id is required for delete" });
             const ok = await store.deleteTask(args.id);
             if (!ok) return JSON.stringify({ error: "Task not found or heartbeat cannot be deleted" });
+            try {
+              const { unlinkManualTaskReminder } = await import("@/lib/scheduler/manual-tasks");
+              await unlinkManualTaskReminder(args.id);
+            } catch {}
             return JSON.stringify({ message: "Task deleted." });
           }
           case "trigger": {
@@ -175,6 +195,12 @@ export function createPiAgentTools(ctx: AgentToolsContext): Record<string, any> 
             try {
               await store.updateTaskRunTime(t.id, result.status === "success");
             } catch {}
+            if (t.schedule.kind === "none" && result.status === "success") {
+              try {
+                const { unlinkManualTaskReminder } = await import("@/lib/scheduler/manual-tasks");
+                await unlinkManualTaskReminder(t.id);
+              } catch {}
+            }
             return JSON.stringify({
               message: `Task "${t.name}" triggered: ${result.status}.`,
               output: result.output.slice(0, 2000),

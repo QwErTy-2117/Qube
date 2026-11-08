@@ -12,6 +12,7 @@ import {
 import { withPermissionCheck } from "@/lib/middleware/permission-middleware";
 import { allowedDirsStore, toAbsoluteDir } from "@/lib/permissions/allowed-dirs";
 import { generativeUISpecSchema, renderGuiInputSchema } from "@/lib/generative-ui/catalog";
+import { boundToolOutput, readToolOutput, spillToolOutput } from "./tool-output";
 
 const execAsync = promisify(exec);
 
@@ -512,6 +513,70 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     },
   });
 
+  // Dev loop: start/reuse a local dev server, open it in the managed browser,
+  // and expose its captured logs. These are registered here (not lazily inside
+  // another tool's callback) so they always exist in the tool set.
+  extraTools.dev_server = tool({
+    description:
+      "Start (or reuse) a local dev server for the edit→run→observe→test loop: spawns the command in the workspace, waits until the URL responds, and navigates the managed browser there for UI testing. Reuses a running server for the same command. Use dev_server_log to read output, browser_snapshot/browser_act to test the UI, and request_takeover never applies to localhost. Stop with dev_server stop:true.",
+    inputSchema: z.object({
+      command: z.string().describe("Dev command, e.g. 'npm run dev -- -p 3010'"),
+      url: z.string().describe("URL to wait for, e.g. 'http://localhost:3010'"),
+      timeoutMs: z.number().optional().describe("Wait-for-HTTP timeout in ms (default 30000)"),
+      stop: z.boolean().optional().describe("Stop the server for this command instead of starting"),
+    }),
+    execute: async ({ command, url, timeoutMs, stop }: { command: string; url: string; timeoutMs?: number; stop?: boolean }) => {
+      return withPerm("dev_server", { command, url }, async () => {
+        const { startDevServer, stopDevServer, waitForHttp, devServerLog } = await import("@/lib/computer-use/devloop");
+        const cwd = getWorkspacePath();
+        if (stop === true) {
+          const stopped = stopDevServer(cwd, String(command || ""));
+          return JSON.stringify({ stopped });
+        }
+        if (!command || !url) return JSON.stringify({ error: "command and url are required" });
+        if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(String(url))) {
+          return JSON.stringify({ error: "dev_server only serves localhost URLs" });
+        }
+        const srv = startDevServer(cwd, String(command), String(url));
+        const wait = await waitForHttp(String(url), Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 120000));
+        // Open the app in the managed browser so UI testing follows in-turn.
+        let opened = "";
+        try {
+          const { browserNavigate, screenClaim } = await import("./computer-use");
+          try { screenClaim.claim(threadId); } catch {}
+          const nav = await browserNavigate(String(url));
+          opened = (nav as any).url || String(url);
+        } catch (e: any) { opened = `browser open failed: ${e?.message || String(e)}`; }
+        const tail = devServerLog(cwd, String(command), 15);
+        return JSON.stringify({
+          pid: srv.pid, url: String(url), ready: wait.ok, status: wait.status, ms: wait.ms,
+          browser: opened,
+          logTail: tail,
+          note: wait.ok
+            ? "Server ready and open in the managed browser. Test with browser_snapshot/browser_act; read dev_server_log for errors; iterate edit→run→observe."
+            : "Server did not respond in time — read dev_server_log for the crash/error, fix, and retry.",
+        }).slice(0, 6000);
+      });
+    },
+  });
+  extraTools.dev_server_log = tool({
+    description: "Read the tail of a dev server's captured stdout/stderr (started via dev_server). Use to find crashes, port conflicts, and compile errors during the test loop.",
+    inputSchema: z.object({
+      command: z.string().describe("The same command passed to dev_server"),
+      tail: z.number().optional().describe("Lines to return (default 60, max 200)"),
+    }),
+    execute: async ({ command, tail }: { command: string; tail?: number }) => {
+      try {
+        const { devServerLog } = await import("@/lib/computer-use/devloop");
+        const lines = Math.min(Math.max(Number(tail) || 60, 1), 200);
+        const out = devServerLog(getWorkspacePath(), String(command || ""), lines);
+        return JSON.stringify({ command, lines: out }).slice(0, 12000);
+      } catch (e: any) {
+        return JSON.stringify({ error: e?.message || String(e) });
+      }
+    },
+  });
+
   return {
     ...extraTools,
     render_gui: tool({
@@ -561,28 +626,76 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     }),
 
     read_file: tool({
-      description: "Read a file at a workspace-relative path (absolute paths work too when inside a user-approved Allowed directory). Returns content and metadata.",
+      description:
+        "Read a text file at a workspace-relative path (absolute paths work too when inside a user-approved Allowed directory). " +
+        "Supports line pagination with offset (1-based) and limit (max 2000 lines); each call returns at most ~30000 chars and " +
+        "reports nextOffset when more remains. Page large files instead of expecting everything at once. For logs/binaries prefer run_command (head/tail).",
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path"),
+        offset: z.number().int().min(1).optional().describe("First line to return (1-based, default 1)"),
+        limit: z.number().int().min(1).max(2000).optional().describe("Max lines to return (default 2000)"),
       }),
-      execute: async ({ path }: { path: string }) => {
-        return withPerm("read_file", { path }, async () => {
+      execute: async ({ path, offset, limit }: { path: string; offset?: number; limit?: number }) => {
+        return withPerm("read_file", { path, offset, limit }, async () => {
           const resolved = resolveAgentPath(path, "read");
           try {
-            const content = await readFile(resolved, "utf-8");
             const s = await stat(resolved);
-            const lines = content.split("\n").length;
+            if (!s.isFile()) return JSON.stringify({ error: `Not a file: ${path}`, code: "EISDIR" });
+            const maxBytes = 5 * 1024 * 1024;
+            if (s.size > maxBytes) {
+              return JSON.stringify({
+                error: `File is too large to read whole (${s.size} bytes; limit ${maxBytes}). Use run_command with head/tail or a script to inspect it.`,
+                size: s.size,
+                hint: "run_command: head -n 200 <path> / tail -n 200 <path>",
+              });
+            }
+            const raw = await readFile(resolved, "utf-8");
+            const allLines = raw.split("\n");
+            const totalLines = allLines.length;
+            const startLine = Math.max(1, Math.floor(Number(offset) || 1));
+            const maxLines = Math.min(Math.max(Math.floor(Number(limit) || 2000), 1), 2000);
+            const envMax = parseInt(process.env.QUBE_READ_FILE_MAX_CHARS || "30000", 10);
+            const maxChars = Math.min(Math.max(Number.isFinite(envMax) ? envMax : 30000, 1_000), 200_000);
+            const selected = startLine > totalLines ? "" : allLines.slice(startLine - 1, startLine - 1 + maxLines).join("\n");
+            const truncatedByChars = selected.length > maxChars;
+            const content = truncatedByChars ? selected.slice(0, maxChars) : selected;
+            const consumedLines = content.length > 0 ? content.split("\n").length : 0;
+            const endLine = consumedLines > 0 ? startLine + consumedLines - 1 : startLine - 1;
+            const nextOffset = endLine < totalLines ? endLine + 1 : null;
             return JSON.stringify({
               path: resolved,
               relativePath: displayAgentPath(resolved),
               size: s.size,
-              lineCount: lines,
+              lineCount: totalLines,
+              startLine,
+              endLine,
               content,
+              truncated: nextOffset !== null,
+              nextOffset,
             });
           } catch (e) {
             return JSON.stringify({ error: formatError(e, path), code: (e as NodeJS.ErrnoException).code });
           }
         });
+      },
+    }),
+
+    read_tool_output: tool({
+      description:
+        "Read more of a tool result that was truncated to protect the context window. Large outputs are saved automatically and the tool result includes an id plus next offset. " +
+        "Page with offset/maxChars instead of re-running the original command; read the section you need, not the whole file.",
+      inputSchema: z.object({
+        id: z.string().describe("Spill id from the truncation notice"),
+        offset: z.number().int().min(0).optional().describe("Character offset to start at (default 0)"),
+        maxChars: z.number().int().min(200).max(100000).optional().describe("Chars to return (default 30000)"),
+      }),
+      execute: async ({ id, offset, maxChars }: { id: string; offset?: number; maxChars?: number }) => {
+        try {
+          const res = await readToolOutput(threadId, id, { offset, maxChars });
+          return JSON.stringify(res);
+        } catch (e: any) {
+          return JSON.stringify({ error: e?.message || String(e), id });
+        }
       },
     }),
 
@@ -654,75 +767,16 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           const resolved = resolveAgentPath(path, "read");
           try {
             const entries = await readdir(resolved, { withFileTypes: true });
+            const pageSize = 300;
             const items = await Promise.all(
-              entries.slice(0, 500).map(async (e) => {
+              entries.slice(0, pageSize).map(async (e) => {
                 const full = join(resolved, e.name);
                 let size = 0;
                 try {
                   const s = await stat(full);
                   size = s.size;
                 } catch {}
-  extraTools.dev_server = tool({
-    description:
-      "Start (or reuse) a local dev server for the edit→run→observe→test loop: spawns the command in the workspace, waits until the URL responds, and navigates the managed browser there for UI testing. Reuses a running server for the same command. Use dev_server_log to read output, browser_snapshot/browser_act to test the UI, and request_takeover never applies to localhost. Stop with dev_server stop:true.",
-    inputSchema: z.object({
-      command: z.string().describe("Dev command, e.g. 'npm run dev -- -p 3010'"),
-      url: z.string().describe("URL to wait for, e.g. 'http://localhost:3010'"),
-      timeoutMs: z.number().optional().describe("Wait-for-HTTP timeout in ms (default 30000)"),
-      stop: z.boolean().optional().describe("Stop the server for this command instead of starting"),
-    }),
-    execute: async ({ command, url, timeoutMs, stop }: { command: string; url: string; timeoutMs?: number; stop?: boolean }) => {
-      return withPerm("dev_server", { command, url }, async () => {
-        const { startDevServer, stopDevServer, waitForHttp, devServerLog } = await import("@/lib/computer-use/devloop");
-        const cwd = getWorkspacePath();
-        if (stop === true) {
-          const stopped = stopDevServer(cwd, String(command || ""));
-          return JSON.stringify({ stopped });
-        }
-        if (!command || !url) return JSON.stringify({ error: "command and url are required" });
-        if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(String(url))) {
-          return JSON.stringify({ error: "dev_server only serves localhost URLs" });
-        }
-        const srv = startDevServer(cwd, String(command), String(url));
-        const wait = await waitForHttp(String(url), Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 120000));
-        // Open the app in the managed browser so UI testing follows in-turn.
-        let opened = "";
-        try {
-          const { browserNavigate, screenClaim } = await import("./computer-use");
-          try { screenClaim.claim(threadId); } catch {}
-          const nav = await browserNavigate(String(url));
-          opened = (nav as any).url || String(url);
-        } catch (e: any) { opened = `browser open failed: ${e?.message || String(e)}`; }
-        const tail = devServerLog(cwd, String(command), 15);
-        return JSON.stringify({
-          pid: srv.pid, url: String(url), ready: wait.ok, status: wait.status, ms: wait.ms,
-          browser: opened,
-          logTail: tail,
-          note: wait.ok
-            ? "Server ready and open in the managed browser. Test with browser_snapshot/browser_act; read dev_server_log for errors; iterate edit→run→observe."
-            : "Server did not respond in time — read dev_server_log for the crash/error, fix, and retry.",
-        }).slice(0, 6000);
-      });
-    },
-  });
-  extraTools.dev_server_log = tool({
-    description: "Read the tail of a dev server's captured stdout/stderr (started via dev_server). Use to find crashes, port conflicts, and compile errors during the test loop.",
-    inputSchema: z.object({
-      command: z.string().describe("The same command passed to dev_server"),
-      tail: z.number().optional().describe("Lines to return (default 60, max 200)"),
-    }),
-    execute: async ({ command, tail }: { command: string; tail?: number }) => {
-      try {
-        const { devServerLog } = await import("@/lib/computer-use/devloop");
-        const lines = devServerLog(getWorkspacePath(), String(command || ""), tail ?? 60);
-        return JSON.stringify({ command, lines }).slice(0, 12000);
-      } catch (e: any) {
-        return JSON.stringify({ error: e?.message || String(e) });
-      }
-    },
-  });
-
-  return {
+                return {
                   name: e.name,
                   type: e.isDirectory() ? "directory" : e.isFile() ? "file" : "other",
                   size,
@@ -731,12 +785,15 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
                 };
               })
             );
-            return JSON.stringify({
+            const payload = JSON.stringify({
               path: resolved,
               items,
               totalItems: entries.length,
-              truncated: entries.length > 500,
+              truncated: entries.length > pageSize,
+              note: entries.length > pageSize ? `Showing the first ${pageSize} of ${entries.length} entries. List a subdirectory for the rest.` : undefined,
             });
+            const bounded = await boundToolOutput(threadId, "list_directory", payload);
+            return bounded.text;
           } catch (e) {
             return JSON.stringify({ error: formatError(e, path), code: (e as NodeJS.ErrnoException).code });
           }
@@ -745,15 +802,39 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
     }),
 
     run_command: tool({
-      description: "Run a shell command in workspace. 120s timeout. Use for builds, tests, scripts.",
+      description: "Run a shell command in the workspace (120s default, 10min max). Use for builds, tests, scripts. Large stdout/stderr is truncated; the result includes an output id for read_tool_output.",
       inputSchema: z.object({
         command: z.string().describe("Shell command to run"),
-        timeoutMs: z.number().optional().describe("Timeout in ms, default 120000"),
+        timeoutMs: z.number().optional().describe("Timeout in ms, default 120000, max 600000"),
       }),
       execute: async ({ command, timeoutMs }: { command: string; timeoutMs?: number }) => {
         return withPerm("run_command", { command }, async () => {
           const cwd = getWorkspacePath();
-          const timeout = timeoutMs ?? 120000;
+          const timeout = Math.min(Math.max(Number(timeoutMs) || 120000, 1000), 600000);
+          const inline = 12000;
+          const finish = async (stdoutRaw: string, stderrRaw: string, exitCode: number, timedOut: boolean, error?: string) => {
+            const stdout = String(stdoutRaw || "");
+            const stderr = String(stderrRaw || "");
+            let outputId: string | undefined;
+            if (stdout.length > inline || stderr.length > inline) {
+              try {
+                const full = `$ ${command}\n\n[stdout]\n${stdout}\n\n[stderr]\n${stderr}`;
+                outputId = (await spillToolOutput(threadId, "run_command", full)).id;
+              } catch {}
+            }
+            return JSON.stringify({
+              command,
+              cwd,
+              exitCode,
+              timedOut,
+              stdout: stdout.slice(0, inline),
+              stderr: stderr.slice(0, inline),
+              truncated: stdout.length > inline || stderr.length > inline,
+              outputId,
+              note: outputId ? `Output truncated; full log id="${outputId}". Page it with read_tool_output instead of re-running the command.` : undefined,
+              error: timedOut ? `Timeout after ${timeout}ms` : error,
+            });
+          };
           try {
             const { stdout, stderr } = await execAsync(command, {
               cwd,
@@ -761,27 +842,13 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
               maxBuffer: 10 * 1024 * 1024,
               windowsHide: true,
             });
-            return JSON.stringify({
-              command,
-              cwd,
-              stdout: stdout.slice(0, 20000),
-              stderr: stderr.slice(0, 20000),
-              exitCode: 0,
-            });
+            return await finish(stdout, stderr, 0, false);
           } catch (e: any) {
-            const stdout = e.stdout?.toString().slice(0, 20000) || "";
-            const stderr = e.stderr?.toString().slice(0, 20000) || e.message?.slice(0, 5000) || String(e).slice(0, 5000);
+            const stdout = e.stdout?.toString() || "";
+            const stderr = e.stderr?.toString() || e.message?.slice(0, 5000) || String(e).slice(0, 5000);
             const exitCode = typeof e.code === "number" ? e.code : 1;
             const timedOut = e.killed && e.signal === "SIGTERM";
-            return JSON.stringify({
-              command,
-              cwd,
-              stdout,
-              stderr,
-              exitCode,
-              timedOut,
-              error: timedOut ? `Timeout after ${timeout}ms` : undefined,
-            });
+            return await finish(stdout, stderr, exitCode, !!timedOut, timedOut ? undefined : `Command exited with code ${exitCode}`);
           }
         });
       },

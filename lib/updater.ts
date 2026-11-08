@@ -34,6 +34,21 @@ export function downloadProgressPercent(
 
 let cachedUpdate: any = null; // holds Tauri Update object for install
 
+/**
+ * GitHub's `/releases/latest/download/latest.json` redirect endpoint can
+ * stall for tens of seconds (or answer 503) while its release CDN is cold —
+ * we measured 10–40s TTFB right after a release was published. The Tauri
+ * updater plugin has NO default request timeout, so without this the
+ * "Check for updates" spinner hangs as long as GitHub does. Cap it so a
+ * stalled feed surfaces a real error instead of an endless spinner.
+ */
+const CHECK_TIMEOUT_MS = 20_000;
+
+// Shared in-flight check: the startup auto-check (3s after load) and a
+// manual "Check for updates" click can overlap. Without this they issue two
+// requests, both of which stall together when GitHub is slow.
+let inFlightCheck: Promise<CheckResult> | null = null;
+
 function isTauri(): boolean {
   return typeof window !== "undefined" && !!(window as any).__TAURI_INTERNALS__;
 }
@@ -42,7 +57,7 @@ function isTauri(): boolean {
 async function tauriCheck(): Promise<CheckResult> {
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
-    const update = await check();
+    const update = await check({ timeout: CHECK_TIMEOUT_MS });
     if (update) {
       cachedUpdate = update;
       return {
@@ -84,6 +99,9 @@ async function tauriCheck(): Promise<CheckResult> {
 function explainCheckError(message: string): string {
   if (/platforms` object/.test(message)) {
     return `${message}. This release has no update package for your installation type — download it from https://github.com/QwErTy-2117/Qube/releases.`;
+  }
+  if (/timed out|timeout/i.test(message)) {
+    return "Update check timed out — GitHub's release server didn't respond in time. Check your connection and try again.";
   }
   return message;
 }
@@ -129,14 +147,21 @@ async function webFallbackCheck(): Promise<CheckResult> {
 }
 
 export async function checkForUpdates(): Promise<CheckResult> {
-  if (isTauri()) {
-    const r = await tauriCheck();
-    if (r.available) return r;
-    // In Tauri but no update via plugin (dev or no artifacts), don't fallback to web in Tauri
-    return r;
-  } else {
+  if (inFlightCheck) return inFlightCheck;
+  const run = (async (): Promise<CheckResult> => {
+    if (isTauri()) {
+      // In Tauri: plugin only. No web fallback — a failed check must stay a
+      // failure (r.error) rather than masquerading as "no update available".
+      return tauriCheck();
+    }
     // In browser dev, use fallback to still show toast for demo
     return webFallbackCheck();
+  })();
+  inFlightCheck = run;
+  try {
+    return await run;
+  } finally {
+    inFlightCheck = null;
   }
 }
 

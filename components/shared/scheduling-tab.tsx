@@ -16,10 +16,9 @@ import {
   setHours,
   startOfDay,
 } from "date-fns";
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { MotionConfig } from "motion/react";
 import {
   CalendarDays,
-  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -34,12 +33,6 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,14 +60,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { PromptPill } from "@/components/shared/prompt-pill";
-import {
-  Column,
-  gentleSpring,
-  type ColumnData,
-  type ColumnStatus,
-  type DragState,
-} from "@/components/ui/kanban-board";
+import { ConfirmGroup } from "@/components/shared/confirm-group";
+import { gentleSpring } from "@/components/ui/kanban-board";
 
 import {
   EventCalendar,
@@ -91,7 +78,6 @@ import type {
 } from "@/components/reui/event-calendar/event-calendar-types";
 
 import type { ScheduledTask } from "@/lib/scheduler/types";
-import { isTaskDone } from "@/lib/scheduler/board-status";
 import {
   compactTime,
   repeatValueFor,
@@ -166,12 +152,6 @@ const CALENDAR_CLASS_NAMES = {
   // clear the pinned day-number row as well.
   monthBarOverlay: "pt-7",
 };
-
-const BOARD_LIMITS = { todo: 3, done: 3 } as const;
-
-function isManualTask(task: ScheduledTask): boolean {
-  return task.type === "scheduled" && task.schedule.kind === "none";
-}
 
 function isCalendarTask(task: ScheduledTask): boolean {
   return (
@@ -274,74 +254,19 @@ interface TaskEditor {
   repeat: RepeatValue;
 }
 
-interface ReminderEditor {
-  task: ScheduledTask | null;
-  title: string;
-  instructions: string;
-}
-
-type DraftFromServer = {
-  name: string;
-  instructions: string;
-  scheduleKind: "once" | "interval" | "none";
-  intervalMinutes?: number;
-  runAt?: string;
-  hour?: number;
-  minute?: number;
-  weekdays?: number[];
-  monthDay?: number;
-};
-
-function repeatForDraft(draft: DraftFromServer): RepeatValue {
-  if (draft.scheduleKind === "once") return "once";
-  if (draft.weekdays && draft.weekdays.length > 0) return "weekly";
-  if (draft.monthDay !== undefined) return "monthly";
-  if (draft.intervalMinutes === 60) return "hourly";
-  if (draft.intervalMinutes === 10_080) return "weekly";
-  if (draft.intervalMinutes === 43_200) return "monthly";
-  if (draft.intervalMinutes === 1440 || draft.hour !== undefined) return "daily";
-  return "daily";
-}
-
-function deriveTitle(instructions: string): string {
-  const first = instructions
-    .split(/[\n.!?]/)
-    .map((line) => line.trim())
-    .find(Boolean);
-  const text = (first || instructions).replace(/\s+/g, " ").trim().slice(0, 60);
-  if (!text) return "Reminder";
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
 export function SchedulingTab() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-
-  // Board (non-scheduled heartbeat reminders)
-  const [dragState, setDragState] = useState<DragState>(null);
-  const [runningIds, setRunningIds] = useState<string[]>([]);
-  const runningRef = useRef<Set<string>>(new Set());
-  const [deleteArmed, setDeleteArmed] = useState(false);
-  const deleteTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [boardDrafting, setBoardDrafting] = useState(false);
-  const [boardError, setBoardError] = useState<string | null>(null);
-
-  // Reminder create/edit dialog
-  const [reminderOpen, setReminderOpen] = useState(false);
-  const [reminderEditor, setReminderEditor] = useState<ReminderEditor | null>(null);
-  const [reminderError, setReminderError] = useState<string | null>(null);
-  const [reminderSaving, setReminderSaving] = useState(false);
-  const [reminderDrafting, setReminderDrafting] = useState(false);
-  const [reminderDeleteArmed, setReminderDeleteArmed] = useState(false);
 
   // Scheduled task calendar editor
   const [editorOpen, setEditorOpen] = useState(false);
   const [editor, setEditor] = useState<TaskEditor | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [editorDrafting, setEditorDrafting] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [calendarDeleteArmed, setCalendarDeleteArmed] = useState(false);
+  const saveCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -371,64 +296,12 @@ export function SchedulingTab() {
 
   useEffect(() => {
     return () => {
-      if (deleteTimeout.current) clearTimeout(deleteTimeout.current);
+      if (saveCloseTimer.current) clearTimeout(saveCloseTimer.current);
     };
   }, []);
 
-  const boardTasks = useMemo(() => tasks.filter(isManualTask), [tasks]);
   const calendarTasks = useMemo(() => tasks.filter(isCalendarTask), [tasks]);
   const events = useMemo(() => calendarTasks.map(taskToEvent), [calendarTasks]);
-
-  const columns: ColumnData[] = useMemo(() => {
-    const buckets: Record<ColumnStatus, ScheduledTask[]> = {
-      todo: [],
-      "in-progress": [],
-      done: [],
-    };
-    for (const task of boardTasks) {
-      if (isTaskDone(task)) {
-        buckets.done.push(task);
-      } else if (runningIds.includes(task.id)) {
-        buckets["in-progress"].push(task);
-      } else {
-        buckets.todo.push(task);
-      }
-    }
-    buckets.done.sort((a, b) => (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0));
-    return [
-      {
-        id: "todo",
-        title: "To do",
-        status: "todo",
-        cards: buckets.todo.map((task) => ({
-          id: task.id,
-          title: task.name,
-          done: false,
-        })),
-      },
-      {
-        id: "in-progress",
-        title: "In progress",
-        status: "in-progress",
-        cards: buckets["in-progress"].map((task) => ({
-          id: task.id,
-          title: task.name,
-          done: false,
-        })),
-      },
-      {
-        id: "done",
-        title: "Done",
-        status: "done",
-        cards: buckets.done.map((task) => ({
-          id: task.id,
-          title: task.name,
-          done: true,
-          rerunnable: false,
-        })),
-      },
-    ];
-  }, [boardTasks, runningIds]);
 
   const persistUpdate = useCallback(
     async (body: Record<string, unknown>) => {
@@ -571,275 +444,6 @@ export function SchedulingTab() {
     [persistUpdate, applyOptimisticTaskPatch],
   );
 
-  const triggerTask = useCallback(
-    async (id: string) => {
-      if (runningRef.current.has(id)) return;
-      const task = boardTasks.find((item) => item.id === id);
-      if (!task) return;
-      if (isTaskDone(task)) return;
-      runningRef.current.add(id);
-      setRunningIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-      setBoardError(null);
-      try {
-        const response = await fetch("/api/scheduler/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "trigger", id }),
-        });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(data?.error || "Could not run the reminder.");
-        }
-      } catch (error) {
-        setBoardError(error instanceof Error ? error.message : String(error));
-      } finally {
-        runningRef.current.delete(id);
-        setRunningIds((prev) => prev.filter((running) => running !== id));
-        await fetchTasks();
-      }
-    },
-    [boardTasks, fetchTasks],
-  );
-
-  const deleteManualTask = useCallback(
-    async (id: string) => {
-      setTasks((prev) => prev.filter((task) => task.id !== id));
-      try {
-        const response = await fetch("/api/scheduler/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "delete", id }),
-        });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(data?.error || "Could not delete the reminder.");
-        }
-      } catch (error) {
-        setBoardError(error instanceof Error ? error.message : String(error));
-      } finally {
-        await fetchTasks();
-      }
-    },
-    [fetchTasks],
-  );
-
-  const handleCardGone = useCallback(
-    (cardId: string) => {
-      void deleteManualTask(cardId);
-    },
-    [deleteManualTask],
-  );
-
-  const handleDrop = useCallback(
-    (cardId: string, fromColumnId: ColumnStatus, toColumnId: ColumnStatus) => {
-      if (fromColumnId === toColumnId) return;
-      if (toColumnId === "done") return;
-      if (fromColumnId === "done") return;
-      if (toColumnId === "in-progress" && fromColumnId === "todo") {
-        void triggerTask(cardId);
-      }
-    },
-    [triggerTask],
-  );
-
-  const openReminderCreate = useCallback((seed?: { title?: string; instructions?: string }) => {
-    setReminderEditor({
-      task: null,
-      title: seed?.title ?? "",
-      instructions: seed?.instructions ?? "",
-    });
-    setReminderError(null);
-    setReminderDeleteArmed(false);
-    setReminderOpen(true);
-  }, []);
-
-  const openReminderEdit = useCallback(
-    (id: string) => {
-      const task = tasks.find((item) => item.id === id);
-      if (!task || task.schedule.kind !== "none") return;
-      setReminderEditor({
-        task,
-        title: task.name,
-        instructions: task.instructions,
-      });
-      setReminderError(null);
-      setReminderDeleteArmed(false);
-      setReminderOpen(true);
-    },
-    [tasks],
-  );
-
-  const closeReminder = useCallback(() => {
-    if (reminderSaving) return;
-    setReminderOpen(false);
-    setReminderEditor(null);
-    setReminderError(null);
-    setReminderDeleteArmed(false);
-  }, [reminderSaving]);
-
-  const patchReminder = useCallback((patch: Partial<ReminderEditor>) => {
-    setReminderEditor((current) => (current ? { ...current, ...patch } : current));
-    setReminderError(null);
-  }, []);
-
-  async function generateTitle(instructions: string): Promise<string | null> {
-    try {
-      const response = await fetch("/api/scheduler/draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: instructions, mode: "title" }),
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok || typeof data?.name !== "string") return null;
-      return data.name.trim() || null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function saveReminder() {
-    if (!reminderEditor || reminderSaving) return;
-    const instructions = reminderEditor.instructions.trim();
-    if (!instructions) {
-      setReminderError("Describe what the heartbeat should do.");
-      return;
-    }
-    setReminderSaving(true);
-    setReminderError(null);
-    try {
-      let title = reminderEditor.title.trim();
-      if (!title) {
-        title = (await generateTitle(instructions)) || deriveTitle(instructions);
-        setReminderEditor((current) => (current ? { ...current, title } : current));
-      }
-      const response = await fetch("/api/scheduler/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(reminderEditor.task
-            ? { action: "update", id: reminderEditor.task.id }
-            : { action: "create" }),
-          name: title,
-          instructions,
-          scheduleKind: "none",
-        }),
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok || !data?.task) {
-        throw new Error(data?.error || "Could not save the reminder.");
-      }
-      setReminderOpen(false);
-      setReminderEditor(null);
-      await fetchTasks();
-    } catch (error) {
-      setReminderError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setReminderSaving(false);
-    }
-  }
-
-  async function deleteReminder() {
-    if (!reminderEditor?.task || reminderSaving) return;
-    if (!reminderDeleteArmed) {
-      setReminderDeleteArmed(true);
-      return;
-    }
-    setReminderSaving(true);
-    setReminderError(null);
-    try {
-      const response = await fetch("/api/scheduler/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", id: reminderEditor.task.id }),
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(data?.error || "Could not delete the reminder.");
-      }
-      setReminderOpen(false);
-      setReminderEditor(null);
-      await fetchTasks();
-    } catch (error) {
-      setReminderError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setReminderSaving(false);
-    }
-  }
-
-  const runBoardDraft = useCallback(
-    async (prompt: string) => {
-      setBoardDrafting(true);
-      setBoardError(null);
-      try {
-        const response = await fetch("/api/scheduler/draft", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt,
-            current: { name: "", instructions: "", scheduleKind: "none" },
-            allowManual: true,
-          }),
-        });
-        const data = await response.json().catch(() => null);
-        if (!response.ok || !data?.draft) {
-          throw new Error(data?.error || "Could not draft the reminder.");
-        }
-        const draft = data.draft as DraftFromServer;
-        openReminderCreate({
-          title: draft.name,
-          instructions: draft.instructions,
-        });
-      } catch (error) {
-        setBoardError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setBoardDrafting(false);
-      }
-    },
-    [openReminderCreate],
-  );
-
-  const runReminderDraft = useCallback(
-    async (prompt: string) => {
-      if (!reminderEditor) return;
-      setReminderDrafting(true);
-      setReminderError(null);
-      try {
-        const response = await fetch("/api/scheduler/draft", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt,
-            current: {
-              name: reminderEditor.title,
-              instructions: reminderEditor.instructions,
-              scheduleKind: "none",
-            },
-            allowManual: true,
-          }),
-        });
-        const data = await response.json().catch(() => null);
-        if (!response.ok || !data?.draft) {
-          throw new Error(data?.error || "Could not draft the reminder.");
-        }
-        const draft = data.draft as DraftFromServer;
-        setReminderEditor((current) =>
-          current
-            ? {
-                ...current,
-                title: draft.name || current.title,
-                instructions: draft.instructions || current.instructions,
-              }
-            : current,
-        );
-      } catch (error) {
-        setReminderError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setReminderDrafting(false);
-      }
-    },
-    [reminderEditor],
-  );
-
   const openCreate = useCallback((seed?: { start: Date; end: Date; allDay?: boolean }) => {
     let start: Date;
     let end: Date;
@@ -959,137 +563,16 @@ export function SchedulingTab() {
 
   const closeEditor = useCallback(() => {
     if (saving) return;
+    if (saveCloseTimer.current) {
+      clearTimeout(saveCloseTimer.current);
+      saveCloseTimer.current = null;
+    }
+    setSaved(false);
     setEditorOpen(false);
     setEditor(null);
     setEditorError(null);
     setCalendarDeleteArmed(false);
   }, [saving]);
-
-  function currentDraftInput() {
-    if (!editor) return null;
-    const base = {
-      name: editor.title,
-      instructions: editor.description,
-    };
-    if (editor.repeat === "once") {
-      return {
-        ...base,
-        scheduleKind: "once",
-        runAt: editor.start.toISOString(),
-      };
-    }
-    const start = editor.start;
-    const schedule = editor.task?.schedule;
-    switch (editor.repeat) {
-      case "hourly":
-        return { ...base, scheduleKind: "interval", intervalMinutes: 60 };
-      case "daily":
-        return {
-          ...base,
-          scheduleKind: "interval",
-          intervalMinutes: 1440,
-          hour: start.getHours(),
-          minute: start.getMinutes(),
-        };
-      case "weekly":
-        return {
-          ...base,
-          scheduleKind: "interval",
-          intervalMinutes: 10_080,
-          hour: start.getHours(),
-          minute: start.getMinutes(),
-          weekdays: [start.getDay()],
-        };
-      case "monthly":
-        return {
-          ...base,
-          scheduleKind: "interval",
-          intervalMinutes: 43_200,
-          hour: start.getHours(),
-          minute: start.getMinutes(),
-          monthDay: start.getDate(),
-        };
-      default:
-        return {
-          ...base,
-          scheduleKind: "interval",
-          intervalMinutes: schedule?.intervalMinutes ?? 1440,
-          hour: schedule?.hour ?? start.getHours(),
-          minute: schedule?.minute ?? start.getMinutes(),
-          weekdays: schedule?.weekdays,
-          monthDay: schedule?.monthDay,
-        };
-    }
-  }
-
-  const applyEditorDraft = useCallback((draft: DraftFromServer) => {
-    setEditor((current) => {
-      if (!current || draft.scheduleKind === "none") return current;
-      const duration = Math.max(
-        30,
-        Math.round((current.end.getTime() - current.start.getTime()) / 60_000),
-      );
-      let start = new Date(current.start);
-      if (draft.scheduleKind === "once" && draft.runAt) {
-        const runAt = new Date(draft.runAt);
-        if (!Number.isNaN(runAt.getTime())) start = runAt;
-      } else {
-        if (draft.hour !== undefined) {
-          start.setHours(draft.hour, draft.minute ?? 0, 0, 0);
-        }
-        if (draft.weekdays && draft.weekdays.length > 0) {
-          let guard = 0;
-          while (!draft.weekdays.includes(start.getDay()) && guard < 7) {
-            start = addDays(start, 1);
-            guard += 1;
-          }
-        }
-        if (draft.monthDay !== undefined) {
-          const daysInMonth = new Date(
-            start.getFullYear(),
-            start.getMonth() + 1,
-            0,
-          ).getDate();
-          start.setDate(Math.min(draft.monthDay, daysInMonth));
-        }
-      }
-      return {
-        ...current,
-        title: draft.name || current.title,
-        description: draft.instructions || current.description,
-        start,
-        end: addMinutes(start, duration),
-        repeat: repeatForDraft(draft),
-        allDay: false,
-      };
-    });
-    setEditorError(null);
-  }, []);
-
-  const runEditorDraft = useCallback(
-    async (prompt: string) => {
-      if (!editor) return;
-      setEditorDrafting(true);
-      setEditorError(null);
-      try {
-        const response = await fetch("/api/scheduler/draft", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, current: currentDraftInput() }),
-        });
-        const data = await response.json().catch(() => null);
-        if (!response.ok || !data?.draft) {
-          throw new Error(data?.error || "Could not draft the task.");
-        }
-        applyEditorDraft(data.draft as DraftFromServer);
-      } catch (error) {
-        setEditorError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setEditorDrafting(false);
-      }
-    },
-    [editor, applyEditorDraft],
-  );
 
   async function saveEditor() {
     if (!editor || saving) return;
@@ -1200,8 +683,17 @@ export function SchedulingTab() {
       if (!response.ok || !data?.task) {
         throw new Error(data?.error || "Could not save the task.");
       }
-      setEditorOpen(false);
-      setEditor(null);
+      // Let the button group play its saved-check morph before closing.
+      setSaved(true);
+      setSaving(false);
+      saveCloseTimer.current = setTimeout(() => {
+        saveCloseTimer.current = null;
+        setSaved(false);
+        setEditorOpen(false);
+        setEditor(null);
+        setEditorError(null);
+        setCalendarDeleteArmed(false);
+      }, 550);
       await fetchTasks();
     } catch (error) {
       setEditorError(error instanceof Error ? error.message : String(error));
@@ -1288,105 +780,6 @@ export function SchedulingTab() {
           </p>
         )}
 
-        {/* Heartbeat reminders — non-scheduled work the periodic check-in picks up. */}
-        <section className="flex h-[38%] min-h-[250px] max-h-[330px] shrink-0 flex-col gap-2.5">
-          <div className="flex shrink-0 items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold tracking-tight">Reminders</h3>
-              <p className="truncate text-[11px] text-muted-foreground">
-                The heartbeat picks these up and marks them done.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => openReminderCreate()}
-              className="h-7 shrink-0 rounded-full px-3 text-xs"
-            >
-              <Plus className="mr-1 size-3.5" />
-              New reminder
-            </Button>
-          </div>
-
-          <div className="grid min-h-0 flex-1 grid-cols-3 gap-4">
-            {columns.map((column) => (
-              <Column
-                key={column.id}
-                column={column}
-                dragState={dragState}
-                setDragState={setDragState}
-                onDrop={handleDrop}
-                onCardGone={handleCardGone}
-                onCardClick={openReminderEdit}
-                limits={BOARD_LIMITS}
-              />
-            ))}
-          </div>
-
-          {boardError && (
-            <p className="shrink-0 truncate text-[11px] text-red-600 dark:text-red-400" role="alert">
-              {boardError}
-            </p>
-          )}
-
-          <AnimatePresence initial={false} mode="wait">
-            {dragState ? (
-              <motion.div
-                key="delete-zone"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
-                className="shrink-0"
-              >
-                <div
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                    if (deleteTimeout.current) clearTimeout(deleteTimeout.current);
-                    setDeleteArmed(true);
-                  }}
-                  onDragLeave={() => {
-                    deleteTimeout.current = setTimeout(() => setDeleteArmed(false), 60);
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    setDeleteArmed(false);
-                    const cardId =
-                      dragState?.cardId || event.dataTransfer.getData("text/plain");
-                    if (cardId) void deleteManualTask(cardId);
-                    setDragState(null);
-                  }}
-                  className={cn(
-                    "flex h-[38px] items-center justify-center gap-2 rounded-full border border-dashed text-xs font-medium transition-colors",
-                    deleteArmed
-                      ? "border-red-500 bg-red-500/15 text-red-600 dark:text-red-400"
-                      : "border-red-500/40 bg-red-500/5 text-red-600/80 dark:text-red-400/80",
-                  )}
-                >
-                  <Trash2 className="size-3.5" />
-                  Drop here to delete
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="board-prompt"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
-                className="shrink-0"
-              >
-                <PromptPill
-                  busy={boardDrafting}
-                  busyLabel="Drafting the reminder…"
-                  placeholder="Describe a reminder — what and where…"
-                  onSend={runBoardDraft}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </section>
-
         {/* Scheduled tasks calendar */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-background">
           <EventCalendar
@@ -1412,113 +805,6 @@ export function SchedulingTab() {
           </EventCalendar>
         </div>
 
-        {/* Reminder create/edit */}
-        <Dialog
-          open={reminderOpen}
-          onOpenChange={(open) => {
-            if (!open) closeReminder();
-          }}
-        >
-          <DialogContent
-            showCloseButton={false}
-            className="flex h-[460px] max-h-[calc(100dvh-2rem)] w-full flex-col gap-0 overflow-hidden rounded-3xl border border-border p-0 shadow-2xl sm:max-w-md"
-          >
-            <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4">
-              <DialogTitle className="text-base font-semibold tracking-tight">
-                {reminderEditor?.task ? "Edit reminder" : "New reminder"}
-              </DialogTitle>
-              <DialogDescription className="sr-only">
-                A reminder the heartbeat executes and completes automatically.
-              </DialogDescription>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={closeReminder}
-                className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="flex min-h-0 flex-1 flex-col gap-3.5 px-5 py-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="reminder-title" className="text-xs font-semibold">
-                  Title
-                </Label>
-                <Input
-                  id="reminder-title"
-                  autoFocus
-                  value={reminderEditor?.title ?? ""}
-                  placeholder="Leave blank to generate one"
-                  onChange={(event) => patchReminder({ title: event.target.value })}
-                  className="h-9 rounded-xl"
-                />
-              </div>
-
-              <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-                <Label htmlFor="reminder-instructions" className="text-xs font-semibold">
-                  Instructions
-                </Label>
-                <Textarea
-                  id="reminder-instructions"
-                  value={reminderEditor?.instructions ?? ""}
-                  placeholder="What should the heartbeat do, and where/how should it do it?"
-                  onChange={(event) =>
-                    patchReminder({ instructions: event.target.value })
-                  }
-                  className="min-h-0 flex-1 resize-none rounded-xl"
-                />
-              </div>
-
-              {reminderError && (
-                <p className="shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
-                  {reminderError}
-                </p>
-              )}
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-3">
-              {reminderEditor?.task && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={deleteReminder}
-                  disabled={reminderSaving}
-                  className={cn(
-                    "shrink-0 rounded-full px-2.5 text-red-600 hover:bg-red-500/10 hover:text-red-600 dark:text-red-400",
-                    reminderDeleteArmed && "bg-red-500/10",
-                  )}
-                >
-                  <Trash2 className="mr-1 size-3.5" />
-                  {reminderDeleteArmed ? "Confirm" : "Delete"}
-                </Button>
-              )}
-              <div className="min-w-0 flex-1">
-                <PromptPill
-                  busy={reminderDrafting}
-                  busyLabel="Drafting the reminder…"
-                  placeholder="Describe an edit…"
-                  onSend={runReminderDraft}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={saveReminder}
-                disabled={reminderSaving || reminderDrafting}
-                aria-label="Save reminder"
-                className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {reminderSaving ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Check className="size-4" strokeWidth={3} />
-                )}
-              </button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
         {/* Scheduled task create/edit */}
         <Sheet
           open={editorOpen}
@@ -1532,35 +818,13 @@ export function SchedulingTab() {
               showCloseButton={false}
               className="flex w-full flex-col gap-0 p-0 sm:max-w-[520px]"
             >
-              <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4">
+              <div className="flex shrink-0 flex-col gap-1 border-b border-border px-6 py-4">
                 <SheetTitle className="text-lg font-semibold tracking-tight">
                   {editor.task ? "Edit task" : "New task"}
                 </SheetTitle>
                 <SheetDescription className="sr-only">
                   Schedule a task for the agent.
                 </SheetDescription>
-                <div className="flex items-center gap-1">
-                  {editor.task && (
-                    <button
-                      type="button"
-                      aria-label="Run now"
-                      title="Run now"
-                      onClick={runNow}
-                      disabled={saving}
-                      className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-                    >
-                      <Play className="size-3.5" />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    aria-label="Close"
-                    onClick={closeEditor}
-                    className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
               </div>
 
               <div className="flex min-h-0 flex-1 flex-col gap-3.5 px-6 py-5">
@@ -1632,7 +896,12 @@ export function SchedulingTab() {
                   </div>
                   <div className="flex items-center gap-2">
                     <RepeatIcon
-                      className="size-3.5 text-muted-foreground"
+                      className={cn(
+                        "size-3.5",
+                        editor.repeat === "once"
+                          ? "text-muted-foreground"
+                          : "text-blue-500",
+                      )}
                       aria-hidden="true"
                     />
                     <Select
@@ -1662,39 +931,61 @@ export function SchedulingTab() {
                 )}
               </div>
 
-              <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-3">
-                {editor.task && (
-                  <Button
+              <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-3">
+                {/* Close + Run live together on the left. */}
+                <div className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/10 px-1.5 py-1.5">
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={deleteTask}
-                    disabled={saving}
-                    className={cn(
-                      "shrink-0 rounded-full px-2.5 text-red-600 hover:bg-red-500/10 hover:text-red-600 dark:text-red-400",
-                      calendarDeleteArmed && "bg-red-500/10",
-                    )}
+                    aria-label="Close"
+                    title="Close"
+                    onClick={closeEditor}
+                    className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
-                    <Trash2 className="mr-1 size-3.5" />
-                    {calendarDeleteArmed ? "Confirm" : "Delete"}
-                  </Button>
-                )}
-                <div className="min-w-0 flex-1">
-                  <PromptPill
-                    busy={editorDrafting}
-                    busyLabel="Drafting the task…"
-                    placeholder="Describe the task — timing optional…"
-                    onSend={runEditorDraft}
-                  />
+                    <X className="size-4" />
+                  </button>
+                  {editor.task && (
+                    <button
+                      type="button"
+                      aria-label="Run now"
+                      title="Run now"
+                      onClick={runNow}
+                      disabled={saving}
+                      className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                    >
+                      <Play className="size-4" />
+                    </button>
+                  )}
                 </div>
-                <Button
-                  type="button"
-                  onClick={saveEditor}
-                  disabled={!canSave || editorDrafting}
-                  className="h-9 shrink-0 rounded-full px-4"
-                >
-                  {saving ? <Loader2 className="size-4 animate-spin" /> : "Save"}
-                </Button>
+                <ConfirmGroup
+                  onConfirm={saveEditor}
+                  saving={saving}
+                  saved={saved}
+                  confirmDisabled={!canSave}
+                  confirmLabel="Save"
+                  leading={
+                    editor.task ? (
+                      <button
+                        type="button"
+                        onClick={deleteTask}
+                        disabled={saving}
+                        aria-label={
+                          calendarDeleteArmed ? "Confirm delete" : "Delete task"
+                        }
+                        title={
+                          calendarDeleteArmed
+                            ? "Click again to delete"
+                            : "Delete task"
+                        }
+                        className={cn(
+                          "flex size-8 items-center justify-center rounded-full text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-40",
+                          calendarDeleteArmed && "bg-red-500/10",
+                        )}
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    ) : undefined
+                  }
+                />
               </div>
             </SheetContent>
           )}

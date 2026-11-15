@@ -8,6 +8,7 @@ import {
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
 import { SessionUsage } from "@/components/assistant-ui/session-usage";
+import { HomeTodo } from "@/components/assistant-ui/home-todo";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
 import { finishedGroupTitle } from "@/components/assistant-ui/tools/group-title";
@@ -301,6 +302,13 @@ const isNewChatView = (s: AssistantState) =>
 const Thread: FC = () => {
   const isNew = useAuiState(isNewChatView);
   const mainId = useAuiState((s) => (s.threads as any)?.mainThreadId as string | undefined);
+  // Server-side thread id for this runtime. Permissions and questions are
+  // keyed by it, so every poller in this thread is scoped to this id instead
+  // of leaking another session's pending prompt into this composer.
+  const activeThreadId = useAuiState((s) => {
+    const state = s as any;
+    return (state?.threadListItem?.remoteId || "") as string;
+  });
   // Send-only choreography WITHOUT timers or overlay states (a previous
   // timer-based handoff could stick and hide the chat forever): landing ↔
   // chat swaps instantly via distinct keys, and the send moment is detected
@@ -360,14 +368,19 @@ const Thread: FC = () => {
         {isNew ? (
           <div
             key="landing"
-            className="flex flex-1 flex-col items-center justify-center gap-6 px-4"
+            className="relative flex flex-1 flex-col items-center justify-center gap-6 px-4"
           >
+            {/* Home checklist: next heartbeat work, reminders and today's
+                tasks. It lives only here, so the first send removes it. */}
+            <div className="pointer-events-none absolute top-2 left-4 z-20 hidden md:block">
+              <HomeTodo />
+            </div>
             <div>
               <ThreadWelcome />
             </div>
             <div className="flex w-full max-w-(--thread-max-width) flex-col">
               <div className="relative z-10 w-full">
-                <Composer />
+                <Composer threadId={activeThreadId} />
               </div>
               {/* Tucked under the bar until mascot + models are ready, then
                   springs out. Stays mounted while hidden so the layout never
@@ -410,6 +423,7 @@ const Thread: FC = () => {
               className="aui-thread-viewport-footer mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-2 overflow-visible sticky bottom-0 mt-auto pb-4 md:pb-6 bg-transparent"
             >
               <QuestionPanel
+                threadId={activeThreadId}
                 fallback={
                   /* On send the bar glides center → bottom; on navigation it is
                      simply there (mount-only initial, never traps the UI). */
@@ -418,7 +432,7 @@ const Thread: FC = () => {
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ type: "spring", stiffness: 260, damping: 30 }}
                   >
-                    <Composer />
+                    <Composer threadId={activeThreadId} />
                   </motion.div>
                 }
               />
@@ -430,12 +444,17 @@ const Thread: FC = () => {
       {/* Goals float top-right, overlaying the thread — never docked over the composer. */}
       <div className="pointer-events-none absolute top-4 right-4 z-20 flex items-center justify-end gap-2">
         <div className="pointer-events-auto">
-          <SessionUsage />
-        </div>
-        <div className="pointer-events-auto">
           <GoalsPanel />
         </div>
       </div>
+
+      {/* Context usage is its own centered island, just under the top edge.
+          It only exists once the chat has messages, never on the landing. */}
+      {!isNew && (
+        <div className="pointer-events-none absolute top-2 left-1/2 z-20 -translate-x-1/2">
+          <SessionUsage />
+        </div>
+      )}
 
       <SelectionToolbar />
     </ThreadPrimitive.Root>
@@ -554,7 +573,7 @@ const PLACEHOLDERS = [
   "Ask Qube to help with any task...",
 ];
 
-const Composer: FC = () => {
+const Composer: FC<{ threadId?: string }> = ({ threadId }) => {
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const [showAnimated, setShowAnimated] = useState(true);
   const aui = useAui();
@@ -714,7 +733,7 @@ const Composer: FC = () => {
   });
 
   const { pending: permissionPending, respond: respondPermission } =
-    usePermissionPoller();
+    usePermissionPoller(threadId);
 
   return (
     <ComposerPrimitive.Unstable_TriggerPopoverRoot>

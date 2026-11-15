@@ -21,8 +21,12 @@ export function useAskUserPoller(threadId?: string) {
   const [pending, setPending] = useState<PendingQuestionnaire | null>(null);
 
   const check = useCallback(async () => {
+    if (!threadId) {
+      setPending(null);
+      return;
+    }
     try {
-      const params = threadId ? `?threadId=${encodeURIComponent(threadId)}` : "";
+      const params = `?threadId=${encodeURIComponent(threadId)}`;
       const res = await fetch(`/api/ask-user/pending${params}`);
       const data = await res.json();
       if (data.questions && data.questions.length > 0) {
@@ -36,10 +40,16 @@ export function useAskUserPoller(threadId?: string) {
   }, [threadId]);
 
   useEffect(() => {
+    // Scope strictly to this thread: a questionnaire raised elsewhere must
+    // never take over another chat's composer.
+    if (!threadId) {
+      setPending(null);
+      return;
+    }
     const interval = setInterval(check, 500);
     check();
     return () => clearInterval(interval);
-  }, [check]);
+  }, [check, threadId]);
 
   const respond = useCallback(
     async (answers: Record<string, string | string[]>) => {

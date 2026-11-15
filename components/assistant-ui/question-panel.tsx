@@ -26,8 +26,11 @@ function emptyState(): PerQuestionState {
  * controls stay visible until answered. The composer remains mounted behind
  * it (hidden) so an in-progress message draft survives the question.
  */
-export const QuestionPanel: FC<{ fallback?: ReactNode }> = ({ fallback }) => {
-  const { pending, respond } = useAskUserPoller();
+export const QuestionPanel: FC<{ fallback?: ReactNode; threadId?: string }> = ({
+  fallback,
+  threadId,
+}) => {
+  const { pending, respond } = useAskUserPoller(threadId);
   const [state, setState] = useState<Record<string, PerQuestionState>>({});
   const [index, setIndex] = useState(0);
 

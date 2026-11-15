@@ -30,6 +30,7 @@ import {
   Trash2Icon,
   CheckIcon,
   XIcon,
+  Loader2,
   Settings as SettingsIcon,
 } from "lucide-react";
 
@@ -59,6 +60,49 @@ function CurtainText({ show, children }: { show: boolean; children: React.ReactN
 const ROW =
   "flex h-9 w-full min-w-0 cursor-pointer items-center rounded-lg px-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground";
 const ROW_ICON = "size-4 shrink-0";
+
+type LiveThreadStatus = {
+  active: string[];
+  permissions: string[];
+  questions: string[];
+};
+
+/**
+ * Per-session badge: spinner while the run is working, amber dot while it
+ * waits for an answer/permission, blue dot once the session has ended.
+ */
+const ThreadStatusIndicator: FC<{
+  status: "running" | "pending" | "ended" | null;
+}> = ({ status }) => {
+  if (!status) return null;
+  if (status === "running") {
+    return (
+      <span
+        className="ml-1.5 flex size-4 shrink-0 items-center justify-center"
+        title="Working…"
+        aria-label="Session working"
+      >
+        <Loader2 className="size-3 animate-spin text-muted-foreground" />
+      </span>
+    );
+  }
+  if (status === "pending") {
+    return (
+      <span
+        className="ml-1.5 size-1.5 shrink-0 rounded-full bg-amber-400 shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-amber-400)_18%,transparent)]"
+        title="Waiting for your answer"
+        aria-label="Session waiting for you"
+      />
+    );
+  }
+  return (
+    <span
+      className="ml-1.5 size-1.5 shrink-0 rounded-full bg-[#2f7cf6]"
+      title="Session ended"
+      aria-label="Session ended"
+    />
+  );
+};
 
 const RenameInput: FC<{
   initial: string;
@@ -135,6 +179,42 @@ export const QubeSidebar: FC = () => {
   const setSearchOpen = useThreadStore((s) => s.setSearchOpen);
 
   const aui = useAui();
+
+  // Live runs + pending interactions, keyed by server thread id. Polled
+  // instead of derived from the open thread so background sessions keep
+  // their spinner/dot even while another chat is focused.
+  const [liveStatus, setLiveStatus] = useState<LiveThreadStatus>({
+    active: [],
+    permissions: [],
+    questions: [],
+  });
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/threads/status", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            setLiveStatus({
+              active: Array.isArray(data?.active) ? data.active : [],
+              permissions: Array.isArray(data?.permissions) ? data.permissions : [],
+              questions: Array.isArray(data?.questions) ? data.questions : [],
+            });
+          }
+        }
+      } catch {
+        // Keep the last known badges; the next poll retries.
+      }
+      if (!cancelled) timer = setTimeout(load, 2000);
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   // Runtime thread list (server-persisted via the thread-list adapter).
   // Unstarted local threads stay hidden until their first message.
@@ -328,6 +408,18 @@ export const QubeSidebar: FC = () => {
               const active = t.id === mainThreadId;
               const renaming = renamingId === t.id;
               const title = t.title || "New Chat";
+              const serverId = t.remoteId || t.id;
+              const waiting =
+                liveStatus.permissions.includes(serverId) ||
+                liveStatus.questions.includes(serverId);
+              const working = !waiting && liveStatus.active.includes(serverId);
+              const statusKind = waiting
+                ? "pending"
+                : working
+                  ? "running"
+                  : t.lastMessageAt
+                    ? "ended"
+                    : null;
               return (
                 <div
                   key={t.id}
@@ -361,6 +453,7 @@ export const QubeSidebar: FC = () => {
                   ) : (
                     <>
                       <span className="min-w-0 flex-1 truncate">{title}</span>
+                      <ThreadStatusIndicator status={statusKind} />
                       {/* Hover-only reveal (active or not): buttons stay hidden
                           until the row itself is hovered. */}
                       <span

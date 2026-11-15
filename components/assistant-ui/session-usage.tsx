@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuiState } from "@assistant-ui/react";
+import { AnimatePresence, motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 
@@ -11,8 +12,13 @@ type UsageSummary = {
   usedTokens: number;
   remainingTokens: number;
   totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
   costUsd: number | null;
 };
+
+// Dynamic-island motion: the same spring the reference component uses.
+const ISLAND_SPRING = { type: "spring", stiffness: 400, damping: 30 } as const;
 
 function formatTokens(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "0";
@@ -43,11 +49,16 @@ function usageModelFromStorage(): string {
 }
 
 /**
- * Remaining context + real session cost, pinned to the thread's top-right
- * corner. Token counts come from provider usage events; the small ring fills
- * with the remaining share of the model's context window. Cost is rendered
- * only when a gateway reported it or explicit list pricing is known — free,
- * local, subscription, and unpriced models show context alone.
+ * Live context usage as a dynamic-island pill.
+ *
+ * Collapsed it shows only the used share of the context window (ring + %),
+ * centered at the top of the thread. Hovering/focusing morphs it into a
+ * compact detail card with the used/window graph, the session's input and
+ * output token split, and the real session price when one is known.
+ *
+ * Token counts come from provider usage events; cost is rendered only when a
+ * gateway reported it or explicit list pricing is known — free, local,
+ * subscription, and unpriced models show context alone.
  */
 export function SessionUsage({ className }: { className?: string }) {
   const threadIdFromState = useAuiState((s) => {
@@ -75,6 +86,7 @@ export function SessionUsage({ className }: { className?: string }) {
   const [model, setModel] = useState(usageModelFromStorage);
   const [refreshKey, setRefreshKey] = useState(0);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const syncModel = () => {
@@ -125,65 +137,175 @@ export function SessionUsage({ className }: { className?: string }) {
 
   if (!usage || usage.contextWindow <= 0) return null;
 
-  const remaining = Math.max(0, Math.min(usage.remainingTokens, usage.contextWindow));
-  const fraction = usage.contextWindow > 0 ? remaining / usage.contextWindow : 0;
-  const radius = 6.25;
+  // Used context, not remaining: the ring fills up as the window is consumed.
+  const contextWindow = usage.contextWindow;
+  const used = Math.max(0, Math.min(usage.usedTokens, contextWindow));
+  const fraction = contextWindow > 0 ? used / contextWindow : 0;
+  const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)));
+  const radius = 6.75;
   const circumference = 2 * Math.PI * radius;
   const arc = Math.max(0, Math.min(circumference, circumference * fraction));
   const cost = usage.costUsd != null ? formatCost(usage.costUsd) : "";
-  const used = Math.max(0, usage.usedTokens);
+  const input = Math.max(0, usage.inputTokens);
+  const output = Math.max(0, usage.outputTokens);
+  const sessionTokens = input + output;
+  const inputShare = sessionTokens > 0 ? (input / sessionTokens) * 100 : 0;
+  const outputShare = sessionTokens > 0 ? (output / sessionTokens) * 100 : 0;
   const title = [
-    `${formatTokens(remaining)} context left`,
-    `${formatTokens(used)} of ${formatTokens(usage.contextWindow)} used`,
+    `${percent}% of context used`,
+    `${formatTokens(used)} of ${formatTokens(contextWindow)} tokens`,
+    `${formatTokens(usage.remainingTokens)} left`,
     cost ? `${cost} this session` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
   return (
-    <div
+    <motion.div
+      layout
+      initial={false}
+      animate={{
+        width: expanded ? 276 : 124,
+        borderRadius: expanded ? 18 : 999,
+      }}
+      transition={ISLAND_SPRING}
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      onFocus={() => setExpanded(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setExpanded(false);
+        }
+      }}
+      tabIndex={0}
+      role="status"
+      aria-label={title}
+      title={expanded ? undefined : title}
       className={cn(
-        "text-muted-foreground/80 flex h-7 items-center gap-1.5 rounded-full border border-border/50 bg-background/65 px-2.5 text-[11px] font-medium tabular-nums shadow-sm backdrop-blur-md",
+        "pointer-events-auto overflow-hidden border border-border/55 bg-background/85 text-foreground shadow-[0_8px_30px_-16px_rgba(0,0,0,0.24)] outline-none backdrop-blur-xl focus-visible:ring-2 focus-visible:ring-ring/40",
         className,
       )}
-      title={title}
-      aria-label={title}
     >
-      <svg
-        viewBox="0 0 16 16"
-        className="size-3.5 shrink-0 -rotate-90"
-        aria-hidden="true"
-      >
-        <circle
-          cx="8"
-          cy="8"
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          opacity="0.22"
-        />
-        <circle
-          cx="8"
-          cy="8"
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeDasharray={`${arc} ${circumference}`}
-          className="text-foreground/80 transition-[stroke-dasharray] duration-500"
-        />
-      </svg>
-      <span className="leading-none">{formatTokens(remaining)}</span>
-      {cost ? (
-        <>
-          <span className="text-muted-foreground/40" aria-hidden="true">
-            ·
-          </span>
-          <span className="leading-none">{cost}</span>
-        </>
-      ) : null}
-    </div>
+      <AnimatePresence initial={false} mode="wait">
+        {expanded ? (
+          <motion.div
+            key="detail"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.14 }}
+            className="px-3.5 pt-3 pb-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Context used
+              </span>
+              <span className="text-xs font-semibold tabular-nums text-foreground">
+                {percent}%
+              </span>
+            </div>
+
+            {/* Used-context graph: fills left → right as the window is used. */}
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <motion.div
+                initial={false}
+                animate={{ width: `${percent}%` }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="h-full rounded-full bg-foreground/75"
+              />
+            </div>
+            <div className="mt-1 flex items-center justify-between text-[10px] tabular-nums text-muted-foreground/80">
+              <span>{formatTokens(used)} used</span>
+              <span>{formatTokens(contextWindow)} window</span>
+            </div>
+
+            <div className="my-2.5 h-px w-full bg-border/60" />
+
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Session tokens</span>
+              <span className="font-medium tabular-nums text-foreground/80">
+                {formatTokens(sessionTokens)}
+              </span>
+            </div>
+            <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full bg-muted">
+              <motion.div
+                initial={false}
+                animate={{ width: `${inputShare}%` }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="h-full bg-sky-500"
+              />
+              <motion.div
+                initial={false}
+                animate={{ width: `${outputShare}%` }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="h-full bg-emerald-500"
+              />
+            </div>
+            <div className="mt-1.5 grid grid-cols-2 gap-2 text-[10px]">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="size-1.5 shrink-0 rounded-full bg-sky-500" />
+                <span className="truncate text-muted-foreground">Input</span>
+                <span className="ml-auto font-medium tabular-nums text-foreground/80">
+                  {formatTokens(input)}
+                </span>
+              </div>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+                <span className="truncate text-muted-foreground">Output</span>
+                <span className="ml-auto font-medium tabular-nums text-foreground/80">
+                  {formatTokens(output)}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-2.5 flex items-center justify-between border-t border-border/60 pt-2 text-[11px]">
+              <span className="text-muted-foreground">Session cost</span>
+              <span className="font-semibold tabular-nums text-foreground">
+                {cost || "—"}
+              </span>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="pill"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.1 }}
+            className="flex h-9 items-center gap-2 px-3"
+          >
+            <svg
+              viewBox="0 0 18 18"
+              className="size-4 shrink-0 -rotate-90"
+              aria-hidden="true"
+            >
+              <circle
+                cx="9"
+                cy="9"
+                r={radius}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                opacity="0.18"
+              />
+              <circle
+                cx="9"
+                cy="9"
+                r={radius}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeDasharray={`${arc} ${circumference}`}
+                className="text-foreground/80 transition-[stroke-dasharray] duration-500"
+              />
+            </svg>
+            <span className="whitespace-nowrap text-[11px] font-medium leading-none tabular-nums">
+              {percent}% used
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

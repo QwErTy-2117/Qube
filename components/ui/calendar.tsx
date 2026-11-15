@@ -41,7 +41,7 @@ function CalendarDayButton({
         buttonVariants({ variant: "ghost" }),
         "size-8 rounded-full p-0 font-normal transition-colors duration-150",
         selected
-          ? "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus-visible:bg-primary focus-visible:text-primary-foreground"
+          ? "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground dark:hover:bg-primary dark:hover:text-primary-foreground focus-visible:bg-primary focus-visible:text-primary-foreground dark:focus-visible:bg-primary dark:focus-visible:text-primary-foreground"
           : today
             ? "bg-accent text-accent-foreground hover:bg-accent/80 hover:text-accent-foreground"
             : "hover:bg-accent hover:text-accent-foreground",

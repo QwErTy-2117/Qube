@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "motion/react";
 import { SchedulingTab } from "./scheduling-tab";
+import { ConfirmGroup } from "./confirm-group";
 import { ConnectorsTab } from "./connectors-tab";
 import { SkillsTab } from "./skills-tab";
 import { AllowedDirectoriesSection } from "./allowed-directories";
@@ -2491,8 +2492,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
                     </div>
                     <div className="flex items-center justify-between px-4 py-3">
                       <div className="space-y-0.5">
-                        <span className="text-sm font-medium text-foreground">Keep server running</span>
-                        <p className="text-xs text-muted-foreground">Maintain the background server for scheduled tasks and heartbeat monitoring.</p>
+                        <span className="text-sm font-medium text-foreground">Keep background server alive</span>
+                        <p className="text-xs text-muted-foreground">Closing the window keeps Qube running in the background, so chats and scheduled tasks continue.</p>
                       </div>
                       <SwitchToggle checked={keepAlive} onCheckedChange={(v) => {
                         setKeepAlive(v);
@@ -3560,63 +3561,3 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   );
 }
 
-function ConfirmGroup({
-  onCancel,
-  onConfirm,
-  saving,
-  saved,
-  confirmDisabled = false,
-}: {
-  onCancel: () => void;
-  onConfirm: () => void;
-  saving: boolean;
-  saved: boolean;
-  confirmDisabled?: boolean;
-}) {
-  return (
-    <div className="w-fit ml-auto flex items-center gap-2 rounded-full border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-1.5 py-1.5 shrink-0">
-      <button
-        onClick={onCancel}
-        type="button"
-        className="flex items-center justify-center size-8 rounded-full text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
-        title="Cancel"
-      >
-        <XIcon className="size-4" />
-      </button>
-      <div className="relative">
-        <AnimatePresence mode="wait">
-          {saved ? (
-            <motion.div
-              key="saved"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              className="flex items-center justify-center size-8 rounded-full bg-emerald-500 text-white"
-            >
-              <CheckIcon className="size-4" />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="save"
-              initial={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-            >
-              <Button
-                onClick={onConfirm}
-                disabled={saving || confirmDisabled}
-                className="rounded-full font-semibold h-8 px-4"
-                size="sm"
-              >
-                {saving ? (
-                  <Loader2Icon className="size-4 animate-spin" />
-                ) : (
-                  "Confirm"
-                )}
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-}

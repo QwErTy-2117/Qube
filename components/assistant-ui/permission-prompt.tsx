@@ -13,8 +13,12 @@ export function usePermissionPoller(threadId?: string) {
   const [pending, setPending] = useState<PermissionRequest | null>(null);
 
   const check = useCallback(async () => {
+    if (!threadId) {
+      setPending(null);
+      return;
+    }
     try {
-      const params = threadId ? `?threadId=${encodeURIComponent(threadId)}` : "";
+      const params = `?threadId=${encodeURIComponent(threadId)}`;
       const res = await fetch(`/api/permission/pending${params}`);
       const data = await res.json();
       if (data.pending && data.pending.length > 0) {
@@ -28,10 +32,16 @@ export function usePermissionPoller(threadId?: string) {
   }, [threadId]);
 
   useEffect(() => {
+    // Without an active server thread there is nothing this composer could
+    // legitimately own — never fall back to a global (cross-session) prompt.
+    if (!threadId) {
+      setPending(null);
+      return;
+    }
     const interval = setInterval(check, 500);
     check();
     return () => clearInterval(interval);
-  }, [check]);
+  }, [check, threadId]);
 
   const respond = useCallback(
     async (approved: boolean, always?: boolean) => {

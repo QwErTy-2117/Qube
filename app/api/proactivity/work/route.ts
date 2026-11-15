@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { addDays, format, startOfDay } from "date-fns";
+import { addDays, startOfDay } from "date-fns";
 
 import { getTasks } from "@/lib/scheduler/task-store";
 import { isTaskDone } from "@/lib/scheduler/board-status";
 import { taskOccurrencesInRange } from "@/lib/scheduler/calendar";
 import { listActionableHeartbeatWork } from "@/lib/proactivity/heartbeat-work";
+import { cleanTaskTitle } from "@/lib/todo/display";
+import type { ScheduledTask } from "@/lib/scheduler/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,10 +14,32 @@ export const runtime = "nodejs";
 type HomeTodoItem = {
   id: string;
   title: string;
-  meta: string;
   done: boolean;
   kind: "heartbeat" | "reminder" | "today";
+  /** Present when the row maps to an editable task. */
+  taskId?: string;
 };
+
+const MANUAL_TASK_REF = /\[manual-task:([^\]]+)\]/i;
+
+function manualTaskIdFromText(text: unknown): string | null {
+  const match = MANUAL_TASK_REF.exec(String(text ?? ""));
+  return match ? match[1] : null;
+}
+
+/** Ledger topics wrap the actual name in markers and a short description. */
+function heartbeatWorkTitle(topic: unknown, summary: unknown): string {
+  const raw =
+    String(topic ?? "").trim() ||
+    String(summary ?? "").trim() ||
+    "Heartbeat work";
+  const withoutChecklistLabel = raw.replace(/^due checklist item:\s*/i, "");
+  const withoutMarker = withoutChecklistLabel.replace(MANUAL_TASK_REF, "");
+  // Topics are stored as "<name> — <short description>" so the name alone
+  // stays readable in the widget.
+  const nameOnly = withoutMarker.split(/\s+—\s+/)[0] || withoutMarker;
+  return cleanTaskTitle(nameOnly);
+}
 
 /**
  * Compact home checklist for the new-chat landing:
@@ -27,21 +51,47 @@ type HomeTodoItem = {
  */
 export async function GET() {
   const items: HomeTodoItem[] = [];
+  const seen = new Set<string>();
+  let tasks: ScheduledTask[] = [];
+
+  try {
+    tasks = await getTasks();
+  } catch {
+    // The task store is optional; heartbeat work can still render.
+  }
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+
+  const push = (item: HomeTodoItem) => {
+    if (seen.has(item.id)) return;
+    seen.add(item.id);
+    items.push(item);
+  };
 
   try {
     const work = await listActionableHeartbeatWork(8);
     for (const entry of work) {
-      const title =
-        entry.topic?.trim() ||
-        entry.summary?.trim().slice(0, 90) ||
-        "Heartbeat work";
-      items.push({
+      const taskId =
+        manualTaskIdFromText(entry.topic) ||
+        manualTaskIdFromText(entry.summary) ||
+        manualTaskIdFromText(entry.sourceRef);
+      const linkedTask = taskId ? taskById.get(taskId) : undefined;
+
+      if (linkedTask) {
+        // A manual task can appear both in the ledger and in the task list;
+        // show it once, using the task's clean name and real done state.
+        push({
+          id: `task:${linkedTask.id}`,
+          title: cleanTaskTitle(linkedTask.name),
+          done: isTaskDone(linkedTask),
+          kind: "reminder",
+          taskId: linkedTask.id,
+        });
+        continue;
+      }
+
+      push({
         id: `work:${entry.id}`,
-        title,
-        meta:
-          entry.status === "blocked"
-            ? "Blocked · next heartbeat"
-            : "Next heartbeat",
+        title: heartbeatWorkTitle(entry.topic, entry.summary),
         done: false,
         kind: "heartbeat",
       });
@@ -51,7 +101,6 @@ export async function GET() {
   }
 
   try {
-    const tasks = await getTasks();
     const now = new Date();
     const dayStart = startOfDay(now);
     const dayEnd = addDays(dayStart, 1);
@@ -62,12 +111,12 @@ export async function GET() {
       if (task.type === "heartbeat") continue;
 
       if (task.schedule.kind === "none") {
-        items.push({
+        push({
           id: `task:${task.id}`,
-          title: task.name,
-          meta: "Reminder",
+          title: cleanTaskTitle(task.name),
           done: isTaskDone(task),
           kind: "reminder",
+          taskId: task.id,
         });
         continue;
       }
@@ -99,30 +148,20 @@ export async function GET() {
         ? task.lastRunAt != null &&
           (task.nextRunAt ?? 0) >= dayEnd.getTime()
         : isTaskDone(task);
-      const allDay = Boolean(task.allDay);
-      items.push({
+      push({
         id: `task:${task.id}`,
-        title: task.name,
-        meta: allDay ? "Today · All day" : `Today · ${format(when, "h:mm a")}`,
+        title: cleanTaskTitle(task.name),
         done,
         kind: "today",
+        taskId: task.id,
       });
     }
   } catch {
     // Task store unavailable: return whatever heartbeat work we have.
   }
 
-  // Pending work first, completed items last, keeping source order stable.
-  const ordered = items
-    .map((item, index) => ({ item, index }))
-    .sort((a, b) => {
-      if (a.item.done !== b.item.done) return a.item.done ? 1 : -1;
-      return a.index - b.index;
-    })
-    .map(({ item }) => item);
-
   return NextResponse.json(
-    { items: ordered },
+    { items },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

@@ -61,6 +61,7 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmGroup } from "@/components/shared/confirm-group";
+import { TaskTodoList } from "@/components/shared/task-todo-list";
 import { gentleSpring } from "@/components/ui/kanban-board";
 
 import {
@@ -78,6 +79,7 @@ import type {
 } from "@/components/reui/event-calendar/event-calendar-types";
 
 import type { ScheduledTask } from "@/lib/scheduler/types";
+import type { TaskDraft } from "@/lib/scheduler/task-draft";
 import {
   compactTime,
   repeatValueFor,
@@ -254,7 +256,19 @@ interface TaskEditor {
   repeat: RepeatValue;
 }
 
-export function SchedulingTab() {
+export type SchedulingFocus = {
+  taskId?: string | null;
+  section?: "todo" | null;
+  nonce: number;
+};
+
+export function SchedulingTab({
+  focus = null,
+  onFocusHandled,
+}: {
+  focus?: SchedulingFocus | null;
+  onFocusHandled?: () => void;
+} = {}) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -267,6 +281,12 @@ export function SchedulingTab() {
   const [saved, setSaved] = useState(false);
   const [calendarDeleteArmed, setCalendarDeleteArmed] = useState(false);
   const saveCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Home-widget deep links: scroll to the to-do section and open the row.
+  const todoSectionRef = useRef<HTMLDivElement | null>(null);
+  const [todoFocusTaskId, setTodoFocusTaskId] = useState<string | null>(null);
+  const [scrollToTodoSignal, setScrollToTodoSignal] = useState(0);
+  const handledFocusNonce = useRef<number | null>(null);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -489,6 +509,62 @@ export function SchedulingTab() {
     setEditorOpen(true);
   }, []);
 
+  /** Open a stored task without needing a calendar occurrence (widget deep link). */
+  const openStoredTask = useCallback((task: ScheduledTask) => {
+    const block = taskBlock(task);
+    setEditor({
+      task,
+      title: task.name,
+      description: task.instructions,
+      start: block.start,
+      end: block.end,
+      allDay: Boolean(task.allDay),
+      color: colorToken(task),
+      repeat: repeatValueFor(task),
+    });
+    setEditorError(null);
+    setCalendarDeleteArmed(false);
+    setEditorOpen(true);
+  }, []);
+
+  // Widget rows carry a task id (manual or scheduled). Manual rows open in
+  // the to-do section's dialog; scheduled ones open the calendar editor.
+  useEffect(() => {
+    if (!focus || handledFocusNonce.current === focus.nonce) return;
+    if (loading) return;
+    handledFocusNonce.current = focus.nonce;
+
+    if (focus.section === "todo") {
+      setScrollToTodoSignal((signal) => signal + 1);
+    }
+
+    const task = focus.taskId
+      ? tasks.find((entry) => entry.id === focus.taskId)
+      : undefined;
+    if (task) {
+      if (task.schedule.kind === "none") {
+        setTodoFocusTaskId(task.id);
+      } else {
+        openStoredTask(task);
+      }
+    }
+
+    onFocusHandled?.();
+  }, [focus, loading, tasks, openStoredTask, onFocusHandled]);
+
+  // Let the section render before scrolling, so the redirect lands on the
+  // list rather than merely switching to the tab.
+  useEffect(() => {
+    if (scrollToTodoSignal === 0) return;
+    const timer = setTimeout(() => {
+      todoSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 90);
+    return () => clearTimeout(timer);
+  }, [scrollToTodoSignal]);
+
   // Stable identity: the calendar diffs option props by reference.
   const handleEventClick = useCallback(
     (occurrence: EventCalendarOccurrence<TaskEventData>, event: MouseEvent) => {
@@ -576,22 +652,75 @@ export function SchedulingTab() {
 
   async function saveEditor() {
     if (!editor || saving) return;
-    const title = editor.title.trim();
+    const typedTitle = editor.title.trim();
     const description = editor.description.trim();
-    if (!title) {
-      setEditorError("Give the task a title.");
-      return;
-    }
     if (!description) {
       setEditorError("Describe what the agent should do.");
       return;
     }
-    if (editor.end.getTime() <= editor.start.getTime()) {
-      setEditorError("The task needs a positive length.");
+
+    setSaving(true);
+    setEditorError(null);
+
+    // Leaving the title blank hands the whole task to the main model: it
+    // supplies the name and every schedule setting, with no extra UI.
+    let generated: TaskDraft | null = null;
+    if (!typedTitle) {
+      try {
+        const response = await fetch("/api/scheduler/draft", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: description,
+            allowManual: false,
+            current: editor.task
+              ? {
+                  name: editor.task.name,
+                  instructions: description,
+                  scheduleKind: editor.task.schedule.kind,
+                  intervalMinutes: editor.task.schedule.intervalMinutes,
+                  runAt: editor.task.schedule.runAt
+                    ? new Date(editor.task.schedule.runAt).toISOString()
+                    : undefined,
+                  hour: editor.task.schedule.hour,
+                  minute: editor.task.schedule.minute,
+                  weekdays: editor.task.schedule.weekdays,
+                  monthDay: editor.task.schedule.monthDay,
+                }
+              : null,
+          }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.draft) {
+          throw new Error(data?.error || "Could not generate the task.");
+        }
+        generated = data.draft as TaskDraft;
+      } catch (error) {
+        setEditorError(error instanceof Error ? error.message : String(error));
+        setSaving(false);
+        return;
+      }
+    }
+
+    const title = typedTitle || generated?.name?.trim() || "";
+    if (!title) {
+      setEditorError("Could not generate a title. Add one first.");
+      setSaving(false);
       return;
     }
-    if (editor.repeat === "once" && editor.start.getTime() <= Date.now()) {
+
+    if (editor.end.getTime() <= editor.start.getTime()) {
+      setEditorError("The task needs a positive length.");
+      setSaving(false);
+      return;
+    }
+    if (
+      !generated &&
+      editor.repeat === "once" &&
+      editor.start.getTime() <= Date.now()
+    ) {
       setEditorError("Pick a time in the future for a one-off task.");
+      setSaving(false);
       return;
     }
 
@@ -605,57 +734,68 @@ export function SchedulingTab() {
           ),
         )
       : editor.end;
-    const durationMinutes = Math.max(
-      5,
-      Math.round((end.getTime() - start.getTime()) / 60_000),
-    );
+    const durationMinutes = generated
+      ? 60
+      : Math.max(5, Math.round((end.getTime() - start.getTime()) / 60_000));
     const hour = editor.allDay ? 0 : start.getHours();
     const minute = editor.allDay ? 0 : start.getMinutes();
 
     let schedule: Record<string, unknown>;
-    switch (editor.repeat) {
-      case "once":
-        schedule = { scheduleKind: "once", runAt: start.toISOString() };
-        break;
-      case "hourly":
-        schedule = { scheduleKind: "interval", intervalMinutes: 60 };
-        break;
-      case "daily":
-        schedule = {
-          scheduleKind: "interval",
-          intervalMinutes: 1440,
-          hour,
-          minute,
-        };
-        break;
-      case "weekly":
-        schedule = {
-          scheduleKind: "interval",
-          intervalMinutes: 10_080,
-          hour,
-          minute,
-          weekdays: [start.getDay()],
-        };
-        break;
-      case "monthly":
-        schedule = {
-          scheduleKind: "interval",
-          intervalMinutes: 43_200,
-          hour,
-          minute,
-          monthDay: start.getDate(),
-        };
-        break;
-      default: {
-        const original = editor.task?.schedule;
-        schedule = {
-          scheduleKind: "interval",
-          intervalMinutes: original?.intervalMinutes ?? 1440,
-          hour: original?.hour ?? hour,
-          minute: original?.minute ?? minute,
-          weekdays: original?.weekdays,
-          monthDay: original?.monthDay,
-        };
+    if (generated) {
+      schedule = {
+        scheduleKind: generated.scheduleKind,
+        intervalMinutes: generated.intervalMinutes,
+        runAt: generated.runAt,
+        hour: generated.hour,
+        minute: generated.minute,
+        weekdays: generated.weekdays,
+        monthDay: generated.monthDay,
+      };
+    } else {
+      switch (editor.repeat) {
+        case "once":
+          schedule = { scheduleKind: "once", runAt: start.toISOString() };
+          break;
+        case "hourly":
+          schedule = { scheduleKind: "interval", intervalMinutes: 60 };
+          break;
+        case "daily":
+          schedule = {
+            scheduleKind: "interval",
+            intervalMinutes: 1440,
+            hour,
+            minute,
+          };
+          break;
+        case "weekly":
+          schedule = {
+            scheduleKind: "interval",
+            intervalMinutes: 10_080,
+            hour,
+            minute,
+            weekdays: [start.getDay()],
+          };
+          break;
+        case "monthly":
+          schedule = {
+            scheduleKind: "interval",
+            intervalMinutes: 43_200,
+            hour,
+            minute,
+            monthDay: start.getDate(),
+          };
+          break;
+        default: {
+          const original = editor.task?.schedule;
+          schedule = {
+            scheduleKind: "interval",
+            intervalMinutes: original?.intervalMinutes ?? 1440,
+            hour: original?.hour ?? hour,
+            minute: original?.minute ?? minute,
+            weekdays: original?.weekdays,
+            monthDay: original?.monthDay,
+          };
+        }
       }
     }
 
@@ -667,12 +807,10 @@ export function SchedulingTab() {
       instructions: description,
       color: editor.color,
       durationMinutes,
-      allDay: editor.allDay,
+      allDay: generated ? false : editor.allDay,
       ...schedule,
     };
 
-    setSaving(true);
-    setEditorError(null);
     try {
       const response = await fetch("/api/scheduler/tasks", {
         method: "POST",
@@ -757,7 +895,6 @@ export function SchedulingTab() {
   const canSave = useMemo(() => {
     if (!editor || saving) return false;
     return (
-      editor.title.trim().length > 0 &&
       editor.description.trim().length > 0 &&
       editor.end.getTime() > editor.start.getTime()
     );
@@ -773,15 +910,16 @@ export function SchedulingTab() {
 
   return (
     <MotionConfig transition={gentleSpring}>
-      <div className="flex h-full min-h-0 w-full flex-col gap-3">
+      <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto pr-1 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {fetchError && (
           <p className="shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
             {fetchError}
           </p>
         )}
 
-        {/* Scheduled tasks calendar */}
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-background">
+        {/* Scheduled tasks calendar: fills the tab like before. The to-do
+            section lives below the fold and is reached by scrolling. */}
+        <div className="relative flex h-full min-h-[340px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-background">
           <EventCalendar
             events={events}
             defaultDate={TODAY}
@@ -804,6 +942,15 @@ export function SchedulingTab() {
             <EventCalendarContent className="min-h-0 flex-1" />
           </EventCalendar>
         </div>
+
+        {/* Manual reminders (the non-recurring tasks that feed the widget). */}
+        <TaskTodoList
+          tasks={tasks}
+          onChanged={fetchTasks}
+          openTaskId={todoFocusTaskId}
+          onOpenHandled={() => setTodoFocusTaskId(null)}
+          sectionRef={todoSectionRef}
+        />
 
         {/* Scheduled task create/edit */}
         <Sheet

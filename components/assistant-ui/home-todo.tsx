@@ -1,28 +1,48 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowUpRightIcon, XIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { orderTodoItems } from "@/lib/todo/display";
 
 type HomeTodoItem = {
   id: string;
   title: string;
-  meta: string;
   done: boolean;
   kind: "heartbeat" | "reminder" | "today";
+  taskId?: string;
 };
 
 const POLL_MS = 30_000;
 
+function openTasksSection(taskId?: string) {
+  window.dispatchEvent(
+    new CustomEvent("qube-open-settings", {
+      detail: {
+        tab: "scheduling",
+        section: "todo",
+        ...(taskId ? { taskId } : {}),
+      },
+    }),
+  );
+}
+
 /**
- * Minimal new-chat checklist: what the next heartbeat will work on, open
+ * Compact new-chat checklist: what the next heartbeat will work on, open
  * reminders, and today's scheduled tasks. It is mounted only on the landing
- * view, so sending the first message removes it naturally.
+ * view, so sending the first message removes it naturally. Collapsed it keeps
+ * just the same slim header row as the goals panel.
  */
 export function HomeTodo({ className }: { className?: string }) {
   const [items, setItems] = useState<HomeTodoItem[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  // A stable per-mount seed randomizes the rows without reshuffling them on
+  // every 30-second poll.
+  const [orderSeed] = useState(() => Math.random());
 
   useEffect(() => {
     let cancelled = false;
@@ -52,81 +72,97 @@ export function HomeTodo({ className }: { className?: string }) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
+  }, [reloadKey]);
+
+  useEffect(() => {
+    const reload = () => setReloadKey((key) => key + 1);
+    window.addEventListener("qube-tasks-changed", reload);
+    return () => window.removeEventListener("qube-tasks-changed", reload);
   }, []);
 
-  const openTasks = () => {
-    window.dispatchEvent(
-      new CustomEvent("qube-open-settings", { detail: { tab: "scheduling" } }),
-    );
-  };
+  const ordered = useMemo(
+    () => orderTodoItems(items, orderSeed),
+    [items, orderSeed],
+  );
 
   // One item is not a list — stay out of the way until there is real work.
   if (!loaded || items.length <= 1) return null;
 
-  const remaining = items.filter((item) => !item.done).length;
-
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
       className={cn(
-        "pointer-events-auto flex max-h-[280px] w-[320px] flex-col overflow-hidden rounded-2xl border border-border/60 bg-background/75 text-left shadow-[0_10px_36px_-24px_rgba(0,0,0,0.35)] backdrop-blur-md",
+        "pointer-events-auto w-60 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-background/95 p-3 text-left shadow-lg backdrop-blur-xl",
         className,
       )}
     >
       <button
         type="button"
-        onClick={openTasks}
-        className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3.5 pb-2 text-left transition-colors hover:bg-muted/20"
-        title="Open Tasks"
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center justify-between gap-2 text-left"
+        aria-expanded={expanded}
+        title={expanded ? "Collapse to-do list" : "Expand to-do list"}
       >
-        <span className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold tracking-tight text-foreground">
-            to-do
-          </span>
-          <span className="text-[10px] font-medium tabular-nums text-muted-foreground/70">
-            {remaining} left
-          </span>
+        <span className="min-w-0 text-[13px] font-semibold text-foreground">
+          to-do
         </span>
-        <ArrowUpRightIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
+        <ChevronDownIcon
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-200",
+            !expanded && "-rotate-90",
+          )}
+        />
       </button>
 
-      <div className="min-h-0 overflow-y-auto overflow-x-hidden px-2 pb-2 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={openTasks}
-            className="flex w-full items-start gap-2.5 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-muted/30"
-            title={item.title}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
           >
-            <span
-              className={cn(
-                "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border",
-                item.done
-                  ? "border-muted-foreground/25 bg-muted/40 text-muted-foreground"
-                  : "border-muted-foreground/35",
-              )}
-              aria-hidden="true"
-            >
-              {item.done ? <XIcon className="size-2.5" strokeWidth={3} /> : null}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span
-                className={cn(
-                  "block truncate text-[12.5px] leading-5",
-                  item.done
-                    ? "text-muted-foreground line-through"
-                    : "text-foreground",
-                )}
-              >
-                {item.title}
-              </span>
-              <span className="block truncate text-[10px] leading-4 text-muted-foreground/65">
-                {item.meta}
-              </span>
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
+            <div className="space-y-0.5 pt-2">
+              {ordered.slice(0, 5).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => openTasksSection(item.taskId)}
+                  className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/40"
+                  title={item.title}
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border",
+                      item.done
+                        ? "border-muted-foreground/25 bg-muted/40 text-muted-foreground"
+                        : "border-muted-foreground/35",
+                    )}
+                    aria-hidden="true"
+                  >
+                    {item.done ? (
+                      <CheckIcon className="size-2.5" strokeWidth={3} />
+                    ) : null}
+                  </span>
+                  <span
+                    className={cn(
+                      "block min-w-0 flex-1 truncate text-[12.5px] leading-5",
+                      item.done
+                        ? "text-muted-foreground line-through"
+                        : "text-foreground",
+                    )}
+                  >
+                    {item.title}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

@@ -1,8 +1,23 @@
 "use client";
 
-import { useState, type FC } from "react";
+import { useState, type FC, type ReactNode } from "react";
 import { useAui, useAuiState } from "@assistant-ui/react";
 import { CheckIcon, XIcon } from "lucide-react";
+
+import { SessionUsage } from "@/components/assistant-ui/session-usage";
+
+/**
+ * Context usage island, centered in the header strip that sits above the
+ * thread (outside the scrolling chat area, below the window drag region).
+ */
+const HeaderCenter: FC<{ children?: ReactNode }> = ({ children }) => (
+  <div className="relative z-30 flex h-12 shrink-0 items-center px-4">
+    {children}
+    <div className="pointer-events-none absolute top-1.5 left-1/2 z-30 -translate-x-1/2">
+      <SessionUsage />
+    </div>
+  </div>
+);
 
 /**
  * Top-left chat name. Hidden while the thread is still new (unstarted);
@@ -22,7 +37,7 @@ export const ChatTitle: FC = () => {
 
   if (!started && !editing) {
     // Keep the header height stable, but show no title on fresh chats.
-    return <div className="flex h-12 shrink-0 items-center px-4" aria-hidden />;
+    return <HeaderCenter />;
   }
 
   const commit = (v: string) => {
@@ -37,7 +52,7 @@ export const ChatTitle: FC = () => {
 
   if (editing) {
     return (
-      <div className="flex h-12 shrink-0 items-center gap-1 px-4">
+      <HeaderCenter>
         <input
           autoFocus
           value={value}
@@ -72,22 +87,24 @@ export const ChatTitle: FC = () => {
         >
           <XIcon className="size-3.5" />
         </button>
-      </div>
+      </HeaderCenter>
     );
   }
 
   return (
-    <div className="flex h-12 shrink-0 items-center px-4">
-      <button
-        onClick={() => {
-          setValue(title === "New Chat" ? "" : title);
-          setEditing(true);
-        }}
-        title="Rename chat"
-        className="max-w-[320px] truncate rounded px-1 py-0.5 text-left text-sm font-medium text-foreground/90 transition-colors hover:bg-accent hover:text-foreground"
-      >
-        {title}
-      </button>
-    </div>
+    <HeaderCenter>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => {
+            setValue(title === "New Chat" ? "" : title);
+            setEditing(true);
+          }}
+          title="Rename chat"
+          className="max-w-[320px] truncate rounded px-1 py-0.5 text-left text-sm font-medium text-foreground/90 transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {title}
+        </button>
+      </div>
+    </HeaderCenter>
   );
 };

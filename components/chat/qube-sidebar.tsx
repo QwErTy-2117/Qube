@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FC, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FC, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import { useAui, useAuiState } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,11 @@ const OnboardingModal = dynamic(
   { ssr: false },
 ) as any;
 import { useThreadStore, loadExpanded } from "@/lib/chat/thread-store";
+import {
+  THREAD_SEEN_STORAGE_KEY,
+  isThreadUnread,
+  parseThreadSeen,
+} from "@/lib/chat/thread-unread";
 import {
   PanelLeftIcon,
   PlusIcon,
@@ -68,17 +73,18 @@ type LiveThreadStatus = {
 };
 
 /**
- * Per-session badge: spinner while the run is working, amber dot while it
- * waits for an answer/permission, blue dot once the session has ended.
+ * Per-session badge, rendered at the START of the row: spinner while the run
+ * is working, amber dot while it waits for an answer/permission, blue dot for
+ * an unread last message.
  */
 const ThreadStatusIndicator: FC<{
-  status: "running" | "pending" | "ended" | null;
+  status: "running" | "pending" | "unread" | null;
 }> = ({ status }) => {
   if (!status) return null;
   if (status === "running") {
     return (
       <span
-        className="ml-1.5 flex size-4 shrink-0 items-center justify-center"
+        className="mr-1.5 flex size-4 shrink-0 items-center justify-center"
         title="Working…"
         aria-label="Session working"
       >
@@ -89,7 +95,7 @@ const ThreadStatusIndicator: FC<{
   if (status === "pending") {
     return (
       <span
-        className="ml-1.5 size-1.5 shrink-0 rounded-full bg-amber-400 shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-amber-400)_18%,transparent)]"
+        className="mr-1.5 size-1.5 shrink-0 rounded-full bg-amber-400 shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-amber-400)_18%,transparent)]"
         title="Waiting for your answer"
         aria-label="Session waiting for you"
       />
@@ -97,9 +103,9 @@ const ThreadStatusIndicator: FC<{
   }
   return (
     <span
-      className="ml-1.5 size-1.5 shrink-0 rounded-full bg-[#2f7cf6]"
-      title="Session ended"
-      aria-label="Session ended"
+      className="mr-1.5 size-1.5 shrink-0 rounded-full bg-[#2f7cf6]"
+      title="Unread messages"
+      aria-label="Unread messages"
     />
   );
 };
@@ -180,6 +186,28 @@ export const QubeSidebar: FC = () => {
 
   const aui = useAui();
 
+  // Last-checked timestamps (server thread id → ms). The blue dot means the
+  // last message is newer than the last time this thread was viewed.
+  const [seenByThread, setSeenByThread] = useState<Record<string, number>>({});
+  useEffect(() => {
+    try {
+      setSeenByThread(parseThreadSeen(localStorage.getItem(THREAD_SEEN_STORAGE_KEY)));
+    } catch {}
+  }, []);
+  const markSeen = useCallback((threadId: string | undefined) => {
+    if (!threadId) return;
+    setSeenByThread((current) => {
+      const now = Date.now();
+      // Same-millisecond repeats are no-ops; otherwise record the check.
+      if ((current[threadId] ?? 0) >= now) return current;
+      const next = { ...current, [threadId]: now };
+      try {
+        localStorage.setItem(THREAD_SEEN_STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
   // Live runs + pending interactions, keyed by server thread id. Polled
   // instead of derived from the open thread so background sessions keep
   // their spinner/dot even while another chat is focused.
@@ -233,6 +261,29 @@ export const QubeSidebar: FC = () => {
   const mainThreadId = useAuiState(
     (s) => (s.threads as any)?.mainThreadId as string | undefined,
   );
+
+  // First run after this feature ships: treat existing history as checked so
+  // the list does not light up every old chat. New messages still mark unread.
+  const seededSeenRef = useRef(false);
+  useEffect(() => {
+    if (seededSeenRef.current || threadIds.length === 0) return;
+    seededSeenRef.current = true;
+    try {
+      if (localStorage.getItem(THREAD_SEEN_STORAGE_KEY)) return;
+    } catch {
+      return;
+    }
+    const now = Date.now();
+    const seeded: Record<string, number> = {};
+    for (const item of threadItems) {
+      seeded[item.remoteId || item.id] = now;
+    }
+    setSeenByThread(seeded);
+    try {
+      localStorage.setItem(THREAD_SEEN_STORAGE_KEY, JSON.stringify(seeded));
+    } catch {}
+  }, [threadIds, threadItems]);
+
   // Message activity of the open chat: bumping recency when a message lands
   // keeps the active chat on top immediately (the runtime's lastMessageAt
   // only refreshes from the server on reload).
@@ -256,6 +307,33 @@ export const QubeSidebar: FC = () => {
     }
     prevCountRef.current = { id: mainThreadId, len: mainMessagesLength };
   }, [mainThreadId, mainMessagesLength]);
+
+  // Server id of the open chat, so "seen" is stored under the same key the
+  // sidebar uses for `lastMessageAt`.
+  const activeServerId = useMemo(() => {
+    const item = threadItems.find((entry) => entry.id === mainThreadId);
+    return item?.remoteId || item?.id || mainThreadId || "";
+  }, [threadItems, mainThreadId]);
+
+  // Viewing a chat (or coming back to the window while it is open) checks
+  // its latest message. A new message arriving in the open chat also clears
+  // the dot; background chats keep it until they are opened.
+  useEffect(() => {
+    if (!activeServerId) return undefined;
+    const check = () => {
+      try {
+        if (document.visibilityState === "hidden") return;
+      } catch {}
+      markSeen(activeServerId);
+    };
+    check();
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [activeServerId, mainMessagesLength, markSeen]);
 
   const visibleThreads = useMemo(() => {
     const byId = new Map(threadItems.map((t) => [t.id, t]));
@@ -292,6 +370,7 @@ export const QubeSidebar: FC = () => {
   // Missing/deleted threads fall back to a fresh chat, never an error.
   const openChat = (t: { id: string; remoteId?: string }) => {
     emitMascot("jump");
+    markSeen(t.remoteId || t.id);
     try {
       Promise.resolve(aui.threads().switchToThread(t.id)).catch(() => {
         try {
@@ -413,12 +492,14 @@ export const QubeSidebar: FC = () => {
                 liveStatus.permissions.includes(serverId) ||
                 liveStatus.questions.includes(serverId);
               const working = !waiting && liveStatus.active.includes(serverId);
+              const unread =
+                !active && isThreadUnread(t.lastMessageAt, seenByThread[serverId]);
               const statusKind = waiting
                 ? "pending"
                 : working
                   ? "running"
-                  : t.lastMessageAt
-                    ? "ended"
+                  : unread
+                    ? "unread"
                     : null;
               return (
                 <div
@@ -444,6 +525,7 @@ export const QubeSidebar: FC = () => {
                             Promise.resolve(
                               aui.threads().item({ id: t.id }).rename(v.trim().slice(0, 120)),
                             ).catch(() => {});
+                            markSeen(serverId);
                           }
                         } catch {}
                         setRenamingId(null);
@@ -452,8 +534,8 @@ export const QubeSidebar: FC = () => {
                     />
                   ) : (
                     <>
-                      <span className="min-w-0 flex-1 truncate">{title}</span>
                       <ThreadStatusIndicator status={statusKind} />
+                      <span className="min-w-0 flex-1 truncate">{title}</span>
                       {/* Hover-only reveal (active or not): buttons stay hidden
                           until the row itself is hovered. */}
                       <span

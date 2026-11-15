@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuiState } from "@assistant-ui/react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 
@@ -17,8 +17,9 @@ type UsageSummary = {
   costUsd: number | null;
 };
 
-// Dynamic-island motion: the same spring the reference component uses.
-const ISLAND_SPRING = { type: "spring", stiffness: 400, damping: 30 } as const;
+// Dynamic-island motion: a well-damped spring keeps the width/height morph
+// continuous instead of finishing with a snap.
+const ISLAND_SPRING = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 } as const;
 
 function formatTokens(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "0";
@@ -87,6 +88,24 @@ export function SessionUsage({ className }: { className?: string }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // The detail card is absolutely positioned so its size never fights the
+  // pill; measuring it lets the island animate height with the same spring
+  // as the width (no end-of-motion snap).
+  const detailRef = useRef<HTMLDivElement | null>(null);
+  const [detailHeight, setDetailHeight] = useState(196);
+
+  useEffect(() => {
+    const el = detailRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const height = el.offsetHeight;
+      if (height > 0) setDetailHeight(height);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    measure();
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const syncModel = () => {
@@ -162,10 +181,10 @@ export function SessionUsage({ className }: { className?: string }) {
 
   return (
     <motion.div
-      layout
       initial={false}
       animate={{
-        width: expanded ? 276 : 124,
+        width: expanded ? 276 : 88,
+        height: expanded ? detailHeight : 36,
         borderRadius: expanded ? 18 : 999,
       }}
       transition={ISLAND_SPRING}
@@ -182,20 +201,20 @@ export function SessionUsage({ className }: { className?: string }) {
       aria-label={title}
       title={expanded ? undefined : title}
       className={cn(
-        "pointer-events-auto overflow-hidden border border-border/55 bg-background/85 text-foreground shadow-[0_8px_30px_-16px_rgba(0,0,0,0.24)] outline-none backdrop-blur-xl focus-visible:ring-2 focus-visible:ring-ring/40",
+        "pointer-events-auto relative overflow-hidden border border-border/55 bg-background/85 text-foreground shadow-[0_8px_30px_-16px_rgba(0,0,0,0.24)] outline-none backdrop-blur-xl focus-visible:ring-2 focus-visible:ring-ring/40",
         className,
       )}
     >
-      <AnimatePresence initial={false} mode="wait">
-        {expanded ? (
-          <motion.div
-            key="detail"
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.14 }}
-            className="px-3.5 pt-3 pb-3"
-          >
+      {/* Both layers stay mounted so opacity cross-fades while the shell's
+          width/height spring runs; nothing swaps in a single frame. */}
+      <motion.div
+        ref={detailRef}
+        initial={false}
+        animate={{ opacity: expanded ? 1 : 0 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
+        className="absolute inset-x-0 top-0 px-3.5 pt-3 pb-3"
+        aria-hidden={!expanded}
+      >
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-medium text-muted-foreground">
                 Context used
@@ -264,48 +283,45 @@ export function SessionUsage({ className }: { className?: string }) {
                 {cost || "—"}
               </span>
             </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="pill"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.1 }}
-            className="flex h-9 items-center gap-2 px-3"
-          >
-            <svg
-              viewBox="0 0 18 18"
-              className="size-4 shrink-0 -rotate-90"
-              aria-hidden="true"
-            >
-              <circle
-                cx="9"
-                cy="9"
-                r={radius}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                opacity="0.18"
-              />
-              <circle
-                cx="9"
-                cy="9"
-                r={radius}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeDasharray={`${arc} ${circumference}`}
-                className="text-foreground/80 transition-[stroke-dasharray] duration-500"
-              />
-            </svg>
-            <span className="whitespace-nowrap text-[11px] font-medium leading-none tabular-nums">
-              {percent}% used
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </motion.div>
+
+      <motion.div
+        initial={false}
+        animate={{ opacity: expanded ? 0 : 1 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
+        className="flex h-9 w-full items-center justify-center gap-1.5"
+        aria-hidden={expanded}
+      >
+        <svg
+          viewBox="0 0 18 18"
+          className="size-4 shrink-0 -rotate-90"
+          aria-hidden="true"
+        >
+          <circle
+            cx="9"
+            cy="9"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            opacity="0.18"
+          />
+          <circle
+            cx="9"
+            cy="9"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeDasharray={`${arc} ${circumference}`}
+            className="text-foreground/80 transition-[stroke-dasharray] duration-500"
+          />
+        </svg>
+        <span className="whitespace-nowrap text-[11px] font-medium leading-none tabular-nums">
+          {percent}% used
+        </span>
+      </motion.div>
     </motion.div>
   );
 }

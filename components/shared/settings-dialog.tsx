@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, type ReactNode, useCallback } from "react";
+import React, { useState, useEffect, useRef, type ReactNode, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -46,7 +46,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "motion/react";
-import { SchedulingTab } from "./scheduling-tab";
+import { SchedulingTab, type SchedulingFocus } from "./scheduling-tab";
 import { ConfirmGroup } from "./confirm-group";
 import { ConnectorsTab } from "./connectors-tab";
 import { SkillsTab } from "./skills-tab";
@@ -987,6 +987,8 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [tabValue, setTabValue] = useState("preferences");
   const [focusedConnectorId, setFocusedConnectorId] = useState<string | null>(null);
+  const [schedulingFocus, setSchedulingFocus] = useState<SchedulingFocus | null>(null);
+  const schedulingFocusNonce = useRef(0);
 
   // The desktop binary is the source of truth for the version. Until now the
   // label came from the bundled sidecar's package.json, so a stale sidecar
@@ -1907,6 +1909,24 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         } else if (tab === "connectors") {
           setFocusedConnectorId(null);
         }
+        if (tab === "scheduling") {
+          // Home-widget rows deep-link into the Tasks tab: the to-do section
+          // sits under the calendar, so carry both the scroll target and the
+          // task that should open.
+          const taskId =
+            typeof detail?.taskId === "string" && detail.taskId.trim()
+              ? detail.taskId.trim()
+              : null;
+          const section = detail?.section === "todo" ? "todo" : null;
+          if (taskId || section) {
+            schedulingFocusNonce.current += 1;
+            setSchedulingFocus({
+              taskId,
+              section,
+              nonce: schedulingFocusNonce.current,
+            });
+          }
+        }
       } catch {}
       setOpen(true);
     };
@@ -1965,6 +1985,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
     }
     if (!next) {
       setFocusedConnectorId(null);
+      setSchedulingFocus(null);
     }
     setOpen(next);
   };
@@ -2032,9 +2053,9 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         showCloseButton={false}
         className={cn(
           "max-w-4xl w-full p-0 flex flex-col rounded-3xl border border-border bg-background shadow-2xl overflow-hidden",
-          tabValue === "scheduling" ? "sm:max-w-5xl" : "sm:max-w-4xl",
+          "sm:max-w-4xl",
         )}
-        style={{ height: tabValue === "scheduling" ? "min(760px, 92vh)" : "min(660px, 90vh)" }}
+        style={{ height: "min(660px, 90vh)" }}
       >
         <Tabs value={tabValue} onValueChange={handleTabChange} className="flex flex-col flex-1 overflow-hidden">
     <div className="flex items-center px-6 py-3">
@@ -2509,7 +2530,10 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
 
           {/* Scheduling Tab */}
           <TabsContent value="scheduling" className="flex-1 flex flex-col overflow-hidden p-6 mt-0 data-[state=inactive]:hidden">
-            <SchedulingTab />
+            <SchedulingTab
+              focus={schedulingFocus}
+              onFocusHandled={() => setSchedulingFocus(null)}
+            />
             </TabsContent>
         </Tabs>
 

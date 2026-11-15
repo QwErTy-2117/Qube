@@ -7,7 +7,6 @@ import {
 } from "@/components/assistant-ui/attachment";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
-import { SessionUsage } from "@/components/assistant-ui/session-usage";
 import { HomeTodo } from "@/components/assistant-ui/home-todo";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { friendlyToolLabel } from "@/components/assistant-ui/tools/tool-labels";
@@ -371,8 +370,9 @@ const Thread: FC = () => {
             className="relative flex flex-1 flex-col items-center justify-center gap-6 px-4"
           >
             {/* Home checklist: next heartbeat work, reminders and today's
-                tasks. It lives only here, so the first send removes it. */}
-            <div className="pointer-events-none absolute top-2 left-4 z-20 hidden md:block">
+                tasks. Bottom-right so it never competes with the composer;
+                it lives only here, so the first send removes it. */}
+            <div className="pointer-events-none absolute right-4 bottom-4 z-20 hidden md:block">
               <HomeTodo />
             </div>
             <div>
@@ -447,14 +447,6 @@ const Thread: FC = () => {
           <GoalsPanel />
         </div>
       </div>
-
-      {/* Context usage is its own centered island, just under the top edge.
-          It only exists once the chat has messages, never on the landing. */}
-      {!isNew && (
-        <div className="pointer-events-none absolute top-2 left-1/2 z-20 -translate-x-1/2">
-          <SessionUsage />
-        </div>
-      )}
 
       <SelectionToolbar />
     </ThreadPrimitive.Root>

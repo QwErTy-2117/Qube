@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getActivePiRuns } from "@/lib/pi/harness";
 import { getPendingPermissions } from "@/lib/middleware/permission-middleware";
 import { getPendingQuestions } from "@/lib/agent/tools/ask-user-tool";
+import { listRecentRunOutcomes } from "@/lib/agent/execution-ledger";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,8 +29,23 @@ export async function GET() {
     ),
   ];
 
+  // Recent chat outcomes for the top notifications. Five minutes is enough
+  // for a poll (2s) and for a hidden tab to come back without replaying old
+  // history; the client additionally ignores outcomes from before mount.
+  const outcomes = await listRecentRunOutcomes({
+    sinceMs: Date.now() - 5 * 60_000,
+    limit: 50,
+  });
+  const event = (o: (typeof outcomes)[number]) => ({ threadId: o.threadId, at: o.at });
+
   return NextResponse.json(
-    { active, permissions, questions },
+    {
+      active,
+      permissions,
+      questions,
+      completed: outcomes.filter((o) => o.status === "completed").map(event),
+      failed: outcomes.filter((o) => o.status === "failed").map(event),
+    },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

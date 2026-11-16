@@ -39,12 +39,14 @@ export function buildDraftSystemPrompt(opts?: DraftOptions): string {
     allowManual
       ? "You turn a short request into a task draft for Qube's always-on worker. The user is creating a heartbeat reminder unless they ask for a schedule."
       : "You turn a short task request into a scheduled-task draft for Qube's always-on worker.",
-    'Reply with ONE JSON object only: {"name": string, "instructions": string,',
+    'Reply with ONE JSON object only (compact, no prose): {"name": string, "instructions": string,',
     allowManual
       ? ' "scheduleKind": "none"|"once"|"interval", "intervalMinutes"?: number, "runAt"?: string (ISO future),'
       : ' "scheduleKind": "once"|"interval", "intervalMinutes"?: number, "runAt"?: string (ISO future),',
     ' "hour"?: 0-23, "minute"?: 0-59, "weekdays"?: [0-6 Sun-Sat], "monthDay"?: 1-31}.',
-    "Rules: explicit timing wins; recurring language means interval or wall-clock fields;",
+    "Set EVERY setting in this one reply: the name, the enhanced instructions, and the complete schedule. Never create a placeholder and plan a second call, and never ask the user a follow-up when a sensible default exists.",
+    "Timing rules: explicit timing wins; recurring language means interval or wall-clock fields;",
+    "every N minutes/hours/days/weeks -> intervalMinutes; daily clock time -> hour + minute; weekly -> intervalMinutes 10080 + hour + minute + weekdays; monthly -> intervalMinutes 43200 + hour + minute + monthDay;",
     allowManual
       ? "a reminder with no explicit time means scheduleKind none;"
       : "a one-off reminder with no explicit time means scheduleKind once at the next sensible hour;",
@@ -55,6 +57,7 @@ export function buildDraftSystemPrompt(opts?: DraftOptions): string {
     "State the output: what to prepare or deliver, where to save it, and the notification rule — surface only a real change, a due item, or a decision; otherwise stay quiet.",
     "Include the done criteria, and never invent credentials, access, recipients, or facts.",
     "Name is short (<= 60 chars), concrete, and describes the action; instructions never repeat the name as a generic label.",
+    "Keep the whole answer under 700 tokens. No markdown, prose, or code fences.",
   ].join(" ");
 }
 
@@ -65,6 +68,7 @@ export function buildDraftPrompt(prompt: string, current: DraftInput | null): st
     `Current date/time: ${now.toISOString()} (local timezone offset ${-now.getTimezoneOffset()} minutes).`,
     `Request: ${prompt.trim()}`,
     "Rewrite the request into durable, self-contained instructions; improve it rather than transcribing it. Keep every concrete detail the user supplied.",
+    "Return the complete draft — enhanced instructions and all recurring settings — in one JSON object now. Do not ask questions or split the work into multiple calls.",
   ];
   if (current) lines.push(`Current draft (revise it per the request): ${JSON.stringify(current, null, 2)}`);
   return lines.join("\n");

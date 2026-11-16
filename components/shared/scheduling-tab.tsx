@@ -16,7 +16,7 @@ import {
   setHours,
   startOfDay,
 } from "date-fns";
-import { MotionConfig } from "motion/react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   CalendarDays,
   ChevronDown,
@@ -62,10 +62,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmGroup } from "@/components/shared/confirm-group";
 import { TaskTodoList } from "@/components/shared/task-todo-list";
-import {
-  beginTaskGeneration,
-  endTaskGeneration,
-} from "@/components/chat/task-generation-popup";
 import { pushChatError } from "@/components/chat/chat-error-popup";
 import { gentleSpring } from "@/components/ui/kanban-board";
 
@@ -288,7 +284,6 @@ export function SchedulingTab({
   const [saved, setSaved] = useState(false);
   const [calendarDeleteArmed, setCalendarDeleteArmed] = useState(false);
   const saveCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const generationAbortRef = useRef<AbortController | null>(null);
   // Monotonic per-open-sheet id. A generation/save that finishes after the
   // sheet was closed (or replaced by another task) must not touch its UI.
   const editorSessionRef = useRef(0);
@@ -326,16 +321,22 @@ export function SchedulingTab({
     return () => clearInterval(timer);
   }, [fetchTasks]);
 
+  // A background save (the editor/settings closed while the generator was
+  // still working) may finish after this tab mounts. Refresh on the shared
+  // task event so the new row appears without reopening settings.
+  useEffect(() => {
+    const reload = () => {
+      void fetchTasks();
+    };
+    window.addEventListener("qube-tasks-changed", reload);
+    return () => window.removeEventListener("qube-tasks-changed", reload);
+  }, [fetchTasks]);
+
   useEffect(() => {
     return () => {
       if (saveCloseTimer.current) clearTimeout(saveCloseTimer.current);
-      // A generation must not outlive the tab that owns it; also clear its
-      // toast so a future mount does not inherit a stale spinner.
-      if (generationAbortRef.current) {
-        generationAbortRef.current.abort();
-        generationAbortRef.current = null;
-        endTaskGeneration();
-      }
+      // Generation intentionally keeps running after the editor/settings
+      // close: the request completes and saves the task in the background.
     };
   }, []);
 
@@ -668,8 +669,8 @@ export function SchedulingTab({
       clearTimeout(saveCloseTimer.current);
       saveCloseTimer.current = null;
     }
-    // Invalidate any in-flight generation/save UI updates. Generation itself
-    // keeps running and finishing in the background, as promised by the toast.
+    // Invalidate in-flight generation/save UI updates. Generation itself
+    // keeps running and saves in the background after the editor closes.
     editorSessionRef.current += 1;
     setSaved(false);
     setEditorOpen(false);
@@ -697,14 +698,10 @@ export function SchedulingTab({
     let generated: TaskDraft | null = null;
     if (!typedTitle) {
       setGenerating(true);
-      beginTaskGeneration();
-      const controller = new AbortController();
-      generationAbortRef.current = controller;
       try {
         const response = await fetch("/api/scheduler/draft", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
           body: JSON.stringify({
             prompt: description,
             allowManual: false,
@@ -732,24 +729,12 @@ export function SchedulingTab({
         generated = data.draft as TaskDraft;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        // The user closed the sheet while we were thinking; generation keeps
-        // going, but a real failure still needs to reach them.
-        if (!controller.signal.aborted) {
-          if (stillOpen()) setEditorError(message);
-          else pushChatError({ title: "Could not generate the task", message });
-        }
-        // Unmount aborts the request and clears the ref/ toast itself; only
-        // this flow ends the toast when it still owns it.
-        if (generationAbortRef.current === controller) {
-          generationAbortRef.current = null;
-          endTaskGeneration();
-        }
+        // The user closed the sheet/settings while we were thinking; the
+        // request kept going, but a real failure still needs to reach them.
+        if (stillOpen()) setEditorError(message);
+        else pushChatError({ title: "Could not generate the task", message });
         setGenerating(false);
         return;
-      }
-      if (generationAbortRef.current === controller) {
-        generationAbortRef.current = null;
-        endTaskGeneration();
       }
       setGenerating(false);
     }
@@ -895,6 +880,9 @@ export function SchedulingTab({
         }, 550);
       }
       await fetchTasks();
+      try {
+        window.dispatchEvent(new Event("qube-tasks-changed"));
+      } catch {}
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (stillOpen()) setEditorError(message);
@@ -1179,7 +1167,8 @@ export function SchedulingTab({
                   confirmLabel="Save"
                   leading={
                     editor.task ? (
-                      <button
+                      <motion.button
+                        layout
                         type="button"
                         onClick={deleteTask}
                         disabled={saving || generating}
@@ -1191,13 +1180,28 @@ export function SchedulingTab({
                             ? "Click again to delete"
                             : "Delete task"
                         }
+                        transition={gentleSpring}
                         className={cn(
-                          "flex size-8 items-center justify-center rounded-full text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-40",
-                          calendarDeleteArmed && "bg-red-500/10",
+                          "flex h-8 items-center justify-center overflow-hidden rounded-full text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-40",
+                          calendarDeleteArmed ? "gap-1.5 px-2.5" : "w-8 px-0",
                         )}
                       >
-                        <Trash2 className="size-4" />
-                      </button>
+                        <Trash2 className="size-4 shrink-0" />
+                        <AnimatePresence initial={false}>
+                          {calendarDeleteArmed && (
+                            <motion.span
+                              key="delete-confirm-label"
+                              initial={{ opacity: 0, width: 0 }}
+                              animate={{ opacity: 1, width: "auto" }}
+                              exit={{ opacity: 0, width: 0 }}
+                              transition={gentleSpring}
+                              className="overflow-hidden whitespace-nowrap text-xs font-semibold leading-none"
+                            >
+                              Delete
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </motion.button>
                     ) : undefined
                   }
                 />

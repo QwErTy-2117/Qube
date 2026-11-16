@@ -126,6 +126,55 @@ describe("heartbeat discovery of actionable unfinished work", () => {
     assert.doesNotMatch(context, /<script/i);
   });
 
+  it("wakes for a due to-do cleanup and injects the manual list", () => {
+    const snapshot = {
+      summary: "test",
+      hash: "todo-hash",
+      connectorHash: "",
+      connected: [],
+      signals: [],
+      openWork: [],
+      pendingApprovals: [],
+      workDue: 0,
+      todos: [
+        {
+          id: "todo-1",
+          title: "Quarterly report",
+          instructions: "Write the quarterly report",
+          updatedAt: Date.now(),
+        },
+      ],
+      todoReviewDue: true,
+      now: Date.now(),
+    } as any;
+    const task = {
+      id: "heartbeat",
+      type: "heartbeat",
+      name: "Heartbeat",
+      instructions: "Watch.",
+      schedule: { kind: "interval", intervalMinutes: 30 },
+      enabled: true,
+      permissions: {},
+      createdAt: 0,
+      updatedAt: 0,
+      lastRunAt: null,
+      nextRunAt: 0,
+    } as any;
+    const plan = discovery.planHeartbeatTick({ task, state: {}, snapshot });
+    assert.equal(plan.run, true);
+    assert.equal(plan.todoReviewDue, true);
+    assert.match(plan.context, /<todo_list count="1" review_due="true">/);
+    assert.match(plan.context, /Rewrite vague to-do titles/);
+
+    const cleanPlan = discovery.planHeartbeatTick({
+      task,
+      state: {},
+      snapshot: { ...snapshot, todoReviewDue: false },
+    });
+    assert.equal(cleanPlan.run, false);
+    assert.equal(cleanPlan.todoReviewDue, false);
+  });
+
   it("wakes only enabled beats with actionable/continuation work and stays quiet otherwise", () => {
     const snapshot = {
       summary: "signals=1",

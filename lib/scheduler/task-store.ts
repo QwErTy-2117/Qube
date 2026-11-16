@@ -87,6 +87,15 @@ export async function getTasks(): Promise<ScheduledTask[]> {
   return cachedTasks!;
 }
 
+/**
+ * Read the task list without starting the scheduler. Heartbeat discovery
+ * already runs inside a scheduler tick and only needs the manual to-do rows.
+ */
+export async function peekTasks(): Promise<ScheduledTask[]> {
+  if (!cachedTasks) cachedTasks = await loadRaw();
+  return cachedTasks;
+}
+
 async function persist(tasks: ScheduledTask[]) {
   cachedTasks = tasks;
   await writeFile(TASKS_FILE, JSON.stringify(tasks, null, 2), "utf-8");

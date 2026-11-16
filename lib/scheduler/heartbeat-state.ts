@@ -42,6 +42,8 @@ export type HeartbeatState = {
   pendingApprovalCount?: number;
   lastWorkAt?: number | null;
   lastWorkOutput?: string | null;
+  /** Last time the heartbeat reviewed/merged the manual to-do list. */
+  lastTodoCleanupAt?: number | null;
 };
 
 function defaultState(): HeartbeatState {
@@ -69,6 +71,7 @@ function defaultState(): HeartbeatState {
     pendingApprovalCount: 0,
     lastWorkAt: null,
     lastWorkOutput: null,
+    lastTodoCleanupAt: null,
   };
 }
 

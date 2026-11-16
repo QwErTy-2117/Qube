@@ -60,7 +60,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { streamText } = await import("ai");
+    const { generateText } = await import("ai");
     const system = titleOnly
       ? buildTitleSystemPrompt()
       : buildDraftSystemPrompt({ allowManual });
@@ -68,57 +68,40 @@ export async function POST(req: Request) {
       ? buildTitlePrompt(prompt)
       : buildDraftPrompt(prompt, current);
 
+    // One fast pass. The deterministic fallback below is intentionally used
+    // instead of a repair retry: a second model call doubled worst-case
+    // latency and the UI only needs a usable draft.
     const run = async (promptText: string): Promise<string> => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60_000);
+      const timeout = setTimeout(() => controller.abort(), titleOnly ? 8_000 : 20_000);
       try {
-        const result: any = await (streamText as any)({
+        const result: any = await (generateText as any)({
           model,
           system,
           prompt: promptText,
           maxRetries: 0,
-          // Generous budget: reasoning models spend part of this on thinking
-          // before they emit the JSON answer.
-          maxOutputTokens: 2000,
-          temperature: 0.2,
+          maxOutputTokens: titleOnly ? 80 : 900,
+          temperature: 0.1,
           abortSignal: controller.signal,
         });
-        try {
-          await result.consumeStream();
-        } catch {}
-        const text = String((await result.text) ?? "");
-        if (text.trim()) return text;
-        // Thinking models sometimes leave the answer in the reasoning channel
-        // when the text budget is exhausted; try it before giving up.
-        try {
-          return String((await result.reasoning) ?? "");
-        } catch {
-          return text;
-        }
+        const text = String(result?.text ?? "").trim();
+        if (text) return text;
+        // Thinking models occasionally leave the answer in the reasoning
+        // channel when the text budget is exhausted.
+        return String(result?.reasoning ?? "").trim();
+      } catch (e: any) {
+        const reason = e?.name === "AbortError" ? "timed out" : e?.message || String(e);
+        console.warn("[scheduler/draft] model call ended early:", String(reason).slice(0, 300));
+        return "";
       } finally {
         clearTimeout(timeout);
       }
     };
 
-    let text = await run(userPrompt);
-    let parsed = titleOnly
+    const text = await run(userPrompt);
+    const parsed = titleOnly
       ? parseTitleResponse(text)
       : parseDraftResponse(text, { allowManual });
-
-    if (!parsed.ok) {
-      // One repair attempt. Models that ignored the JSON instruction once
-      // usually comply when shown the exact failure.
-      const retryPrompt = `${userPrompt}\n\nYour previous reply was not valid JSON. Reply again with ONE JSON object only, no prose and no code fences.`;
-      try {
-        text = await run(retryPrompt);
-        parsed = titleOnly
-          ? parseTitleResponse(text)
-          : parseDraftResponse(text, { allowManual });
-      } catch {
-        // Keep the first parse result; the deterministic fallback below
-        // still lets the user save the task.
-      }
-    }
 
     if (titleOnly) {
       if (!parsed.ok || !("name" in parsed)) {

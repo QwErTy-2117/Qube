@@ -198,6 +198,11 @@ export async function executeHeartbeat(
     await updateHeartbeatState({
       lastWorkAt: quiet ? state.lastWorkAt ?? null : start,
       lastWorkOutput: quiet ? state.lastWorkOutput ?? null : output.slice(0, 800),
+      // Mark the review as done even when the list needed no edits, so an
+      // already-clean list does not wake a full cleanup pass every tick.
+      ...(plan.todoReviewDue && result.status === "success"
+        ? { lastTodoCleanupAt: start }
+        : {}),
     } as any);
     await recordHeartbeatTick({
       hadAction: !quiet || regularDues.length > 0 || manualDues.length > 0,

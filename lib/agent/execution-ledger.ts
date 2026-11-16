@@ -444,6 +444,47 @@ export async function finishRun(
   }).catch(() => {});
 }
 
+export type RecentRunOutcome = {
+  threadId: string;
+  status: "completed" | "failed";
+  at: number;
+};
+
+/**
+ * Finished runs newer than `sinceMs`, newest first. Used by the status
+ * endpoint so the UI can announce work that finished in another session.
+ * Ledger files are small and bounded; a directory read is cheaper than
+ * keeping a second in-memory event bus that would not survive route bundles.
+ */
+export async function listRecentRunOutcomes(opts?: {
+  sinceMs?: number;
+  limit?: number;
+}): Promise<RecentRunOutcome[]> {
+  const since = opts?.sinceMs ?? Date.now() - 5 * 60_000;
+  const limit = Math.max(1, Math.min(opts?.limit ?? 50, 200));
+  try {
+    const files = await readdir(runsDir());
+    const outcomes: RecentRunOutcome[] = [];
+    for (const file of files) {
+      if (!file.endsWith(".json")) continue;
+      try {
+        const raw = await readFile(join(runsDir(), file), "utf-8");
+        const rec = JSON.parse(raw) as RunLedger;
+        if (rec?.version !== 1 || typeof rec.threadId !== "string") continue;
+        if (rec.status !== "completed" && rec.status !== "failed") continue;
+        const at = rec.finishedAt ?? rec.updatedAt;
+        if (!Number.isFinite(at) || at < since) continue;
+        outcomes.push({ threadId: rec.threadId, status: rec.status, at });
+      } catch {
+        // One corrupt/partial ledger must not hide the others.
+      }
+    }
+    return outcomes.sort((a, b) => b.at - a.at).slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
 /** Mark every stale `running` record as interrupted (startup / first run). */
 export async function sweepOrphanRuns(): Promise<number> {
   try {

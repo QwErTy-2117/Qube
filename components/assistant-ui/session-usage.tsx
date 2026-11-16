@@ -20,6 +20,11 @@ type UsageSummary = {
 // Dynamic-island motion: a well-damped spring keeps the width/height morph
 // continuous instead of finishing with a snap.
 const ISLAND_SPRING = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 } as const;
+// 18px is both the collapsed pill's visible radius (36px tall) and the expanded
+// card radius. Animating 999 -> 18 makes the browser clamp every intermediate
+// value to half the animating height, then release it near the end of the
+// spring — a visible radius snap. Keeping it constant avoids that entirely.
+const ISLAND_RADIUS = 18;
 // The detail layer is laid out at its final width from the first frame. If it
 // followed the animating shell instead, the text would reflow every frame and
 // ResizeObserver would keep changing the measured height target — the snap.
@@ -189,7 +194,6 @@ export function SessionUsage({ className }: { className?: string }) {
       animate={{
         width: expanded ? EXPANDED_WIDTH : 88,
         height: expanded ? detailHeight : 36,
-        borderRadius: expanded ? 18 : 999,
       }}
       transition={ISLAND_SPRING}
       onMouseEnter={() => setExpanded(true)}
@@ -208,6 +212,7 @@ export function SessionUsage({ className }: { className?: string }) {
         "pointer-events-auto relative overflow-hidden border border-border/55 bg-background/85 text-foreground shadow-[0_8px_30px_-16px_rgba(0,0,0,0.24)] outline-none backdrop-blur-xl focus-visible:ring-2 focus-visible:ring-ring/40",
         className,
       )}
+      style={{ borderRadius: ISLAND_RADIUS }}
     >
       {/* Both layers stay mounted so opacity cross-fades while the shell's
           width/height spring runs; nothing swaps in a single frame. */}

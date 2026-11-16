@@ -79,7 +79,6 @@ export function buildTitlePrompt(instructions: string): string {
 
 export type ValidateResult = { ok: true; draft: TaskDraft } | { ok: false; error: string };
 export type ValidateTitleResult = { ok: true; name: string } | { ok: false; error: string };
-
 function isInt(n: unknown): n is number {
   return typeof n === "number" && Number.isInteger(n);
 }
@@ -165,4 +164,200 @@ export function validateTitleDraft(raw: unknown): ValidateTitleResult {
   const name = parseName((raw as Record<string, unknown>).name);
   if (!name) return { ok: false, error: "Draft needs a non-empty name." };
   return { ok: true, name };
+}
+
+/**
+ * Pull the first balanced `{...}` object out of arbitrary model text.
+ * Handles prose before/after the object, fenced blocks and braces inside
+ * JSON strings; returns null when the text contains no object at all.
+ */
+export function extractJsonObject(text: string): string | null {
+  const cleaned = String(text || "").replace(/```(?:json)?/gi, "");
+  let start = cleaned.indexOf("{");
+  while (start >= 0) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < cleaned.length; i += 1) {
+      const ch = cleaned[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+      } else if (ch === "{") {
+        depth += 1;
+      } else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) return cleaned.slice(start, i + 1);
+      }
+    }
+    start = cleaned.indexOf("{", start + 1);
+  }
+  return null;
+}
+
+/** Escape literal newlines/control chars that models put inside JSON strings. */
+function escapeControlCharsInStrings(input: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (const ch of input) {
+    if (inString) {
+      if (escaped) {
+        out += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        out += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        out += ch;
+        inString = false;
+        continue;
+      }
+      if (ch === "\n") {
+        out += "\\n";
+        continue;
+      }
+      if (ch === "\r") {
+        out += "\\r";
+        continue;
+      }
+      if (ch === "\t") {
+        out += "\\t";
+        continue;
+      }
+      if (ch.charCodeAt(0) < 0x20) {
+        out += `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`;
+        continue;
+      }
+      out += ch;
+    } else {
+      out += ch;
+      if (ch === '"') inString = true;
+    }
+  }
+  return out;
+}
+
+/** JSON.parse with the model mistakes that are safe to repair. */
+export function parseJsonLoose(slice: string): unknown | null {
+  try {
+    return JSON.parse(slice);
+  } catch {
+    // fall through to repairs
+  }
+  const repaired = escapeControlCharsInStrings(
+    slice
+      .replace(/,\s*([}\]])/g, "$1")
+      .replace(/[\u201c\u201d]/g, '"'),
+  );
+  try {
+    return JSON.parse(repaired);
+  } catch {
+    return null;
+  }
+}
+
+/** Short, concrete title derived from the instructions (fallback path). */
+export function titleFromInstructions(instructions: string): string {
+  let text = String(instructions || "").replace(/\s+/g, " ").trim();
+  text = text.replace(
+    /^(please\s+)?(remind me to|remember to|i need to|i want to|can you|could you|would you|make sure to|don'?t forget to)\s+/i,
+    "",
+  );
+  const words = text.split(" ").filter(Boolean).slice(0, 8).join(" ");
+  const trimmed =
+    words.length > 60 ? `${words.slice(0, 57).trimEnd()}…` : words;
+  if (!trimmed) return "New task";
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+/**
+ * Deterministic draft for when the draft model returns nothing usable.
+ * Keeps the create flow working (and is unit-tested) instead of surfacing
+ * "The model did not return a draft." to the user.
+ */
+export function draftFromInstructions(
+  prompt: string,
+  opts?: DraftOptions,
+): TaskDraft {
+  const text = String(prompt || "").trim();
+  const lower = text.toLowerCase();
+  const draft: TaskDraft = {
+    name: titleFromInstructions(text),
+    instructions: text || "Task created from an empty request.",
+    scheduleKind: "once",
+  };
+
+  const explicitEvery = /every\s+(\d+)\s*(minute|min|hour|hr|day|week|month)s?/.exec(lower);
+  const daily = /\b(daily|every day|each day|every morning|each morning|every evening)\b/.test(lower);
+  const weekly = /\b(weekly|every week|each week)\b/.test(lower);
+  const monthly = /\b(monthly|every month|each month)\b/.test(lower);
+  const hourly = /\b(hourly|every hour|each hour)\b/.test(lower);
+  // Only treat "2" as a time when it is "2pm"/"2:30" or follows "at";
+  // otherwise "every day buy 2 apples" would schedule the wrong hour.
+  const clock =
+    /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.exec(lower) ??
+    /\bat\s+(\d{1,2})(?::(\d{2}))?\b/i.exec(lower);
+  let hour: number | undefined;
+  let minute: number | undefined;
+  if (clock) {
+    let h = Number(clock[1]);
+    const m = clock[2] ? Number(clock[2]) : 0;
+    const meridiem = clock[3]?.toLowerCase();
+    if (meridiem === "pm" && h < 12) h += 12;
+    if (meridiem === "am" && h === 12) h = 0;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      hour = h;
+      minute = m;
+    }
+  }
+
+  if (explicitEvery) {
+    const amount = Number(explicitEvery[1]) || 1;
+    const unit = explicitEvery[2];
+    const minutes =
+      unit.startsWith("min") ? amount
+        : unit.startsWith("h") ? amount * 60
+          : unit.startsWith("day") ? amount * 1440
+            : unit.startsWith("week") ? amount * 10_080
+              : amount * 43_200;
+    draft.scheduleKind = "interval";
+    draft.intervalMinutes = Math.max(1, Math.round(minutes));
+    if (hour !== undefined) {
+      draft.hour = hour;
+      draft.minute = minute ?? 0;
+    }
+    return draft;
+  }
+
+  if (daily || weekly || monthly || hourly) {
+    draft.scheduleKind = "interval";
+    draft.intervalMinutes = daily ? 1440 : weekly ? 10_080 : monthly ? 43_200 : 60;
+    if (daily || weekly) {
+      draft.hour = hour ?? 9;
+      draft.minute = minute ?? 0;
+    }
+    return draft;
+  }
+
+  // A reminder with no explicit timing is a manual to-do when allowed,
+  // otherwise run once at the next full hour.
+  if (opts?.allowManual === true) {
+    draft.scheduleKind = "none";
+    return draft;
+  }
+  const next = new Date(Date.now() + 3_600_000);
+  next.setMinutes(0, 0, 0);
+  draft.scheduleKind = "once";
+  draft.runAt = next.toISOString();
+  return draft;
 }

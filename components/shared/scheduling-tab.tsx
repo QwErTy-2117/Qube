@@ -258,6 +258,7 @@ interface TaskEditor {
 
 export type SchedulingFocus = {
   taskId?: string | null;
+  workId?: string | null;
   section?: "todo" | null;
   nonce: number;
 };
@@ -285,6 +286,7 @@ export function SchedulingTab({
   // Home-widget deep links: scroll to the to-do section and open the row.
   const todoSectionRef = useRef<HTMLDivElement | null>(null);
   const [todoFocusTaskId, setTodoFocusTaskId] = useState<string | null>(null);
+  const [todoFocusWorkId, setTodoFocusWorkId] = useState<string | null>(null);
   const [scrollToTodoSignal, setScrollToTodoSignal] = useState(0);
   const handledFocusNonce = useRef<number | null>(null);
 
@@ -547,6 +549,9 @@ export function SchedulingTab({
       } else {
         openStoredTask(task);
       }
+    } else if (focus.workId) {
+      // Heartbeat ledger row shown by the widget but not backed by a task.
+      setTodoFocusWorkId(focus.workId);
     }
 
     onFocusHandled?.();
@@ -948,7 +953,11 @@ export function SchedulingTab({
           tasks={tasks}
           onChanged={fetchTasks}
           openTaskId={todoFocusTaskId}
-          onOpenHandled={() => setTodoFocusTaskId(null)}
+          openWorkId={todoFocusWorkId}
+          onOpenHandled={() => {
+            setTodoFocusTaskId(null);
+            setTodoFocusWorkId(null);
+          }}
           sectionRef={todoSectionRef}
         />
 

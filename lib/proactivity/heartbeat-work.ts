@@ -454,6 +454,53 @@ export async function getHeartbeatWorkItem(id: string): Promise<HeartbeatWorkIte
   return items.find((w) => w.id === id || w.sourceRef === id) ?? null;
 }
 
+/**
+ * Edit the user-visible fields of a ledger item from the Tasks board.
+ * Bumping the content hash keeps later heartbeat upserts from treating the
+ * old text as the same finding.
+ */
+export async function updateHeartbeatWorkItem(
+  id: string,
+  patch: { topic?: string; summary?: string; nextStep?: string },
+): Promise<HeartbeatWorkItem | null> {
+  return withLedgerLock(async () => {
+    const { items } = await loadAll();
+    const item = items.find((w) => w.id === id);
+    if (!item) return null;
+    if (patch.topic !== undefined) {
+      item.topic = sanitizeUntrustedText(patch.topic, 200) || item.topic;
+    }
+    if (patch.summary !== undefined) {
+      item.summary = sanitizeUntrustedText(patch.summary, 700);
+    }
+    if (patch.nextStep !== undefined) {
+      item.nextStep =
+        sanitizeUntrustedText(patch.nextStep, 400) || item.nextStep;
+    }
+    item.contentHash = contentHashFor({
+      topic: item.topic,
+      summary: item.summary,
+      nextStep: item.nextStep,
+      evidence: item.evidence,
+    });
+    item.revision += 1;
+    item.updatedAt = Date.now();
+    await saveAll(items);
+    return { ...item };
+  });
+}
+
+/** Remove one ledger item completely (Tasks board delete). */
+export async function deleteHeartbeatWorkItem(id: string): Promise<boolean> {
+  return withLedgerLock(async () => {
+    const { items } = await loadAll();
+    const kept = items.filter((w) => w.id !== id);
+    if (kept.length === items.length) return false;
+    await saveAll(kept);
+    return true;
+  });
+}
+
 export async function listActionableHeartbeatWork(limit = 12): Promise<HeartbeatWorkItem[]> {
   const { items } = await loadAll();
   return items

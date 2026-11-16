@@ -13,17 +13,19 @@ type HomeTodoItem = {
   done: boolean;
   kind: "heartbeat" | "reminder" | "today";
   taskId?: string;
+  workId?: string;
 };
 
 const POLL_MS = 30_000;
 
-function openTasksSection(taskId?: string) {
+function openTasksSection(taskId?: string, workId?: string) {
   window.dispatchEvent(
     new CustomEvent("qube-open-settings", {
       detail: {
         tab: "scheduling",
         section: "todo",
         ...(taskId ? { taskId } : {}),
+        ...(workId ? { workId } : {}),
       },
     }),
   );
@@ -130,7 +132,7 @@ export function HomeTodo({ className }: { className?: string }) {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => openTasksSection(item.taskId)}
+                  onClick={() => openTasksSection(item.taskId, item.workId)}
                   className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/40"
                   title={item.title}
                 >

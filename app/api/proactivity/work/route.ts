@@ -4,7 +4,11 @@ import { addDays, startOfDay } from "date-fns";
 import { getTasks } from "@/lib/scheduler/task-store";
 import { isTaskDone } from "@/lib/scheduler/board-status";
 import { taskOccurrencesInRange } from "@/lib/scheduler/calendar";
-import { listActionableHeartbeatWork } from "@/lib/proactivity/heartbeat-work";
+import {
+  deleteHeartbeatWorkItem,
+  listActionableHeartbeatWork,
+  updateHeartbeatWorkItem,
+} from "@/lib/proactivity/heartbeat-work";
 import { cleanTaskTitle } from "@/lib/todo/display";
 import type { ScheduledTask } from "@/lib/scheduler/types";
 
@@ -16,8 +20,12 @@ type HomeTodoItem = {
   title: string;
   done: boolean;
   kind: "heartbeat" | "reminder" | "today";
-  /** Present when the row maps to an editable task. */
+  /** Present when the row maps to an editable scheduler task. */
   taskId?: string;
+  /** Present when the row maps to a heartbeat ledger item. */
+  workId?: string;
+  /** Editable body shown in the Tasks tab dialog. */
+  instructions?: string;
 };
 
 const MANUAL_TASK_REF = /\[manual-task:([^\]]+)\]/i;
@@ -49,7 +57,32 @@ function heartbeatWorkTitle(topic: unknown, summary: unknown): string {
  *
  * Only display data; actions stay in the Tasks settings tab.
  */
-export async function GET() {
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  // Tasks tab: the raw heartbeat ledger (same source as the widget's
+  // "next heartbeat" rows) so those rows can be edited/deleted too.
+  if (url.searchParams.get("ledger") === "1") {
+    const work = await listActionableHeartbeatWork(200);
+    return NextResponse.json(
+      {
+        work: work.map((entry) => ({
+          id: entry.id,
+          title: heartbeatWorkTitle(entry.topic, entry.summary),
+          instructions: entry.summary || entry.nextStep || "",
+          status: entry.status,
+          // Manual reminders are already listed as tasks; the UI merges the
+          // two sources and keeps only the task row for these.
+          taskId:
+            manualTaskIdFromText(entry.topic) ||
+            manualTaskIdFromText(entry.summary) ||
+            manualTaskIdFromText(entry.sourceRef) ||
+            undefined,
+        })),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   const items: HomeTodoItem[] = [];
   const seen = new Set<string>();
   let tasks: ScheduledTask[] = [];
@@ -85,6 +118,7 @@ export async function GET() {
           done: isTaskDone(linkedTask),
           kind: "reminder",
           taskId: linkedTask.id,
+          instructions: linkedTask.instructions,
         });
         continue;
       }
@@ -94,6 +128,8 @@ export async function GET() {
         title: heartbeatWorkTitle(entry.topic, entry.summary),
         done: false,
         kind: "heartbeat",
+        workId: entry.id,
+        instructions: entry.summary || entry.nextStep || "",
       });
     }
   } catch {
@@ -117,6 +153,7 @@ export async function GET() {
           done: isTaskDone(task),
           kind: "reminder",
           taskId: task.id,
+          instructions: task.instructions,
         });
         continue;
       }
@@ -154,6 +191,7 @@ export async function GET() {
         done,
         kind: "today",
         taskId: task.id,
+        instructions: task.instructions,
       });
     }
   } catch {
@@ -164,4 +202,46 @@ export async function GET() {
     { items },
     { headers: { "Cache-Control": "no-store" } },
   );
+}
+
+/** Edit a heartbeat ledger item from the Tasks tab to-do list. */
+export async function PATCH(req: Request) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const id = typeof body?.id === "string" ? body.id.trim() : "";
+    if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+    const item = await updateHeartbeatWorkItem(id, {
+      topic: typeof body?.topic === "string" ? body.topic : undefined,
+      summary: typeof body?.summary === "string" ? body.summary : undefined,
+      nextStep: typeof body?.nextStep === "string" ? body.nextStep : undefined,
+    });
+    if (!item) {
+      return NextResponse.json({ error: "Work item not found" }, { status: 404 });
+    }
+    return NextResponse.json({ item });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: 500 },
+    );
+  }
+}
+
+/** Delete a heartbeat ledger item from the Tasks tab to-do list. */
+export async function DELETE(req: Request) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const id = typeof body?.id === "string" ? body.id.trim() : "";
+    if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+    const removed = await deleteHeartbeatWorkItem(id);
+    if (!removed) {
+      return NextResponse.json({ error: "Work item not found" }, { status: 404 });
+    }
+    return NextResponse.json({ success: true, id });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: 500 },
+    );
+  }
 }

@@ -7,15 +7,30 @@ import { CheckIcon, XIcon } from "lucide-react";
 import { SessionUsage } from "@/components/assistant-ui/session-usage";
 
 /**
- * Context usage island, centered in the header strip that sits above the
- * thread (outside the scrolling chat area, below the window drag region).
+ * Header strip above the thread (outside the scrolling chat area, below the
+ * window drag region). The context island is only mounted once a chat has
+ * actually started — a fresh landing page has no context to report.
  */
-const HeaderCenter: FC<{ children?: ReactNode }> = ({ children }) => (
-  <div className="relative z-30 flex h-12 shrink-0 items-center px-4">
-    {children}
-    <div className="pointer-events-none absolute top-1.5 left-1/2 z-30 -translate-x-1/2">
-      <SessionUsage />
-    </div>
+const HeaderCenter: FC<{ showUsage?: boolean; children?: ReactNode }> = ({
+  showUsage = false,
+  children,
+}) => (
+  // Above the fixed Tauri drag strip (z-40) so the island can be hovered, but
+  // pointer-events-none keeps the empty strip draggable: only the title area
+  // and the island itself take the pointer.
+  <div className="pointer-events-none relative z-50 flex h-12 shrink-0 items-center px-4">
+    {children ? (
+      <div className="pointer-events-auto flex min-w-0 items-center gap-1">
+        {children}
+      </div>
+    ) : null}
+    {showUsage && (
+      <div className="absolute top-1.5 left-1/2 -translate-x-1/2">
+        <div className="pointer-events-auto">
+          <SessionUsage />
+        </div>
+      </div>
+    )}
   </div>
 );
 
@@ -28,6 +43,10 @@ export const ChatTitle: FC = () => {
   const item = useAuiState((s) => (s as any).threadListItem as
     | { id: string; title?: string; status?: string }
     | undefined);
+  // A brand-new landing thread has no context to show yet.
+  const hasMessages = useAuiState(
+    (s) => ((s as any)?.thread?.messages?.length ?? 0) > 0,
+  );
 
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
@@ -37,7 +56,7 @@ export const ChatTitle: FC = () => {
 
   if (!started && !editing) {
     // Keep the header height stable, but show no title on fresh chats.
-    return <HeaderCenter />;
+    return <HeaderCenter showUsage={hasMessages} />;
   }
 
   const commit = (v: string) => {
@@ -92,7 +111,7 @@ export const ChatTitle: FC = () => {
   }
 
   return (
-    <HeaderCenter>
+    <HeaderCenter showUsage={hasMessages}>
       <div className="flex items-center gap-1">
         <button
           onClick={() => {

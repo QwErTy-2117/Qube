@@ -1917,11 +1917,16 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
             typeof detail?.taskId === "string" && detail.taskId.trim()
               ? detail.taskId.trim()
               : null;
+          const workId =
+            typeof detail?.workId === "string" && detail.workId.trim()
+              ? detail.workId.trim()
+              : null;
           const section = detail?.section === "todo" ? "todo" : null;
-          if (taskId || section) {
+          if (taskId || workId || section) {
             schedulingFocusNonce.current += 1;
             setSchedulingFocus({
               taskId,
+              workId,
               section,
               nonce: schedulingFocusNonce.current,
             });

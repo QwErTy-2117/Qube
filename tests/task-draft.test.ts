@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildDraftPrompt, validateDraft, type TaskDraft, type DraftInput } from "@/lib/scheduler/task-draft";
+import { buildDraftPrompt, buildDraftSystemPrompt, validateDraft, type TaskDraft, type DraftInput } from "@/lib/scheduler/task-draft";
 
 describe("buildDraftPrompt", () => {
   it("includes the user prompt, current draft, date and timezone", () => {
@@ -13,9 +13,37 @@ describe("buildDraftPrompt", () => {
     assert.match(p, /current date/i);
   });
 
+  it("asks for improved, durable instructions instead of a transcription", () => {
+    const p = buildDraftPrompt("check prices every day", null);
+    assert.match(p, /Rewrite the request into durable, self-contained instructions/);
+    assert.match(p, /improve it rather than transcribing it/);
+  });
+
   it("works without a current draft", () => {
     const p = buildDraftPrompt("remind me Friday", null);
     assert.match(p, /remind me Friday/);
+  });
+});
+
+describe("buildDraftSystemPrompt", () => {
+  it("demands self-contained instructions with sources, output and quiet rules", () => {
+    const prompt = buildDraftSystemPrompt();
+    assert.match(prompt, /Instructions are the most important field/);
+    assert.match(prompt, /self-contained brief/);
+    assert.match(prompt, /no user present and no chat history/);
+    assert.match(prompt, /what to check or read/);
+    assert.match(prompt, /what counts as a change/);
+    assert.match(prompt, /notification rule/);
+    assert.match(prompt, /otherwise stay quiet/);
+    assert.match(prompt, /done criteria/);
+    assert.match(prompt, /never invent credentials/);
+  });
+
+  it("keeps the heartbeat/manual variant and schedule defaults", () => {
+    const prompt = buildDraftSystemPrompt({ allowManual: true });
+    assert.match(prompt, /heartbeat reminder/);
+    assert.match(prompt, /scheduleKind": "none"\|"once"\|"interval"/);
+    assert.match(prompt, /ambiguous means a sensible default/);
   });
 });
 

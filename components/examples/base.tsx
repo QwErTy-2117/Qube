@@ -97,6 +97,7 @@ import { useTheme } from "next-themes";
 import { OnboardingModal } from "@/components/shared/onboarding-dialog";
 import { ConnectorConnectDialog } from "@/components/shared/connector-connect-dialog";
 import { ChatErrorTopPopup, pushChatError, parseChatGPTError, isAgentErrorText, notifyAgentError } from "@/components/chat/chat-error-popup";
+import { TaskGenerationTopPopup } from "@/components/chat/task-generation-popup";
 import { BrowserPanel } from "@/components/workspace";
 import { ArtifactPopup } from "@/components/artifact/ArtifactPopup";
 import { HtmlPanel } from "@/components/artifact/HtmlPanel";
@@ -1465,6 +1466,7 @@ export const Base: FC = () => {
   return (
     <div className="bg-muted text-foreground relative flex h-full w-full pl-2">
       <ChatErrorTopPopup />
+      <TaskGenerationTopPopup />
       <ChatErrorWatcher />
       <BrowserAutoOpener />
       <ThreadUrlSync />

@@ -37,8 +37,8 @@ export function buildDraftSystemPrompt(opts?: DraftOptions): string {
   const allowManual = opts?.allowManual === true;
   return [
     allowManual
-      ? "You turn a short request into a task draft. The user is creating a heartbeat reminder unless they ask for a schedule."
-      : "You turn a short task request into a scheduled-task draft.",
+      ? "You turn a short request into a task draft for Qube's always-on worker. The user is creating a heartbeat reminder unless they ask for a schedule."
+      : "You turn a short task request into a scheduled-task draft for Qube's always-on worker.",
     'Reply with ONE JSON object only: {"name": string, "instructions": string,',
     allowManual
       ? ' "scheduleKind": "none"|"once"|"interval", "intervalMinutes"?: number, "runAt"?: string (ISO future),'
@@ -49,7 +49,12 @@ export function buildDraftSystemPrompt(opts?: DraftOptions): string {
       ? "a reminder with no explicit time means scheduleKind none;"
       : "a one-off reminder with no explicit time means scheduleKind once at the next sensible hour;",
     "ambiguous means a sensible default, never an empty schedule.",
-    "Name is short (<= 60 chars); instructions tell the agent exactly what to do, including where/how.",
+    "Instructions are the most important field. Rewrite the request into a self-contained brief that a background agent can execute with no user present and no chat history: 2-5 short imperative sentences.",
+    "Make vague phrasing concrete: what to check or read, which apps, folders, or URLs to use, what counts as a change, and what to do when nothing changed.",
+    "Preserve every intent, name, number, threshold, deadline, audience, tone, and constraint from the request; add a sensible default only when something is genuinely missing.",
+    "State the output: what to prepare or deliver, where to save it, and the notification rule — surface only a real change, a due item, or a decision; otherwise stay quiet.",
+    "Include the done criteria, and never invent credentials, access, recipients, or facts.",
+    "Name is short (<= 60 chars), concrete, and describes the action; instructions never repeat the name as a generic label.",
   ].join(" ");
 }
 
@@ -59,6 +64,7 @@ export function buildDraftPrompt(prompt: string, current: DraftInput | null): st
   const lines = [
     `Current date/time: ${now.toISOString()} (local timezone offset ${-now.getTimezoneOffset()} minutes).`,
     `Request: ${prompt.trim()}`,
+    "Rewrite the request into durable, self-contained instructions; improve it rather than transcribing it. Keep every concrete detail the user supplied.",
   ];
   if (current) lines.push(`Current draft (revise it per the request): ${JSON.stringify(current, null, 2)}`);
   return lines.join("\n");

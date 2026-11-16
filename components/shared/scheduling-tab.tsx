@@ -62,6 +62,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmGroup } from "@/components/shared/confirm-group";
 import { TaskTodoList } from "@/components/shared/task-todo-list";
+import {
+  beginTaskGeneration,
+  endTaskGeneration,
+} from "@/components/chat/task-generation-popup";
+import { pushChatError } from "@/components/chat/chat-error-popup";
 import { gentleSpring } from "@/components/ui/kanban-board";
 
 import {
@@ -279,9 +284,14 @@ export function SchedulingTab({
   const [editor, setEditor] = useState<TaskEditor | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [saved, setSaved] = useState(false);
   const [calendarDeleteArmed, setCalendarDeleteArmed] = useState(false);
   const saveCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generationAbortRef = useRef<AbortController | null>(null);
+  // Monotonic per-open-sheet id. A generation/save that finishes after the
+  // sheet was closed (or replaced by another task) must not touch its UI.
+  const editorSessionRef = useRef(0);
 
   // Home-widget deep links: scroll to the to-do section and open the row.
   const todoSectionRef = useRef<HTMLDivElement | null>(null);
@@ -319,6 +329,13 @@ export function SchedulingTab({
   useEffect(() => {
     return () => {
       if (saveCloseTimer.current) clearTimeout(saveCloseTimer.current);
+      // A generation must not outlive the tab that owns it; also clear its
+      // toast so a future mount does not inherit a stale spinner.
+      if (generationAbortRef.current) {
+        generationAbortRef.current.abort();
+        generationAbortRef.current = null;
+        endTaskGeneration();
+      }
     };
   }, []);
 
@@ -488,6 +505,7 @@ export function SchedulingTab({
       color: TASK_COLORS[0].value,
       repeat: "once",
     });
+    editorSessionRef.current += 1;
     setEditorError(null);
     setCalendarDeleteArmed(false);
     setEditorOpen(true);
@@ -506,6 +524,7 @@ export function SchedulingTab({
       color: colorToken(task),
       repeat: repeatValueFor(task),
     });
+    editorSessionRef.current += 1;
     setEditorError(null);
     setCalendarDeleteArmed(false);
     setEditorOpen(true);
@@ -524,6 +543,7 @@ export function SchedulingTab({
       color: colorToken(task),
       repeat: repeatValueFor(task),
     });
+    editorSessionRef.current += 1;
     setEditorError(null);
     setCalendarDeleteArmed(false);
     setEditorOpen(true);
@@ -648,6 +668,9 @@ export function SchedulingTab({
       clearTimeout(saveCloseTimer.current);
       saveCloseTimer.current = null;
     }
+    // Invalidate any in-flight generation/save UI updates. Generation itself
+    // keeps running and finishing in the background, as promised by the toast.
+    editorSessionRef.current += 1;
     setSaved(false);
     setEditorOpen(false);
     setEditor(null);
@@ -656,41 +679,48 @@ export function SchedulingTab({
   }, [saving]);
 
   async function saveEditor() {
-    if (!editor || saving) return;
-    const typedTitle = editor.title.trim();
-    const description = editor.description.trim();
+    if (!editor || saving || generating) return;
+    const snapshot = editor;
+    const session = editorSessionRef.current;
+    const typedTitle = snapshot.title.trim();
+    const description = snapshot.description.trim();
     if (!description) {
       setEditorError("Describe what the agent should do.");
       return;
     }
 
-    setSaving(true);
     setEditorError(null);
+    const stillOpen = () => editorSessionRef.current === session;
 
     // Leaving the title blank hands the whole task to the main model: it
-    // supplies the name and every schedule setting, with no extra UI.
+    // supplies the name, every schedule setting, and improved instructions.
     let generated: TaskDraft | null = null;
     if (!typedTitle) {
+      setGenerating(true);
+      beginTaskGeneration();
+      const controller = new AbortController();
+      generationAbortRef.current = controller;
       try {
         const response = await fetch("/api/scheduler/draft", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             prompt: description,
             allowManual: false,
-            current: editor.task
+            current: snapshot.task
               ? {
-                  name: editor.task.name,
+                  name: snapshot.task.name,
                   instructions: description,
-                  scheduleKind: editor.task.schedule.kind,
-                  intervalMinutes: editor.task.schedule.intervalMinutes,
-                  runAt: editor.task.schedule.runAt
-                    ? new Date(editor.task.schedule.runAt).toISOString()
+                  scheduleKind: snapshot.task.schedule.kind,
+                  intervalMinutes: snapshot.task.schedule.intervalMinutes,
+                  runAt: snapshot.task.schedule.runAt
+                    ? new Date(snapshot.task.schedule.runAt).toISOString()
                     : undefined,
-                  hour: editor.task.schedule.hour,
-                  minute: editor.task.schedule.minute,
-                  weekdays: editor.task.schedule.weekdays,
-                  monthDay: editor.task.schedule.monthDay,
+                  hour: snapshot.task.schedule.hour,
+                  minute: snapshot.task.schedule.minute,
+                  weekdays: snapshot.task.schedule.weekdays,
+                  monthDay: snapshot.task.schedule.monthDay,
                 }
               : null,
           }),
@@ -701,49 +731,69 @@ export function SchedulingTab({
         }
         generated = data.draft as TaskDraft;
       } catch (error) {
-        setEditorError(error instanceof Error ? error.message : String(error));
-        setSaving(false);
+        const message = error instanceof Error ? error.message : String(error);
+        // The user closed the sheet while we were thinking; generation keeps
+        // going, but a real failure still needs to reach them.
+        if (!controller.signal.aborted) {
+          if (stillOpen()) setEditorError(message);
+          else pushChatError({ title: "Could not generate the task", message });
+        }
+        // Unmount aborts the request and clears the ref/ toast itself; only
+        // this flow ends the toast when it still owns it.
+        if (generationAbortRef.current === controller) {
+          generationAbortRef.current = null;
+          endTaskGeneration();
+        }
+        setGenerating(false);
         return;
       }
+      if (generationAbortRef.current === controller) {
+        generationAbortRef.current = null;
+        endTaskGeneration();
+      }
+      setGenerating(false);
     }
 
     const title = typedTitle || generated?.name?.trim() || "";
     if (!title) {
-      setEditorError("Could not generate a title. Add one first.");
-      setSaving(false);
+      const message = "Could not generate a title. Add one first.";
+      if (stillOpen()) setEditorError(message);
+      else pushChatError({ title: "Task not saved", message });
       return;
     }
 
-    if (editor.end.getTime() <= editor.start.getTime()) {
-      setEditorError("The task needs a positive length.");
-      setSaving(false);
+    if (snapshot.end.getTime() <= snapshot.start.getTime()) {
+      const message = "The task needs a positive length.";
+      if (stillOpen()) setEditorError(message);
+      else pushChatError({ title: "Task not saved", message });
       return;
     }
     if (
       !generated &&
-      editor.repeat === "once" &&
-      editor.start.getTime() <= Date.now()
+      snapshot.repeat === "once" &&
+      snapshot.start.getTime() <= Date.now()
     ) {
-      setEditorError("Pick a time in the future for a one-off task.");
-      setSaving(false);
+      const message = "Pick a time in the future for a one-off task.";
+      if (stillOpen()) setEditorError(message);
+      else pushChatError({ title: "Task not saved", message });
       return;
     }
 
-    const start = editor.allDay ? startOfDay(editor.start) : editor.start;
-    const end = editor.allDay
+    const start = snapshot.allDay ? startOfDay(snapshot.start) : snapshot.start;
+    const end = snapshot.allDay
       ? addDays(
-          startOfDay(editor.start),
+          startOfDay(snapshot.start),
           Math.max(
             1,
-            Math.ceil((editor.end.getTime() - editor.start.getTime()) / 86_400_000),
+            Math.ceil((snapshot.end.getTime() - snapshot.start.getTime()) / 86_400_000),
           ),
         )
-      : editor.end;
+      : snapshot.end;
     const durationMinutes = generated
       ? 60
       : Math.max(5, Math.round((end.getTime() - start.getTime()) / 60_000));
-    const hour = editor.allDay ? 0 : start.getHours();
-    const minute = editor.allDay ? 0 : start.getMinutes();
+    const hour = snapshot.allDay ? 0 : start.getHours();
+    const minute = snapshot.allDay ? 0 : start.getMinutes();
 
     let schedule: Record<string, unknown>;
     if (generated) {
@@ -757,7 +807,7 @@ export function SchedulingTab({
         monthDay: generated.monthDay,
       };
     } else {
-      switch (editor.repeat) {
+      switch (snapshot.repeat) {
         case "once":
           schedule = { scheduleKind: "once", runAt: start.toISOString() };
           break;
@@ -791,7 +841,7 @@ export function SchedulingTab({
           };
           break;
         default: {
-          const original = editor.task?.schedule;
+          const original = snapshot.task?.schedule;
           schedule = {
             scheduleKind: "interval",
             intervalMinutes: original?.intervalMinutes ?? 1440,
@@ -805,17 +855,20 @@ export function SchedulingTab({
     }
 
     const payload = {
-      ...(editor.task
-        ? { action: "update", id: editor.task.id }
+      ...(snapshot.task
+        ? { action: "update", id: snapshot.task.id }
         : { action: "create" }),
       name: title,
-      instructions: description,
-      color: editor.color,
+      // Save the generator's rewritten brief. The typed text is the input
+      // request; these instructions are what the background run executes.
+      instructions: generated?.instructions?.trim() || description,
+      color: snapshot.color,
       durationMinutes,
-      allDay: generated ? false : editor.allDay,
+      allDay: generated ? false : snapshot.allDay,
       ...schedule,
     };
 
+    setSaving(true);
     try {
       const response = await fetch("/api/scheduler/tasks", {
         method: "POST",
@@ -826,20 +879,26 @@ export function SchedulingTab({
       if (!response.ok || !data?.task) {
         throw new Error(data?.error || "Could not save the task.");
       }
-      // Let the button group play its saved-check morph before closing.
-      setSaved(true);
-      setSaving(false);
-      saveCloseTimer.current = setTimeout(() => {
-        saveCloseTimer.current = null;
-        setSaved(false);
-        setEditorOpen(false);
-        setEditor(null);
-        setEditorError(null);
-        setCalendarDeleteArmed(false);
-      }, 550);
+      // Let the button group play its saved-check morph before closing — but
+      // only if this is still the sheet that started the save.
+      if (stillOpen()) {
+        setSaved(true);
+        saveCloseTimer.current = setTimeout(() => {
+          saveCloseTimer.current = null;
+          if (editorSessionRef.current !== session) return;
+          editorSessionRef.current += 1;
+          setSaved(false);
+          setEditorOpen(false);
+          setEditor(null);
+          setEditorError(null);
+          setCalendarDeleteArmed(false);
+        }, 550);
+      }
       await fetchTasks();
     } catch (error) {
-      setEditorError(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      if (stillOpen()) setEditorError(message);
+      else pushChatError({ title: "Task not saved", message });
     } finally {
       setSaving(false);
     }
@@ -898,12 +957,12 @@ export function SchedulingTab({
   }
 
   const canSave = useMemo(() => {
-    if (!editor || saving) return false;
+    if (!editor || saving || generating) return false;
     return (
       editor.description.trim().length > 0 &&
       editor.end.getTime() > editor.start.getTime()
     );
-  }, [editor, saving]);
+  }, [editor, saving, generating]);
 
   if (loading) {
     return (
@@ -1105,7 +1164,7 @@ export function SchedulingTab({
                       aria-label="Run now"
                       title="Run now"
                       onClick={runNow}
-                      disabled={saving}
+                      disabled={saving || generating}
                       className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
                     >
                       <Play className="size-4" />
@@ -1114,7 +1173,7 @@ export function SchedulingTab({
                 </div>
                 <ConfirmGroup
                   onConfirm={saveEditor}
-                  saving={saving}
+                  saving={saving || generating}
                   saved={saved}
                   confirmDisabled={!canSave}
                   confirmLabel="Save"
@@ -1123,7 +1182,7 @@ export function SchedulingTab({
                       <button
                         type="button"
                         onClick={deleteTask}
-                        disabled={saving}
+                        disabled={saving || generating}
                         aria-label={
                           calendarDeleteArmed ? "Confirm delete" : "Delete task"
                         }

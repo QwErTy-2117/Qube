@@ -20,6 +20,10 @@ type UsageSummary = {
 // Dynamic-island motion: a well-damped spring keeps the width/height morph
 // continuous instead of finishing with a snap.
 const ISLAND_SPRING = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 } as const;
+// The detail layer is laid out at its final width from the first frame. If it
+// followed the animating shell instead, the text would reflow every frame and
+// ResizeObserver would keep changing the measured height target — the snap.
+const EXPANDED_WIDTH = 276;
 
 function formatTokens(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "0";
@@ -183,7 +187,7 @@ export function SessionUsage({ className }: { className?: string }) {
     <motion.div
       initial={false}
       animate={{
-        width: expanded ? 276 : 88,
+        width: expanded ? EXPANDED_WIDTH : 88,
         height: expanded ? detailHeight : 36,
         borderRadius: expanded ? 18 : 999,
       }}
@@ -212,7 +216,8 @@ export function SessionUsage({ className }: { className?: string }) {
         initial={false}
         animate={{ opacity: expanded ? 1 : 0 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
-        className="absolute inset-x-0 top-0 px-3.5 pt-3 pb-3"
+        className="absolute top-0 left-0 px-3.5 pt-3 pb-3"
+        style={{ width: EXPANDED_WIDTH }}
         aria-hidden={!expanded}
       >
             <div className="flex items-center justify-between gap-3">

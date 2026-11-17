@@ -175,6 +175,8 @@ export async function logContextBudget(
     estimatedTokens: number;
     contextWindow: number;
     thresholdTokens: number;
+    /** Estimated system-prompt tokens (excludes tool schemas). */
+    systemTokens?: number;
     toolTokens?: number;
     calibrationFactor?: number;
     compacted?: boolean;

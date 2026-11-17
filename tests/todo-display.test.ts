@@ -25,6 +25,30 @@ describe("cleanTaskTitle", () => {
     assert.equal(cleanTaskTitle(""), "Untitled task");
     assert.equal(cleanTaskTitle("Heartbeat:"), "Untitled task");
   });
+
+  it("strips a known scheduled-task name copied into a headless plan", () => {
+    assert.equal(
+      cleanTaskTitle("Morning review: Check inbox", ["Morning review"]),
+      "Check inbox",
+    );
+    assert.equal(
+      cleanTaskTitle("Heartbeat: Morning review: Check inbox", ["Morning review"]),
+      "Check inbox",
+    );
+    assert.equal(
+      cleanTaskTitle("Weekly review: Research: pricing", [
+        "Weekly review",
+        "Research",
+      ]),
+      "pricing",
+    );
+    // Without the task list there is no safe way to tell a bookkeeping prefix
+    // from a legitimate colon in the title.
+    assert.equal(
+      cleanTaskTitle("Morning review: Check inbox"),
+      "Morning review: Check inbox",
+    );
+  });
 });
 
 describe("orderTodoItems", () => {

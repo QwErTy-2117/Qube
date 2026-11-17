@@ -970,6 +970,7 @@ async function runPiWithVercel(
       estimatedTokens: pre.stats.estimatedTotalTokens,
       contextWindow: pre.stats.contextWindow || 0,
       thresholdTokens: pre.stats.thresholdTokens,
+      systemTokens: pre.stats.systemTokens,
       toolTokens: pre.stats.toolTokens,
       calibrationFactor: pre.stats.calibrationFactor,
       compacted: pre.compacted,

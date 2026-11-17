@@ -552,6 +552,8 @@ export type CompactStats = {
   thresholdTokens: number;
   contextWindow?: number;
   reserveTokens?: number;
+  /** Estimated system-prompt tokens (excludes tool schemas). */
+  systemTokens?: number;
   toolTokens?: number;
   calibrationFactor?: number;
   keptMessages: number;
@@ -613,6 +615,7 @@ export async function maybeCompactMessages(args: CompactArgs): Promise<CompactRe
       thresholdTokens: budget.thresholdTokens,
       contextWindow: budget.windowTokens,
       reserveTokens: budget.reserveTokens,
+      systemTokens: budget.systemTokens,
       toolTokens: toolEstimate.tokens,
       calibrationFactor,
       keptMessages: args.messages?.length || 0,
@@ -633,6 +636,7 @@ export async function maybeCompactMessages(args: CompactArgs): Promise<CompactRe
       thresholdTokens: budget.thresholdTokens,
       contextWindow: budget.windowTokens,
       reserveTokens: budget.reserveTokens,
+      systemTokens: budget.systemTokens,
       toolTokens: toolEstimate.tokens,
       calibrationFactor,
       keptMessages: 0,
@@ -679,6 +683,7 @@ export async function maybeCompactMessages(args: CompactArgs): Promise<CompactRe
     thresholdTokens: threshold,
     contextWindow: budget.windowTokens,
     reserveTokens: budget.reserveTokens,
+    systemTokens: budget.systemTokens,
     toolTokens: toolEstimate.tokens,
     calibrationFactor: budget.calibrationFactor,
     keptMessages: working.length,

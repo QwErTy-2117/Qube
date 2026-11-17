@@ -7,9 +7,17 @@ export type SessionUsageSummary = {
   contextWindow: number;
   usedTokens: number;
   remainingTokens: number;
+  /** Cumulative provider prompt tokens billed this session. */
   inputTokens: number;
+  /** Cumulative provider completion tokens billed this session. */
   outputTokens: number;
   totalTokens: number;
+  /** Current context split: system prompt + tool schemas. */
+  systemTokens: number;
+  /** Current context split: conversation input (prompt minus system). */
+  contextInputTokens: number;
+  /** Current context split: latest completion. */
+  contextOutputTokens: number;
   costUsd: number | null;
 };
 
@@ -65,6 +73,8 @@ export async function getSessionUsage(
   let lastCompletionTokens = 0;
   let lastEstimatedTokens = 0;
   let lastContextWindow = 0;
+  let lastSystemTokens = 0;
+  let lastToolTokens = 0;
   let lastModel = "";
   let reportedCost = 0;
   let reportedRounds = 0;
@@ -94,8 +104,12 @@ export async function getSessionUsage(
     } else if (event?.type === "context_budget") {
       const estimated = Number(meta.estimatedTokens ?? 0);
       const window = Number(meta.contextWindow ?? 0);
+      const system = Number(meta.systemTokens ?? 0);
+      const tools = Number(meta.toolTokens ?? 0);
       if (estimated > 0) lastEstimatedTokens = estimated;
       if (window > 0) lastContextWindow = window;
+      if (Number.isFinite(system) && system >= 0) lastSystemTokens = system;
+      if (Number.isFinite(tools) && tools >= 0) lastToolTokens = tools;
     }
   }
 
@@ -105,11 +119,22 @@ export async function getSessionUsage(
     lastContextWindow > 0
       ? lastContextWindow
       : pricing.contextWindow ?? (model ? resolveContextWindow(model).tokens : 0);
-  const usedTokens =
-    lastPromptTokens > 0
-      ? lastPromptTokens + lastCompletionTokens
-      : lastEstimatedTokens;
+  // The ring is a snapshot of the current context, not the cumulative bill:
+  // the latest provider prompt is the whole conversation the model just saw,
+  // and the latest completion is the output it produced from it.
+  const currentPromptTokens = lastPromptTokens > 0 ? lastPromptTokens : lastEstimatedTokens;
+  const currentCompletionTokens = lastPromptTokens > 0 ? lastCompletionTokens : 0;
+  const usedTokens = currentPromptTokens + currentCompletionTokens;
   const remainingTokens = Math.max(0, contextWindow - usedTokens);
+  // System prompt + tool schemas are fixed overhead inside the prompt. Older
+  // threads predate this telemetry, so the clamp keeps the split coherent
+  // until the next run logs a fresh context_budget event.
+  const systemTokens = Math.min(
+    currentPromptTokens,
+    Math.max(0, lastSystemTokens + lastToolTokens),
+  );
+  const contextInputTokens = Math.max(0, currentPromptTokens - systemTokens);
+  const contextOutputTokens = Math.max(0, currentCompletionTokens);
 
   let costUsd: number | null = null;
   if (reportedRounds > 0 && reportedRounds === usageRounds) {
@@ -132,6 +157,9 @@ export async function getSessionUsage(
     inputTokens,
     outputTokens,
     totalTokens,
+    systemTokens,
+    contextInputTokens,
+    contextOutputTokens,
     costUsd,
   };
 }

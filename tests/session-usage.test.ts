@@ -59,7 +59,12 @@ function logThread(threadId: string, model: string) {
     {
       type: "context_budget",
       threadId,
-      metadata: { estimatedTokens: 12_000, contextWindow: 200_000 },
+      metadata: {
+        estimatedTokens: 12_000,
+        contextWindow: 200_000,
+        systemTokens: 3_000,
+        toolTokens: 1_200,
+      },
     },
   ];
   writeFileSync(
@@ -76,6 +81,9 @@ describe("session usage", () => {
     const usage = await getSessionUsage("thread_paid", "openrouter:paid/model");
     assert.equal(usage.contextWindow, 200_000);
     assert.equal(usage.remainingTokens, 188_000);
+    assert.equal(usage.systemTokens, 4_200);
+    assert.equal(usage.contextInputTokens, 5_800);
+    assert.equal(usage.contextOutputTokens, 2_000);
     assert.ok(Math.abs((usage.costUsd ?? 0) - 0.036) < 1e-9);
   });
 

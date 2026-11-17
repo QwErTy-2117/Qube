@@ -144,6 +144,7 @@ export function TaskTodoList({
       taskId: task.id,
     }));
     const ownedTaskIds = new Set(tasks.map((task) => task.id));
+    const taskNames = tasks.map((task) => task.name);
     // Ledger rows that already map to any scheduler task would duplicate it;
     // the task row (or the calendar) is the editable one. Everything else
     // (heartbeat findings and agent work) gets its own row here so it can be
@@ -152,7 +153,7 @@ export function TaskTodoList({
       .filter((entry) => !entry.taskId || !ownedTaskIds.has(entry.taskId))
       .map((entry) => ({
         key: `work:${entry.id}`,
-        title: cleanTaskTitle(entry.title),
+        title: cleanTaskTitle(entry.title, taskNames),
         instructions: entry.instructions,
         done: false,
         workId: entry.id,

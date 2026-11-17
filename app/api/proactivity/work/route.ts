@@ -36,7 +36,11 @@ function manualTaskIdFromText(text: unknown): string | null {
 }
 
 /** Ledger topics wrap the actual name in markers and a short description. */
-function heartbeatWorkTitle(topic: unknown, summary: unknown): string {
+function heartbeatWorkTitle(
+  topic: unknown,
+  summary: unknown,
+  taskNames?: Iterable<string>,
+): string {
   const raw =
     String(topic ?? "").trim() ||
     String(summary ?? "").trim() ||
@@ -44,9 +48,10 @@ function heartbeatWorkTitle(topic: unknown, summary: unknown): string {
   const withoutChecklistLabel = raw.replace(/^due checklist item:\s*/i, "");
   const withoutMarker = withoutChecklistLabel.replace(MANUAL_TASK_REF, "");
   // Topics are stored as "<name> — <short description>" so the name alone
-  // stays readable in the widget.
+  // stays readable in the widget. Headless plans also prefix the owner task
+  // (`<task>: <step>`); taskNames lets cleanTaskTitle drop that prefix.
   const nameOnly = withoutMarker.split(/\s+—\s+/)[0] || withoutMarker;
-  return cleanTaskTitle(nameOnly);
+  return cleanTaskTitle(nameOnly, taskNames);
 }
 
 /**
@@ -62,12 +67,19 @@ export async function GET(req: Request) {
   // Tasks tab: the raw heartbeat ledger (same source as the widget's
   // "next heartbeat" rows) so those rows can be edited/deleted too.
   if (url.searchParams.get("ledger") === "1") {
+    let ledgerTasks: ScheduledTask[] = [];
+    try {
+      ledgerTasks = await getTasks();
+    } catch {
+      // The task store is optional; ledger rows can still render.
+    }
+    const taskNames = ledgerTasks.map((task) => task.name);
     const work = await listActionableHeartbeatWork(200);
     return NextResponse.json(
       {
         work: work.map((entry) => ({
           id: entry.id,
-          title: heartbeatWorkTitle(entry.topic, entry.summary),
+          title: heartbeatWorkTitle(entry.topic, entry.summary, taskNames),
           instructions: entry.summary || entry.nextStep || "",
           status: entry.status,
           // Manual reminders are already listed as tasks; the UI merges the
@@ -93,6 +105,7 @@ export async function GET(req: Request) {
     // The task store is optional; heartbeat work can still render.
   }
   const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const taskNames = tasks.map((task) => task.name);
 
   const push = (item: HomeTodoItem) => {
     if (seen.has(item.id)) return;
@@ -125,7 +138,7 @@ export async function GET(req: Request) {
 
       push({
         id: `work:${entry.id}`,
-        title: heartbeatWorkTitle(entry.topic, entry.summary),
+        title: heartbeatWorkTitle(entry.topic, entry.summary, taskNames),
         done: false,
         kind: "heartbeat",
         workId: entry.id,

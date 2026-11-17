@@ -14,11 +14,28 @@ type UsageSummary = {
   totalTokens: number;
   inputTokens: number;
   outputTokens: number;
+  /** Current context: system prompt + tool schemas. */
+  systemTokens?: number;
+  /** Current context: conversation input (prompt minus system). */
+  contextInputTokens?: number;
+  /** Current context: latest completion. */
+  contextOutputTokens?: number;
   costUsd: number | null;
 };
 
+type UsageCategory = "system" | "input" | "output";
+
+type UsageSlice = {
+  key: UsageCategory;
+  label: string;
+  hint: string;
+  value: number;
+  color: string;
+};
+
 // Dynamic-island motion: a well-damped spring keeps the width/height morph
-// continuous instead of finishing with a snap.
+// continuous instead of finishing with a snap. The ring layer uses the same
+// spring so it grows out of the collapsed pill while the shell opens.
 const ISLAND_SPRING = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 } as const;
 // 18px is both the collapsed pill's visible radius (36px tall) and the expanded
 // card radius. Animating 999 -> 18 makes the browser clamp every intermediate
@@ -27,9 +44,30 @@ const ISLAND_SPRING = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 }
 const ISLAND_RADIUS = 18;
 // The detail layer is laid out at its final width from the first frame and
 // centered on the same axis as the shell, so its text stays put while the
-// shell grows/clips around it. Laying it out at the shell's left edge instead
-// made the whole card slide sideways during the morph.
+// shell grows/clips around it.
 const EXPANDED_WIDTH = 276;
+// The collapsed pill only carries the compact token count ("34k"), so it only
+// needs enough room for the miniature ring and that short label.
+const COLLAPSED_WIDTH = 74;
+const COLLAPSED_HEIGHT = 36;
+const RING_SIZE = 112;
+const COLLAPSED_RING_SIZE = 20;
+const RING_VIEWBOX = 120;
+const RING_RADIUS = 52;
+const RING_STROKE = 12;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+const RING_GAP = 2;
+// The ring starts at the top edge of the detail card (10px padding), so the
+// collapsed dot grows straight down into the chart instead of jumping.
+const RING_TOP = 10;
+const RING_LEFT = 14;
+// Center the 20px collapsed ring on the 36px pill's 18px corner axis.
+const COLLAPSED_RING_LEFT = 8;
+const COLLAPSED_RING_TOP = 8;
+const COLLAPSED_LABEL_LEFT = COLLAPSED_RING_LEFT + COLLAPSED_RING_SIZE + 3;
+const SYSTEM_COLOR = "#8b5cf6";
+const INPUT_COLOR = "#0ea5e9";
+const OUTPUT_COLOR = "#10b981";
 
 function formatTokens(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "0";
@@ -42,6 +80,10 @@ function formatTokens(value: number): string {
     return `${k >= 10 ? Math.floor(k) : k.toFixed(1).replace(/\.0$/, "")}k`;
   }
   return String(Math.round(value));
+}
+
+function formatExactTokens(value: number): string {
+  return Math.max(0, Math.round(value)).toLocaleString("en-US");
 }
 
 function formatCost(value: number): string {
@@ -60,18 +102,109 @@ function usageModelFromStorage(): string {
 }
 
 /**
+ * Segmented context ring. The same SVG is used collapsed (tiny) and expanded
+ * (large): the wrapper animates its size/position while the viewBox scales
+ * the strokes, so the small graph literally becomes the chart. The center
+ * stays empty; hovering a segment highlights it and swaps the matching
+ * legend row to its exact token count.
+ */
+function UsageRing({
+  slices,
+  total,
+  hovered,
+  onHover,
+}: {
+  slices: UsageSlice[];
+  total: number;
+  hovered: UsageCategory | null;
+  onHover: (key: UsageCategory | null) => void;
+}) {
+  let cursor = 0;
+  const arcs = slices.map((slice) => {
+    const fraction = total > 0 ? Math.max(0, slice.value) / total : 0;
+    const sweep = fraction * 360;
+    const start = cursor;
+    cursor += sweep;
+    const rawLength = fraction * RING_CIRCUMFERENCE;
+    const length =
+      slice.value > 0
+        ? Math.min(RING_CIRCUMFERENCE, Math.max(0.8, rawLength - RING_GAP))
+        : 0;
+    return { ...slice, start, length };
+  });
+
+  return (
+    <div className="relative size-full" onPointerLeave={() => onHover(null)}>
+      <svg
+        viewBox={`0 0 ${RING_VIEWBOX} ${RING_VIEWBOX}`}
+        className="size-full"
+        aria-hidden="true"
+      >
+        <circle
+          cx={RING_VIEWBOX / 2}
+          cy={RING_VIEWBOX / 2}
+          r={RING_RADIUS}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={RING_STROKE}
+          className="text-foreground/10"
+        />
+        {arcs
+          .filter((arc) => arc.length > 0)
+          .map((arc) => (
+            <circle
+              key={arc.key}
+              cx={RING_VIEWBOX / 2}
+              cy={RING_VIEWBOX / 2}
+              r={RING_RADIUS}
+              fill="none"
+              stroke={arc.color}
+              strokeWidth={hovered === arc.key ? RING_STROKE + 2 : RING_STROKE}
+              strokeDasharray={`${arc.length} ${RING_CIRCUMFERENCE}`}
+              transform={`rotate(${arc.start - 90} ${RING_VIEWBOX / 2} ${RING_VIEWBOX / 2})`}
+              opacity={hovered && hovered !== arc.key ? 0.45 : 1}
+              style={{
+                transition:
+                  "stroke-dasharray 500ms ease, stroke-width 80ms ease-out, opacity 80ms ease-out",
+              }}
+            />
+          ))}
+        {/* Wider invisible strokes make each thin segment easy to hover. */}
+        {arcs
+          .filter((arc) => arc.length > 0)
+          .map((arc) => (
+            <circle
+              key={`hit-${arc.key}`}
+              cx={RING_VIEWBOX / 2}
+              cy={RING_VIEWBOX / 2}
+              r={RING_RADIUS}
+              fill="none"
+              stroke="transparent"
+              strokeWidth={22}
+              strokeDasharray={`${arc.length} ${RING_CIRCUMFERENCE}`}
+              transform={`rotate(${arc.start - 90} ${RING_VIEWBOX / 2} ${RING_VIEWBOX / 2})`}
+              pointerEvents="stroke"
+              onPointerEnter={() => onHover(arc.key)}
+            />
+          ))}
+      </svg>
+    </div>
+  );
+}
+
+/**
  * Live context usage as a dynamic-island pill.
  *
- * Collapsed it shows only the used share of the context window (ring + %),
- * centered at the top of the thread. Hovering/focusing springs the same shell
- * open into a compact detail card with the used/window graph, the session's
- * input and output token split, and the real session price when one is known.
- * The detail copy is centered on the island's axis, so the shell morphs around
- * it without any sideways slide.
+ * Collapsed it shows `12k` beside a miniature segmented ring.
+ * Hovering/focusing springs the same shell open: the ring grows into a chart
+ * whose total is the context window, the legend splits it into system, input
+ * and output tokens, and the real session price sits underneath. Hovering a
+ * segment (or its legend row) immediately shows the exact token count in the
+ * legend; the chart center stays empty.
  *
- * Token counts come from provider usage events; cost is rendered only when a
- * gateway reported it or explicit list pricing is known — free, local,
- * subscription, and unpriced models show context alone.
+ * Token counts come from provider usage events; system/tool overhead comes
+ * from the context-budget telemetry logged for the latest request. Cost is
+ * rendered only when a gateway reported it or explicit list pricing is known.
  */
 export function SessionUsage({ className }: { className?: string }) {
   const threadIdFromState = useAuiState((s) => {
@@ -100,11 +233,12 @@ export function SessionUsage({ className }: { className?: string }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [hovered, setHovered] = useState<UsageCategory | null>(null);
   // The detail card is absolutely positioned so its size never fights the
   // pill; measuring it lets the island animate height with the same spring
   // as the width (no end-of-motion snap).
   const detailRef = useRef<HTMLDivElement | null>(null);
-  const [detailHeight, setDetailHeight] = useState(196);
+  const [detailHeight, setDetailHeight] = useState(156);
 
   useEffect(() => {
     const el = detailRef.current;
@@ -168,43 +302,77 @@ export function SessionUsage({ className }: { className?: string }) {
 
   if (!usage || usage.contextWindow <= 0) return null;
 
-  // Used context, not remaining: the ring fills up as the window is consumed.
   const contextWindow = usage.contextWindow;
-  const used = Math.max(0, Math.min(usage.usedTokens, contextWindow));
-  const fraction = contextWindow > 0 ? used / contextWindow : 0;
-  const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)));
-  const radius = 6.75;
-  const circumference = 2 * Math.PI * radius;
-  const arc = Math.max(0, Math.min(circumference, circumference * fraction));
+  const rawUsed = Math.max(0, usage.usedTokens);
+  const percent = Math.max(
+    0,
+    Math.min(100, Math.round((rawUsed / contextWindow) * 100)),
+  );
+  const chartTotal = Math.max(contextWindow, rawUsed, 1);
   const cost = usage.costUsd != null ? formatCost(usage.costUsd) : "";
-  const input = Math.max(0, usage.inputTokens);
-  const output = Math.max(0, usage.outputTokens);
-  const sessionTokens = input + output;
-  const inputShare = sessionTokens > 0 ? (input / sessionTokens) * 100 : 0;
-  const outputShare = sessionTokens > 0 ? (output / sessionTokens) * 100 : 0;
+
+  // Keep the three slices summing exactly to the current usage snapshot. The
+  // backend supplies this split from the latest prompt/completion plus the
+  // context-budget system/tool estimate; remain tolerant of older threads.
+  const systemValue = Math.min(rawUsed, Math.max(0, usage.systemTokens ?? 0));
+  const outputValue = Math.min(
+    Math.max(0, rawUsed - systemValue),
+    Math.max(0, usage.contextOutputTokens ?? 0),
+  );
+  const inputValue = Math.max(0, rawUsed - systemValue - outputValue);
+  const slices: UsageSlice[] = [
+    {
+      key: "system",
+      label: "System",
+      hint: "prompt + tools",
+      value: systemValue,
+      color: SYSTEM_COLOR,
+    },
+    {
+      key: "input",
+      label: "Input",
+      hint: "conversation",
+      value: inputValue,
+      color: INPUT_COLOR,
+    },
+    {
+      key: "output",
+      label: "Output",
+      hint: "response",
+      value: outputValue,
+      color: OUTPUT_COLOR,
+    },
+  ];
+
   const title = [
-    `${percent}% of context used`,
-    `${formatTokens(used)} of ${formatTokens(contextWindow)} tokens`,
-    `${formatTokens(usage.remainingTokens)} left`,
+    `${formatExactTokens(rawUsed)} of ${formatExactTokens(contextWindow)} tokens used (${percent}%)`,
+    `${formatExactTokens(systemValue)} system`,
+    `${formatExactTokens(inputValue)} input`,
+    `${formatExactTokens(outputValue)} output`,
     cost ? `${cost} this session` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
+  const close = () => {
+    setExpanded(false);
+    setHovered(null);
+  };
+
   return (
     <motion.div
       initial={false}
       animate={{
-        width: expanded ? EXPANDED_WIDTH : 88,
-        height: expanded ? detailHeight : 36,
+        width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH,
+        height: expanded ? detailHeight : COLLAPSED_HEIGHT,
       }}
       transition={ISLAND_SPRING}
       onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
+      onMouseLeave={close}
       onFocus={() => setExpanded(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setExpanded(false);
+          close();
         }
       }}
       tabIndex={0}
@@ -222,8 +390,11 @@ export function SessionUsage({ className }: { className?: string }) {
           sideways. It stays mounted so the spring always has a measured
           height target and the two layers can cross-fade. */}
       <div
-        className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2"
-        style={{ width: EXPANDED_WIDTH }}
+        className="absolute top-0 left-1/2 z-0 -translate-x-1/2"
+        style={{
+          width: EXPANDED_WIDTH,
+          pointerEvents: expanded ? "auto" : "none",
+        }}
         aria-hidden={!expanded}
       >
         <motion.div
@@ -231,71 +402,46 @@ export function SessionUsage({ className }: { className?: string }) {
           initial={false}
           animate={{ opacity: expanded ? 1 : 0 }}
           transition={{ duration: 0.18, ease: "easeOut" }}
-          className="px-3.5 pt-3 pb-3"
+          className="relative px-3.5 pt-2.5 pb-2.5"
         >
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              Context used
-            </span>
-            <span className="text-xs font-semibold tabular-nums text-foreground">
-              {percent}%
-            </span>
-          </div>
+          {/* The percentage keeps its top-right position while the chart and
+              legend move up into the space the old header occupied. */}
+          <span className="absolute right-3.5 top-3 text-xs font-semibold leading-none tabular-nums text-foreground">
+            {percent}% used
+          </span>
 
-          {/* Used-context graph: fills left → right as the window is used. */}
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <motion.div
-              initial={false}
-              animate={{ width: `${percent}%` }}
-              transition={{ duration: 0.35, ease: "easeOut" }}
-              className="h-full rounded-full bg-foreground/75"
-            />
-          </div>
-          <div className="mt-1 flex items-center justify-between text-[10px] tabular-nums text-muted-foreground/80">
-            <span>{formatTokens(used)} used</span>
-            <span>{formatTokens(contextWindow)} window</span>
-          </div>
-
-          <div className="my-2.5 h-px w-full bg-border/60" />
-
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>Session tokens</span>
-            <span className="font-medium tabular-nums text-foreground/80">
-              {formatTokens(sessionTokens)}
-            </span>
-          </div>
-          <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full bg-muted">
-            <motion.div
-              initial={false}
-              animate={{ width: `${inputShare}%` }}
-              transition={{ duration: 0.35, ease: "easeOut" }}
-              className="h-full bg-sky-500"
-            />
-            <motion.div
-              initial={false}
-              animate={{ width: `${outputShare}%` }}
-              transition={{ duration: 0.35, ease: "easeOut" }}
-              className="h-full bg-emerald-500"
-            />
-          </div>
-          <div className="mt-1.5 grid grid-cols-2 gap-2 text-[10px]">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <span className="size-1.5 shrink-0 rounded-full bg-sky-500" />
-              <span className="truncate text-muted-foreground">Input</span>
-              <span className="ml-auto font-medium tabular-nums text-foreground/80">
-                {formatTokens(input)}
-              </span>
-            </div>
-            <div className="flex min-w-0 items-center gap-1.5">
-              <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-              <span className="truncate text-muted-foreground">Output</span>
-              <span className="ml-auto font-medium tabular-nums text-foreground/80">
-                {formatTokens(output)}
-              </span>
+          <div className="flex items-center gap-3.5">
+            {/* Spacer for the persistent ring layer, which overlays this box. */}
+            <div className="size-28 shrink-0" aria-hidden="true" />
+            <div className="min-w-0 flex-1 py-1">
+              {slices.map((slice) => (
+                <div
+                  key={slice.key}
+                  onPointerEnter={() => setHovered(slice.key)}
+                  onPointerLeave={() =>
+                    setHovered((current) => (current === slice.key ? null : current))
+                  }
+                  className={cn(
+                    "-mx-1 flex items-center gap-1.5 rounded-md px-1 py-[3px] text-[10.5px] leading-none transition-colors duration-75 hover:bg-muted/50",
+                    hovered === slice.key && "bg-muted/60",
+                  )}
+                >
+                  <span
+                    className="size-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: slice.color }}
+                  />
+                  <span className="truncate text-muted-foreground">{slice.label}</span>
+                  <span className="ml-auto pl-1 font-medium tabular-nums text-foreground/80">
+                    {hovered === slice.key
+                      ? formatExactTokens(slice.value)
+                      : formatTokens(slice.value)}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="mt-2.5 flex items-center justify-between border-t border-border/60 pt-2 text-[11px]">
+          <div className="mt-2 flex h-4 items-center justify-between text-[11px]">
             <span className="text-muted-foreground">Session cost</span>
             <span className="font-semibold tabular-nums text-foreground">
               {cost || "—"}
@@ -304,41 +450,38 @@ export function SessionUsage({ className }: { className?: string }) {
         </motion.div>
       </div>
 
+      {/* One persistent ring morphs from the 20px collapsed dot into the
+          expanded chart; the shell and the ring share the same spring. */}
+      <motion.div
+        initial={false}
+        animate={{
+          left: expanded ? RING_LEFT : COLLAPSED_RING_LEFT,
+          top: expanded ? RING_TOP : COLLAPSED_RING_TOP,
+          width: expanded ? RING_SIZE : COLLAPSED_RING_SIZE,
+          height: expanded ? RING_SIZE : COLLAPSED_RING_SIZE,
+        }}
+        transition={ISLAND_SPRING}
+        className="absolute z-20"
+        style={{ pointerEvents: expanded ? "auto" : "none" }}
+      >
+        <UsageRing
+          slices={slices}
+          total={chartTotal}
+          hovered={hovered}
+          onHover={setHovered}
+        />
+      </motion.div>
+
       <motion.div
         initial={false}
         animate={{ opacity: expanded ? 0 : 1 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
-        className="flex h-9 w-full items-center justify-center gap-1.5"
+        className="absolute inset-0 z-10 flex h-9 items-center"
+        style={{ paddingLeft: COLLAPSED_LABEL_LEFT, paddingRight: 6 }}
         aria-hidden={expanded}
       >
-        <svg
-          viewBox="0 0 18 18"
-          className="size-4 shrink-0 -rotate-90"
-          aria-hidden="true"
-        >
-          <circle
-            cx="9"
-            cy="9"
-            r={radius}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            opacity="0.18"
-          />
-          <circle
-            cx="9"
-            cy="9"
-            r={radius}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeDasharray={`${arc} ${circumference}`}
-            className="text-foreground/80 transition-[stroke-dasharray] duration-500"
-          />
-        </svg>
-        <span className="whitespace-nowrap text-[11px] font-medium leading-none tabular-nums">
-          {percent}% used
+        <span className="w-full whitespace-nowrap text-center text-[13px] font-semibold leading-none tabular-nums">
+          {formatTokens(rawUsed)}
         </span>
       </motion.div>
     </motion.div>

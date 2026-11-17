@@ -24,11 +24,31 @@ const TITLE_PREFIXES: RegExp[] = [
 ];
 
 /**
+ * Headless plans store their owner's name in the topic (`<task>: <step>`).
+ * Strip that prefix when the caller can supply the real task names, so the
+ * widget shows the step itself instead of "Weekly review: Check inbox".
+ */
+function stripKnownTaskPrefix(title: string, taskNames?: Iterable<string>): string {
+  if (!taskNames) return title;
+  const candidates = Array.from(taskNames)
+    .map((name) => String(name ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const lower = title.toLowerCase();
+  for (const name of candidates) {
+    if (!lower.startsWith(`${name.toLowerCase()}:`)) continue;
+    return title.slice(name.length + 1).trim();
+  }
+  return title;
+}
+
+/**
  * Strip scheduler bookkeeping prefixes from a user-visible task title.
  * Repeated prefixes are removed, and empty results fall back to a stable
- * label so rows never render blank.
+ * label so rows never render blank. Pass the known scheduled-task names to
+ * also remove the `<task name>: ` prefix copied into headless-plan goals.
  */
-export function cleanTaskTitle(raw: unknown): string {
+export function cleanTaskTitle(raw: unknown, taskNames?: Iterable<string>): string {
   let title = String(raw ?? "")
     .replace(/\s+/g, " ")
     .trim();
@@ -39,6 +59,7 @@ export function cleanTaskTitle(raw: unknown): string {
     for (const prefix of TITLE_PREFIXES) {
       title = title.replace(prefix, "").trim();
     }
+    title = stripKnownTaskPrefix(title, taskNames);
   }
 
   return title || "Untitled task";

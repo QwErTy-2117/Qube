@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { useAui, useAuiState } from "@assistant-ui/react";
 
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { useChatCenter } from "@/components/updater/use-chat-center";
 
 type NoticeKind = "permission" | "question" | "done" | "failed";
@@ -422,11 +423,13 @@ export function SessionNotificationPopups() {
                 mass: 0.7,
               }}
               onClick={() => openSession(first.threadId)}
-              className="pointer-events-auto flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-black py-1.5 pl-3 pr-1.5 text-white shadow-2xl shadow-black/40"
+              className="pointer-events-auto flex h-9 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-black p-1.5 text-white shadow-2xl shadow-black/40"
               role="status"
               aria-live="polite"
             >
-              <span className="flex size-[18px] shrink-0 items-center justify-center">
+              {/* A 24px box inside 6px padding puts the mark's center exactly
+                  on the pill's corner axis (36px tall -> 18px radius). */}
+              <span className="flex size-6 shrink-0 items-center justify-center">
                 <KindMark kind={group.kind} />
               </span>
               <button
@@ -439,17 +442,19 @@ export function SessionNotificationPopups() {
               >
                 {first.label}
               </button>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 onClick={(event) => {
                   event.stopPropagation();
                   dismissKind(group.kind);
                 }}
                 aria-label="Dismiss notification"
-                className="flex size-6 shrink-0 items-center justify-center rounded-full text-white/55"
+                className="size-6 shrink-0 rounded-full text-white/55 transition-colors hover:bg-white/15 hover:text-white dark:hover:bg-white/15"
               >
                 <XIcon className="size-3.5" />
-              </button>
+              </Button>
             </motion.div>
           );
         })}

@@ -80,7 +80,6 @@ import type {
 } from "@/components/reui/event-calendar/event-calendar-types";
 
 import type { ScheduledTask } from "@/lib/scheduler/types";
-import type { TaskDraft } from "@/lib/scheduler/task-draft";
 import {
   compactTime,
   repeatValueFor,
@@ -693,53 +692,35 @@ export function SchedulingTab({
     setEditorError(null);
     const stillOpen = () => editorSessionRef.current === session;
 
-    // Leaving the title blank hands the whole task to the main model: it
-    // supplies the name, every schedule setting, and improved instructions.
-    let generated: TaskDraft | null = null;
+    // Only the title is generated, and only when it was left blank. The
+    // schedule and instructions always come from what the user typed/picked.
+    let generatedTitle = "";
     if (!typedTitle) {
       setGenerating(true);
       try {
         const response = await fetch("/api/scheduler/draft", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: description,
-            allowManual: false,
-            current: snapshot.task
-              ? {
-                  name: snapshot.task.name,
-                  instructions: description,
-                  scheduleKind: snapshot.task.schedule.kind,
-                  intervalMinutes: snapshot.task.schedule.intervalMinutes,
-                  runAt: snapshot.task.schedule.runAt
-                    ? new Date(snapshot.task.schedule.runAt).toISOString()
-                    : undefined,
-                  hour: snapshot.task.schedule.hour,
-                  minute: snapshot.task.schedule.minute,
-                  weekdays: snapshot.task.schedule.weekdays,
-                  monthDay: snapshot.task.schedule.monthDay,
-                }
-              : null,
-          }),
+          body: JSON.stringify({ prompt: description }),
         });
         const data = await response.json().catch(() => null);
-        if (!response.ok || !data?.draft) {
-          throw new Error(data?.error || "Could not generate the task.");
+        if (!response.ok || typeof data?.name !== "string" || !data.name.trim()) {
+          throw new Error(data?.error || "Could not generate a title.");
         }
-        generated = data.draft as TaskDraft;
+        generatedTitle = data.name.trim();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         // The user closed the sheet/settings while we were thinking; the
         // request kept going, but a real failure still needs to reach them.
         if (stillOpen()) setEditorError(message);
-        else pushChatError({ title: "Could not generate the task", message });
+        else pushChatError({ title: "Could not generate a title", message });
         setGenerating(false);
         return;
       }
       setGenerating(false);
     }
 
-    const title = typedTitle || generated?.name?.trim() || "";
+    const title = typedTitle || generatedTitle;
     if (!title) {
       const message = "Could not generate a title. Add one first.";
       if (stillOpen()) setEditorError(message);
@@ -754,7 +735,6 @@ export function SchedulingTab({
       return;
     }
     if (
-      !generated &&
       snapshot.repeat === "once" &&
       snapshot.start.getTime() <= Date.now()
     ) {
@@ -774,68 +754,57 @@ export function SchedulingTab({
           ),
         )
       : snapshot.end;
-    const durationMinutes = generated
-      ? 60
-      : Math.max(5, Math.round((end.getTime() - start.getTime()) / 60_000));
+    const durationMinutes = Math.max(
+      5,
+      Math.round((end.getTime() - start.getTime()) / 60_000),
+    );
     const hour = snapshot.allDay ? 0 : start.getHours();
     const minute = snapshot.allDay ? 0 : start.getMinutes();
 
     let schedule: Record<string, unknown>;
-    if (generated) {
-      schedule = {
-        scheduleKind: generated.scheduleKind,
-        intervalMinutes: generated.intervalMinutes,
-        runAt: generated.runAt,
-        hour: generated.hour,
-        minute: generated.minute,
-        weekdays: generated.weekdays,
-        monthDay: generated.monthDay,
-      };
-    } else {
-      switch (snapshot.repeat) {
-        case "once":
-          schedule = { scheduleKind: "once", runAt: start.toISOString() };
-          break;
-        case "hourly":
-          schedule = { scheduleKind: "interval", intervalMinutes: 60 };
-          break;
-        case "daily":
-          schedule = {
-            scheduleKind: "interval",
-            intervalMinutes: 1440,
-            hour,
-            minute,
-          };
-          break;
-        case "weekly":
-          schedule = {
-            scheduleKind: "interval",
-            intervalMinutes: 10_080,
-            hour,
-            minute,
-            weekdays: [start.getDay()],
-          };
-          break;
-        case "monthly":
-          schedule = {
-            scheduleKind: "interval",
-            intervalMinutes: 43_200,
-            hour,
-            minute,
-            monthDay: start.getDate(),
-          };
-          break;
-        default: {
-          const original = snapshot.task?.schedule;
-          schedule = {
-            scheduleKind: "interval",
-            intervalMinutes: original?.intervalMinutes ?? 1440,
-            hour: original?.hour ?? hour,
-            minute: original?.minute ?? minute,
-            weekdays: original?.weekdays,
-            monthDay: original?.monthDay,
-          };
-        }
+    switch (snapshot.repeat) {
+      case "once":
+        schedule = { scheduleKind: "once", runAt: start.toISOString() };
+        break;
+      case "hourly":
+        schedule = { scheduleKind: "interval", intervalMinutes: 60 };
+        break;
+      case "daily":
+        schedule = {
+          scheduleKind: "interval",
+          intervalMinutes: 1440,
+          hour,
+          minute,
+        };
+        break;
+      case "weekly":
+        schedule = {
+          scheduleKind: "interval",
+          intervalMinutes: 10_080,
+          hour,
+          minute,
+          weekdays: [start.getDay()],
+        };
+        break;
+      case "monthly":
+        schedule = {
+          scheduleKind: "interval",
+          intervalMinutes: 43_200,
+          hour,
+          minute,
+          monthDay: start.getDate(),
+        };
+        break;
+      default: {
+        const original = snapshot.task?.schedule;
+        schedule = {
+          scheduleKind: "interval",
+          intervalMinutes: original?.intervalMinutes ?? 1440,
+          hour: original?.hour ?? hour,
+          minute: original?.minute ?? minute,
+          weekdays: original?.weekdays,
+          monthDay: original?.monthDay,
+        };
       }
     }
 
@@ -844,12 +813,10 @@ export function SchedulingTab({
         ? { action: "update", id: snapshot.task.id }
         : { action: "create" }),
       name: title,
-      // Save the generator's rewritten brief. The typed text is the input
-      // request; these instructions are what the background run executes.
-      instructions: generated?.instructions?.trim() || description,
+      instructions: description,
       color: snapshot.color,
       durationMinutes,
-      allDay: generated ? false : snapshot.allDay,
+      allDay: snapshot.allDay,
       ...schedule,
     };
 

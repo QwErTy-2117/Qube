@@ -80,7 +80,7 @@ async function generateTaskTitle(instructions: string): Promise<string> {
   const res = await fetch("/api/scheduler/draft", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: instructions, mode: "title" }),
+    body: JSON.stringify({ prompt: instructions }),
   });
   const data = await res.json().catch(() => null);
   if (!res.ok || typeof data?.name !== "string" || !data.name.trim()) {

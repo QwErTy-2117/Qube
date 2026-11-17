@@ -1,20 +1,21 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseDraftResponse } from "@/app/api/scheduler/draft/route";
+import { parseTitleResponse } from "@/app/api/scheduler/draft/route";
 
-describe("parseDraftResponse", () => {
+describe("parseTitleResponse", () => {
   it("parses a clean JSON object", () => {
-    const r = parseDraftResponse('{"name":"T","instructions":"Do.","scheduleKind":"interval","intervalMinutes":1440}');
-    assert.equal(r.ok, true);
+    const r = parseTitleResponse('{"name":"Check prices"}');
+    assert.deepEqual(r, { ok: true, name: "Check prices" });
   });
 
   it("strips code fences", () => {
-    const r = parseDraftResponse('```json\n{"name":"T","instructions":"Do.","scheduleKind":"interval","intervalMinutes":1440}\n```');
-    assert.equal(r.ok, true);
+    const r = parseTitleResponse('```json\n{"name":"Check prices"}\n```');
+    assert.deepEqual(r, { ok: true, name: "Check prices" });
   });
 
-  it("fails on garbage", () => {
-    assert.equal(parseDraftResponse("hello world").ok, false);
+  it("fails on garbage and empty names", () => {
+    assert.equal(parseTitleResponse("hello world").ok, false);
+    assert.equal(parseTitleResponse('{"name":"  "}').ok, false);
   });
 });

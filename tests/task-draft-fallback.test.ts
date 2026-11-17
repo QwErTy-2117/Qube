@@ -2,11 +2,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  draftFromInstructions,
   extractJsonObject,
   parseJsonLoose,
   titleFromInstructions,
-  validateDraft,
 } from "@/lib/scheduler/task-draft";
 
 describe("extractJsonObject", () => {
@@ -64,39 +62,5 @@ describe("titleFromInstructions", () => {
     );
     assert.ok(long.length <= 60);
     assert.equal(titleFromInstructions(""), "New task");
-  });
-});
-
-describe("draftFromInstructions", () => {
-  it("recognises explicit intervals", () => {
-    const d = draftFromInstructions("check the price every 2 hours");
-    assert.equal(d.scheduleKind, "interval");
-    assert.equal(d.intervalMinutes, 120);
-  });
-
-  it("recognises daily cadences with a clock time", () => {
-    const d = draftFromInstructions("send me a summary every day at 8:30 am");
-    assert.equal(d.scheduleKind, "interval");
-    assert.equal(d.intervalMinutes, 1440);
-    assert.equal(d.hour, 8);
-    assert.equal(d.minute, 30);
-  });
-
-  it("does not mistake a quantity for a clock time", () => {
-    const d = draftFromInstructions("buy 2 apples every day");
-    assert.equal(d.scheduleKind, "interval");
-    assert.equal(d.hour, 9);
-    assert.equal(d.minute, 0);
-  });
-
-  it("produces a valid draft the store can save", () => {
-    const d = draftFromInstructions("water the plants on friday");
-    const validated = validateDraft(d);
-    assert.equal(validated.ok, true);
-  });
-
-  it("uses a manual reminder when the caller allows it", () => {
-    const d = draftFromInstructions("buy milk", { allowManual: true });
-    assert.equal(d.scheduleKind, "none");
   });
 });

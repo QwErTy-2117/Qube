@@ -115,10 +115,12 @@ function KindMark({ kind }: { kind: NoticeKind }) {
 }
 
 /**
- * Black top notifications for work happening in other sessions:
+ * Black pill notifications for work happening in other sessions:
  * permission/question (stay until handled or dismissed) and completed/failed
- * runs (auto-hide). Dismissing a pending item remembers it until the prompt
- * actually resolves; opening a session removes its popup immediately.
+ * runs (auto-hide). Each pill carries only the icon, the status label and the
+ * dismiss button — never the chat title. Dismissing a pending item remembers
+ * it until the prompt actually resolves; opening a session removes its popup
+ * immediately.
  */
 export function SessionNotificationPopups() {
   const aui = useAui();
@@ -132,17 +134,14 @@ export function SessionNotificationPopups() {
     (s) => (s.threads as any)?.mainThreadId as string | undefined,
   );
 
-  const threadTitles = useMemo(() => {
-    const map = new Map<string, string>();
+  const knownThreads = useMemo(() => {
+    const ids = new Set<string>();
     for (const item of threadItems) {
-      const title = (item.title || "").trim() || "New chat";
-      map.set(item.id, title);
-      if (item.remoteId) map.set(item.remoteId, title);
+      ids.add(item.id);
+      if (item.remoteId) ids.add(item.remoteId);
     }
-    return map;
+    return ids;
   }, [threadItems]);
-
-  const knownThreads = useMemo(() => new Set(threadTitles.keys()), [threadTitles]);
 
   const runtimeIdByServerId = useMemo(() => {
     const map = new Map<string, string>();
@@ -357,8 +356,8 @@ export function SessionNotificationPopups() {
   const groups = useMemo(
     () =>
       KIND_ORDER.map((kind) => {
-        // A fast session can finish twice while the first toast is still up;
-        // show one row per session, newest first.
+        // A fast session can finish twice while the first pill is still up;
+        // keep the newest notice per session.
         const seen = new Set<string>();
         const items = notices
           .filter((notice) => notice.kind === kind)
@@ -399,91 +398,60 @@ export function SessionNotificationPopups() {
   };
 
   const node = (
-    <AnimatePresence>
-      {groups.length > 0 && (
-        <motion.div
-          key="session-notifications"
-          initial={{ y: -24, opacity: 0, scale: 0.98 }}
-          animate={{ y: 0, opacity: 1, scale: 1 }}
-          exit={{ y: -24, opacity: 0, scale: 0.98 }}
-          transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
-          className="pointer-events-none fixed top-4 z-[95] flex w-[360px] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-2"
-          style={{ left: centerX ?? "50%" }}
-        >
-          <AnimatePresence initial={false}>
-            {groups.map((group) => {
-              const first = group.items[0];
-              return (
-                <motion.div
-                  key={group.kind}
-                  layout
-                  initial={{ y: -12, opacity: 0, scale: 0.98 }}
-                  animate={{ y: 0, opacity: 1, scale: 1 }}
-                  exit={{ y: -12, opacity: 0, scale: 0.98 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 420,
-                    damping: 30,
-                    mass: 0.7,
-                  }}
-                  onClick={() => openSession(first.threadId)}
-                  className="pointer-events-auto cursor-pointer overflow-hidden rounded-[22px] border border-white/10 bg-black text-white shadow-2xl shadow-black/40"
-                  role="status"
-                  aria-live="polite"
-                >
-                  <div className="flex items-center gap-2 px-3 pt-2.5">
-                    <span className="flex size-[18px] shrink-0 items-center justify-center">
-                      <KindMark kind={group.kind} />
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openSession(first.threadId);
-                      }}
-                      className="min-w-0 flex-1 truncate text-left text-[13px] font-semibold leading-none text-white"
-                    >
-                      {first.label}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        dismissKind(group.kind);
-                      }}
-                      aria-label="Dismiss notification"
-                      className="-mr-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/10 hover:text-white"
-                    >
-                      <XIcon className="size-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="px-3 pb-2.5 pt-1.5">
-                    <ul className="flex flex-col gap-0.5">
-                      {group.items.map((notice) => (
-                        <li key={notice.key}>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openSession(notice.threadId);
-                            }}
-                            className="block w-full truncate rounded-md px-1 py-0.5 text-left text-[11.5px] leading-snug text-white/65 transition-colors hover:bg-white/10 hover:text-white/90"
-                            title={threadTitles.get(notice.threadId) || "New chat"}
-                          >
-                            {threadTitles.get(notice.threadId) || "New chat"}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div
+      className="pointer-events-none fixed top-4 z-[95] flex -translate-x-1/2 flex-col items-center gap-2"
+      style={{ left: centerX ?? "50%" }}
+    >
+      <AnimatePresence initial={false}>
+        {groups.map((group) => {
+          const first = group.items[0];
+          return (
+            <motion.div
+              key={group.kind}
+              layout
+              initial={{ y: -16, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -16, opacity: 0 }}
+              transition={{
+                type: "spring",
+                stiffness: 420,
+                damping: 30,
+                mass: 0.7,
+              }}
+              onClick={() => openSession(first.threadId)}
+              className="pointer-events-auto flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-black py-1.5 pl-3 pr-1.5 text-white shadow-2xl shadow-black/40"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="flex size-[18px] shrink-0 items-center justify-center">
+                <KindMark kind={group.kind} />
+              </span>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openSession(first.threadId);
+                }}
+                className="min-w-0 truncate text-left text-[13px] font-semibold leading-none text-white"
+              >
+                {first.label}
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  dismissKind(group.kind);
+                }}
+                aria-label="Dismiss notification"
+                className="flex size-6 shrink-0 items-center justify-center rounded-full text-white/55"
+              >
+                <XIcon className="size-3.5" />
+              </button>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
   );
 
   return createPortal(node, document.body);

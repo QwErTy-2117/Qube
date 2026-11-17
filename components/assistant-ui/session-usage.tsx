@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuiState } from "@assistant-ui/react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 
@@ -17,17 +17,10 @@ type UsageSummary = {
   costUsd: number | null;
 };
 
-// Dynamic-island motion: a well-damped spring keeps the width/height morph
-// continuous instead of finishing with a snap.
-const ISLAND_SPRING = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 } as const;
 // 18px is both the collapsed pill's visible radius (36px tall) and the expanded
-// card radius. Animating 999 -> 18 makes the browser clamp every intermediate
-// value to half the animating height, then release it near the end of the
-// spring — a visible radius snap. Keeping it constant avoids that entirely.
+// card radius.
 const ISLAND_RADIUS = 18;
-// The detail layer is laid out at its final width from the first frame. If it
-// followed the animating shell instead, the text would reflow every frame and
-// ResizeObserver would keep changing the measured height target — the snap.
+// The detail card is laid out at its final width so its text never reflows.
 const EXPANDED_WIDTH = 276;
 
 function formatTokens(value: number): string {
@@ -62,9 +55,10 @@ function usageModelFromStorage(): string {
  * Live context usage as a dynamic-island pill.
  *
  * Collapsed it shows only the used share of the context window (ring + %),
- * centered at the top of the thread. Hovering/focusing morphs it into a
- * compact detail card with the used/window graph, the session's input and
- * output token split, and the real session price when one is known.
+ * centered at the top of the thread. Hovering/focusing reveals a compact
+ * detail card below the pill with the used/window graph, the session's input
+ * and output token split, and the real session price when one is known. The
+ * pill itself stays put — nothing expands or slides sideways.
  *
  * Token counts come from provider usage events; cost is rendered only when a
  * gateway reported it or explicit list pricing is known — free, local,
@@ -97,24 +91,6 @@ export function SessionUsage({ className }: { className?: string }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [expanded, setExpanded] = useState(false);
-  // The detail card is absolutely positioned so its size never fights the
-  // pill; measuring it lets the island animate height with the same spring
-  // as the width (no end-of-motion snap).
-  const detailRef = useRef<HTMLDivElement | null>(null);
-  const [detailHeight, setDetailHeight] = useState(196);
-
-  useEffect(() => {
-    const el = detailRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const measure = () => {
-      const height = el.offsetHeight;
-      if (height > 0) setDetailHeight(height);
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    measure();
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     const syncModel = () => {
@@ -189,13 +165,7 @@ export function SessionUsage({ className }: { className?: string }) {
     .join(" · ");
 
   return (
-    <motion.div
-      initial={false}
-      animate={{
-        width: expanded ? EXPANDED_WIDTH : 88,
-        height: expanded ? detailHeight : 36,
-      }}
-      transition={ISLAND_SPRING}
+    <div
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
       onFocus={() => setExpanded(true)}
@@ -208,23 +178,61 @@ export function SessionUsage({ className }: { className?: string }) {
       role="status"
       aria-label={title}
       title={expanded ? undefined : title}
-      className={cn(
-        "pointer-events-auto relative overflow-hidden border border-border/55 bg-background/85 text-foreground shadow-[0_8px_30px_-16px_rgba(0,0,0,0.24)] outline-none backdrop-blur-xl focus-visible:ring-2 focus-visible:ring-ring/40",
-        className,
-      )}
-      style={{ borderRadius: ISLAND_RADIUS }}
+      className="pointer-events-auto relative rounded-[18px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
     >
-      {/* Both layers stay mounted so opacity cross-fades while the shell's
-          width/height spring runs; nothing swaps in a single frame. */}
-      <motion.div
-        ref={detailRef}
-        initial={false}
-        animate={{ opacity: expanded ? 1 : 0 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-        className="absolute top-0 left-0 px-3.5 pt-3 pb-3"
-        style={{ width: EXPANDED_WIDTH }}
-        aria-hidden={!expanded}
+      {/* The pill keeps its size; details open below it so nothing moves
+          sideways on hover. */}
+      <div
+        className={cn(
+          "flex h-9 w-[88px] items-center justify-center gap-1.5 overflow-hidden border border-border/55 bg-background/85 text-foreground shadow-[0_8px_30px_-16px_rgba(0,0,0,0.24)] backdrop-blur-xl",
+          className,
+        )}
+        style={{ borderRadius: ISLAND_RADIUS }}
       >
+        <svg
+          viewBox="0 0 18 18"
+          className="size-4 shrink-0 -rotate-90"
+          aria-hidden="true"
+        >
+          <circle
+            cx="9"
+            cy="9"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            opacity="0.18"
+          />
+          <circle
+            cx="9"
+            cy="9"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeDasharray={`${arc} ${circumference}`}
+            className="text-foreground/80 transition-[stroke-dasharray] duration-500"
+          />
+        </svg>
+        <span className="whitespace-nowrap text-[11px] font-medium leading-none tabular-nums">
+          {percent}% used
+        </span>
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <div
+            className="absolute left-1/2 top-full z-50 -translate-x-1/2 pt-2"
+            style={{ width: EXPANDED_WIDTH }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="rounded-[18px] border border-border/55 bg-background/95 px-3.5 pt-3 pb-3 text-foreground shadow-[0_16px_40px_-20px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+            >
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-medium text-muted-foreground">
                 Context used
@@ -293,45 +301,10 @@ export function SessionUsage({ className }: { className?: string }) {
                 {cost || "—"}
               </span>
             </div>
-      </motion.div>
-
-      <motion.div
-        initial={false}
-        animate={{ opacity: expanded ? 0 : 1 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-        className="flex h-9 w-full items-center justify-center gap-1.5"
-        aria-hidden={expanded}
-      >
-        <svg
-          viewBox="0 0 18 18"
-          className="size-4 shrink-0 -rotate-90"
-          aria-hidden="true"
-        >
-          <circle
-            cx="9"
-            cy="9"
-            r={radius}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            opacity="0.18"
-          />
-          <circle
-            cx="9"
-            cy="9"
-            r={radius}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeDasharray={`${arc} ${circumference}`}
-            className="text-foreground/80 transition-[stroke-dasharray] duration-500"
-          />
-        </svg>
-        <span className="whitespace-nowrap text-[11px] font-medium leading-none tabular-nums">
-          {percent}% used
-        </span>
-      </motion.div>
-    </motion.div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { XIcon } from "lucide-react";
+import { TriangleAlertIcon, XIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useChatCenter } from "@/components/updater/use-chat-center";
 
@@ -148,43 +148,44 @@ function ErrorPopupPortal({
   if (!mounted || typeof document === "undefined") return null;
 
   const node = (
-    <AnimatePresence>
-      {error && (
-        <motion.div
-          key={error.title + error.message}
-          initial={{ y: -24, opacity: 0, scale: 0.98 }}
-          animate={{ y: 0, opacity: 1, scale: 1 }}
-          exit={{ y: -24, opacity: 0, scale: 0.98 }}
-          transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
-          className="fixed top-4 z-[100] w-[480px] max-w-[calc(100vw-2rem)] -translate-x-1/2"
-          style={{ left: centerX ?? "50%" }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <div className="relative overflow-hidden rounded-[26px] border border-red-600 bg-red-600 shadow-xl shadow-red-900/30">
+    <div
+      className="pointer-events-none fixed top-4 z-[100] flex -translate-x-1/2 justify-center"
+      style={{ left: centerX ?? "50%" }}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <AnimatePresence initial={false}>
+        {error && (
+          <motion.div
+            key={error.title + error.message}
+            initial={{ y: -16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -16, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
+            className="pointer-events-auto flex max-w-[min(92vw,640px)] items-center gap-2.5 overflow-hidden rounded-full border border-red-600 bg-red-600 py-2 pl-3 pr-1.5 text-white shadow-xl shadow-red-900/30"
+            title={[body, error.status ? `Status: ${error.status}` : ""].filter(Boolean).join("\n\n")}
+          >
+            <TriangleAlertIcon className="size-4 shrink-0" strokeWidth={2.2} aria-hidden="true" />
+            <span className="min-w-0 max-w-[55%] shrink-0 truncate text-[13px] font-semibold leading-none">
+              {error.title || "An error occurred"}
+            </span>
+            {body ? (
+              <span className="min-w-0 flex-1 truncate text-[12px] leading-none text-white/85">
+                {body}
+              </span>
+            ) : null}
             <button
               type="button"
               onClick={onDismiss}
               aria-label="Dismiss error"
-              className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full bg-white/10 text-white/80 transition-opacity hover:bg-white/20 hover:text-white"
+              className="flex size-6 shrink-0 items-center justify-center rounded-full text-white/75"
             >
-              <XIcon className="size-4" />
+              <XIcon className="size-3.5" />
             </button>
-            <div className="px-4 pt-4 pb-3 pr-12">
-              <h4 className="text-[14px] font-semibold tracking-tight text-white leading-none">
-                {error.title || "An error occurred"}
-              </h4>
-              <p className="text-[12.5px] text-white/85 leading-relaxed mt-1.5 whitespace-pre-wrap break-words max-h-[30vh] overflow-y-auto scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                {body}
-              </p>
-              {error.status ? (
-                <p className="text-[11px] text-white/60 mt-1.5">Status: {error.status}</p>
-              ) : null}
-            </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 
   return createPortal(node, document.body);

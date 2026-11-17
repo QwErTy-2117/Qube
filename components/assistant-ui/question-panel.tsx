@@ -206,18 +206,20 @@ export const QuestionPanel: FC<{ fallback?: ReactNode; threadId?: string }> = ({
           </div>
 
           <div className="flex items-center justify-between gap-1.5 px-4 pb-3">
-            <div className="flex items-center gap-1.5" aria-hidden="true">
-              {questions.map((q, i) => (
-                <div
-                  key={q.id}
-                  className={`size-2 rounded-full transition-all duration-300 ${
-                    i === safeIndex ? "w-5 bg-primary" : "bg-muted-foreground/30"
-                  }`}
-                />
-              ))}
-            </div>
+            {!singleQuestion && (
+              <div className="flex items-center gap-1.5" aria-hidden="true">
+                {questions.map((q, i) => (
+                  <div
+                    key={q.id}
+                    className={`size-2 rounded-full transition-all duration-300 ${
+                      i === safeIndex ? "w-5 bg-primary" : "bg-muted-foreground/30"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
             {singleQuestion ? (
-              <div className="flex items-center justify-end">
+              <div className="ml-auto flex items-center justify-end">
                 <button
                   type="button"
                   onClick={submit}

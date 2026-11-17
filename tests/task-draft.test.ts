@@ -1,103 +1,47 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildDraftPrompt, buildDraftSystemPrompt, validateDraft, type TaskDraft, type DraftInput } from "@/lib/scheduler/task-draft";
+import {
+  buildTitlePrompt,
+  buildTitleSystemPrompt,
+  validateTitleDraft,
+} from "@/lib/scheduler/task-draft";
 
-describe("buildDraftPrompt", () => {
-  it("includes the user prompt, current draft, date and timezone", () => {
-    const current: DraftInput = { name: "Report", instructions: "Old.", scheduleKind: "interval", intervalMinutes: 1440 };
-    const p = buildDraftPrompt("every morning at 6 send it", current);
-    assert.match(p, /every morning at 6 send it/);
-    assert.match(p, /"name": "Report"/);
-    assert.match(p, /"scheduleKind": "interval"/);
-    assert.match(p, /current date/i);
-  });
-
-  it("asks for improved, durable instructions instead of a transcription", () => {
-    const p = buildDraftPrompt("check prices every day", null);
-    assert.match(p, /Rewrite the request into durable, self-contained instructions/);
-    assert.match(p, /improve it rather than transcribing it/);
-  });
-
-  it("works without a current draft", () => {
-    const p = buildDraftPrompt("remind me Friday", null);
-    assert.match(p, /remind me Friday/);
+describe("buildTitleSystemPrompt", () => {
+  it("demands one short, concrete JSON title", () => {
+    const prompt = buildTitleSystemPrompt();
+    assert.match(prompt, /ONE JSON object/);
+    assert.match(prompt, /short, concrete title/);
+    assert.match(prompt, /never a generic label/);
   });
 });
 
-describe("buildDraftSystemPrompt", () => {
-  it("demands self-contained instructions with sources, output and quiet rules", () => {
-    const prompt = buildDraftSystemPrompt();
-    assert.match(prompt, /Instructions are the most important field/);
-    assert.match(prompt, /self-contained brief/);
-    assert.match(prompt, /no user present and no chat history/);
-    assert.match(prompt, /what to check or read/);
-    assert.match(prompt, /what counts as a change/);
-    assert.match(prompt, /notification rule/);
-    assert.match(prompt, /otherwise stay quiet/);
-    assert.match(prompt, /done criteria/);
-    assert.match(prompt, /never invent credentials/);
-  });
-
-  it("keeps the heartbeat/manual variant and schedule defaults", () => {
-    const prompt = buildDraftSystemPrompt({ allowManual: true });
-    assert.match(prompt, /heartbeat reminder/);
-    assert.match(prompt, /scheduleKind": "none"\|"once"\|"interval"/);
-    assert.match(prompt, /ambiguous means a sensible default/);
+describe("buildTitlePrompt", () => {
+  it("uses only the instructions text", () => {
+    const prompt = buildTitlePrompt("check the price of the flights every morning");
+    assert.match(prompt, /Reminder instructions:/);
+    assert.match(prompt, /check the price of the flights every morning/);
+    assert.doesNotMatch(prompt, /scheduleKind/);
   });
 });
 
-describe("validateDraft", () => {
-  const good: TaskDraft = { name: "Report", instructions: "Send it.", scheduleKind: "interval", intervalMinutes: 1440 };
-
-  it("accepts a good draft", () => {
-    assert.deepEqual(validateDraft(good).ok, true);
+describe("validateTitleDraft", () => {
+  it("accepts a trimmed name", () => {
+    assert.deepEqual(validateTitleDraft({ name: "  Water the plants  " }), {
+      ok: true,
+      name: "Water the plants",
+    });
   });
 
-  it("accepts heartbeat reminders only when the caller allows manual tasks", () => {
-    const manual = { name: "Water plants", instructions: "Water the plants on the balcony.", scheduleKind: "none" };
-    assert.equal(validateDraft(manual).ok, false);
-    const allowed = validateDraft(manual, { allowManual: true });
-    assert.equal(allowed.ok, true);
-    if (allowed.ok) {
-      assert.equal(allowed.draft.scheduleKind, "none");
-      assert.equal(allowed.draft.intervalMinutes, undefined);
-      assert.equal(allowed.draft.runAt, undefined);
-    }
-  });
-
-  it("validates title-only drafts for blank reminder titles", async () => {
-    const { validateTitleDraft } = await import("@/lib/scheduler/task-draft");
-    assert.deepEqual(validateTitleDraft({ name: "  Water the plants  " }), { ok: true, name: "Water the plants" });
+  it("rejects empty and non-object titles", () => {
     assert.equal(validateTitleDraft({ name: " " }).ok, false);
     assert.equal(validateTitleDraft("nope").ok, false);
+    assert.equal(validateTitleDraft({}).ok, false);
   });
 
-  it("rejects empty name/instructions", () => {
-    assert.equal(validateDraft({ ...good, name: " " }).ok, false);
-    assert.equal(validateDraft({ ...good, instructions: "" }).ok, false);
-  });
-
-  it("rejects unknown schedule kinds", () => {
-    assert.equal(validateDraft({ ...good, scheduleKind: "yearly" }).ok, false);
-  });
-
-  it("checks timing ranges", () => {
-    assert.equal(validateDraft({ ...good, hour: 25 }).ok, false);
-    assert.equal(validateDraft({ ...good, minute: 60 }).ok, false);
-    assert.equal(validateDraft({ ...good, weekdays: [7] }).ok, false);
-    assert.equal(validateDraft({ ...good, intervalMinutes: 0 }).ok, false);
-    assert.equal(validateDraft({ name: "X", instructions: "Y", scheduleKind: "once", runAt: "not-a-date" }).ok, false);
-    const past = new Date(Date.now() - 60_000).toISOString();
-    assert.equal(validateDraft({ name: "X", instructions: "Y", scheduleKind: "once", runAt: past }).ok, false);
-  });
-
-  it("trims strings and defaults a one-shot draft to a future time", () => {
-    const r = validateDraft({ name: "  T  ", instructions: " Do. ", scheduleKind: "once" });
+  it("caps the name at 120 characters", () => {
+    const r = validateTitleDraft({ name: "a".repeat(200) });
     assert.equal(r.ok, true);
-    const draft = (r as { draft: TaskDraft }).draft;
-    assert.equal(draft.name, "T");
-    assert.ok(draft.runAt);
-    assert.ok(Date.parse(draft.runAt!) > Date.now());
+    assert.equal(r.ok && r.name.length, 120);
   });
 });

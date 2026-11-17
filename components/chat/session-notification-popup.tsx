@@ -376,6 +376,9 @@ export function SessionNotificationPopups() {
   const centerX = useChatCenter(mounted && groups.length > 0);
 
   if (!mounted || typeof document === "undefined") return null;
+  // Don't mount at the 50% fallback and slide to the measured chat-column
+  // center while the entrance animation runs: wait for the first measurement.
+  if (groups.length > 0 && centerX == null) return null;
 
   const dismissKind = (kind: NoticeKind) => {
     const items = noticesRef.current.filter((notice) => notice.kind === kind);

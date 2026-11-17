@@ -146,10 +146,14 @@ function ErrorPopupPortal({
   const centerX = useChatCenter(mounted && !!error);
 
   if (!mounted || typeof document === "undefined") return null;
+  // Wait for the first center measurement. Rendering at the 50% fallback and
+  // then re-centering a frame later made the toast visibly slide in from one
+  // side while its vertical entrance was still running.
+  if (error && centerX == null) return null;
 
   const node = (
     <div
-      className="pointer-events-none fixed top-4 z-[100] flex -translate-x-1/2 justify-center"
+      className="pointer-events-none fixed top-4 z-[100] grid -translate-x-1/2 justify-items-center"
       style={{ left: centerX ?? "50%" }}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
@@ -162,7 +166,7 @@ function ErrorPopupPortal({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -16, opacity: 0 }}
             transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
-            className="pointer-events-auto flex max-w-[min(92vw,640px)] items-center gap-2.5 overflow-hidden rounded-full border border-red-600 bg-red-600 py-2 pl-3 pr-1.5 text-white shadow-xl shadow-red-900/30"
+            className="pointer-events-auto col-start-1 row-start-1 flex max-w-[min(92vw,640px)] items-center gap-2.5 overflow-hidden rounded-full border border-red-600 bg-red-600 py-2 pl-3 pr-1.5 text-white shadow-xl shadow-red-900/30"
             title={[body, error.status ? `Status: ${error.status}` : ""].filter(Boolean).join("\n\n")}
           >
             <TriangleAlertIcon className="size-4 shrink-0" strokeWidth={2.2} aria-hidden="true" />

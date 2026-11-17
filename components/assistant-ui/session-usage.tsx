@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuiState } from "@assistant-ui/react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 
@@ -17,10 +17,18 @@ type UsageSummary = {
   costUsd: number | null;
 };
 
+// Dynamic-island motion: a well-damped spring keeps the width/height morph
+// continuous instead of finishing with a snap.
+const ISLAND_SPRING = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 } as const;
 // 18px is both the collapsed pill's visible radius (36px tall) and the expanded
-// card radius.
+// card radius. Animating 999 -> 18 makes the browser clamp every intermediate
+// value to half the animating height, then release it near the end of the
+// spring — a visible radius snap. Keeping it constant avoids that entirely.
 const ISLAND_RADIUS = 18;
-// The detail card is laid out at its final width so its text never reflows.
+// The detail layer is laid out at its final width from the first frame and
+// centered on the same axis as the shell, so its text stays put while the
+// shell grows/clips around it. Laying it out at the shell's left edge instead
+// made the whole card slide sideways during the morph.
 const EXPANDED_WIDTH = 276;
 
 function formatTokens(value: number): string {
@@ -55,10 +63,11 @@ function usageModelFromStorage(): string {
  * Live context usage as a dynamic-island pill.
  *
  * Collapsed it shows only the used share of the context window (ring + %),
- * centered at the top of the thread. Hovering/focusing reveals a compact
- * detail card below the pill with the used/window graph, the session's input
- * and output token split, and the real session price when one is known. The
- * pill itself stays put — nothing expands or slides sideways.
+ * centered at the top of the thread. Hovering/focusing springs the same shell
+ * open into a compact detail card with the used/window graph, the session's
+ * input and output token split, and the real session price when one is known.
+ * The detail copy is centered on the island's axis, so the shell morphs around
+ * it without any sideways slide.
  *
  * Token counts come from provider usage events; cost is rendered only when a
  * gateway reported it or explicit list pricing is known — free, local,
@@ -91,6 +100,24 @@ export function SessionUsage({ className }: { className?: string }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // The detail card is absolutely positioned so its size never fights the
+  // pill; measuring it lets the island animate height with the same spring
+  // as the width (no end-of-motion snap).
+  const detailRef = useRef<HTMLDivElement | null>(null);
+  const [detailHeight, setDetailHeight] = useState(196);
+
+  useEffect(() => {
+    const el = detailRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const height = el.offsetHeight;
+      if (height > 0) setDetailHeight(height);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    measure();
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const syncModel = () => {
@@ -165,7 +192,13 @@ export function SessionUsage({ className }: { className?: string }) {
     .join(" · ");
 
   return (
-    <div
+    <motion.div
+      initial={false}
+      animate={{
+        width: expanded ? EXPANDED_WIDTH : 88,
+        height: expanded ? detailHeight : 36,
+      }}
+      transition={ISLAND_SPRING}
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
       onFocus={() => setExpanded(true)}
@@ -178,16 +211,105 @@ export function SessionUsage({ className }: { className?: string }) {
       role="status"
       aria-label={title}
       title={expanded ? undefined : title}
-      className="pointer-events-auto relative rounded-[18px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      className={cn(
+        "pointer-events-auto relative overflow-hidden border border-border/55 bg-background/85 text-foreground shadow-[0_8px_30px_-16px_rgba(0,0,0,0.24)] outline-none backdrop-blur-xl focus-visible:ring-2 focus-visible:ring-ring/40",
+        className,
+      )}
+      style={{ borderRadius: ISLAND_RADIUS }}
     >
-      {/* The pill keeps its size; details open below it so nothing moves
-          sideways on hover. */}
+      {/* The detail layer is fixed-width and centered on the shell's axis, so
+          the shell morphs around stationary copy instead of dragging it
+          sideways. It stays mounted so the spring always has a measured
+          height target and the two layers can cross-fade. */}
       <div
-        className={cn(
-          "flex h-9 w-[88px] items-center justify-center gap-1.5 overflow-hidden border border-border/55 bg-background/85 text-foreground shadow-[0_8px_30px_-16px_rgba(0,0,0,0.24)] backdrop-blur-xl",
-          className,
-        )}
-        style={{ borderRadius: ISLAND_RADIUS }}
+        className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2"
+        style={{ width: EXPANDED_WIDTH }}
+        aria-hidden={!expanded}
+      >
+        <motion.div
+          ref={detailRef}
+          initial={false}
+          animate={{ opacity: expanded ? 1 : 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          className="px-3.5 pt-3 pb-3"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Context used
+            </span>
+            <span className="text-xs font-semibold tabular-nums text-foreground">
+              {percent}%
+            </span>
+          </div>
+
+          {/* Used-context graph: fills left → right as the window is used. */}
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <motion.div
+              initial={false}
+              animate={{ width: `${percent}%` }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="h-full rounded-full bg-foreground/75"
+            />
+          </div>
+          <div className="mt-1 flex items-center justify-between text-[10px] tabular-nums text-muted-foreground/80">
+            <span>{formatTokens(used)} used</span>
+            <span>{formatTokens(contextWindow)} window</span>
+          </div>
+
+          <div className="my-2.5 h-px w-full bg-border/60" />
+
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>Session tokens</span>
+            <span className="font-medium tabular-nums text-foreground/80">
+              {formatTokens(sessionTokens)}
+            </span>
+          </div>
+          <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full bg-muted">
+            <motion.div
+              initial={false}
+              animate={{ width: `${inputShare}%` }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="h-full bg-sky-500"
+            />
+            <motion.div
+              initial={false}
+              animate={{ width: `${outputShare}%` }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="h-full bg-emerald-500"
+            />
+          </div>
+          <div className="mt-1.5 grid grid-cols-2 gap-2 text-[10px]">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="size-1.5 shrink-0 rounded-full bg-sky-500" />
+              <span className="truncate text-muted-foreground">Input</span>
+              <span className="ml-auto font-medium tabular-nums text-foreground/80">
+                {formatTokens(input)}
+              </span>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span className="truncate text-muted-foreground">Output</span>
+              <span className="ml-auto font-medium tabular-nums text-foreground/80">
+                {formatTokens(output)}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-2.5 flex items-center justify-between border-t border-border/60 pt-2 text-[11px]">
+            <span className="text-muted-foreground">Session cost</span>
+            <span className="font-semibold tabular-nums text-foreground">
+              {cost || "—"}
+            </span>
+          </div>
+        </motion.div>
+      </div>
+
+      <motion.div
+        initial={false}
+        animate={{ opacity: expanded ? 0 : 1 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
+        className="flex h-9 w-full items-center justify-center gap-1.5"
+        aria-hidden={expanded}
       >
         <svg
           viewBox="0 0 18 18"
@@ -218,93 +340,7 @@ export function SessionUsage({ className }: { className?: string }) {
         <span className="whitespace-nowrap text-[11px] font-medium leading-none tabular-nums">
           {percent}% used
         </span>
-      </div>
-
-      <AnimatePresence>
-        {expanded && (
-          <div
-            className="absolute left-1/2 top-full z-50 -translate-x-1/2 pt-2"
-            style={{ width: EXPANDED_WIDTH }}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-              className="rounded-[18px] border border-border/55 bg-background/95 px-3.5 pt-3 pb-3 text-foreground shadow-[0_16px_40px_-20px_rgba(0,0,0,0.35)] backdrop-blur-xl"
-            >
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[11px] font-medium text-muted-foreground">
-                Context used
-              </span>
-              <span className="text-xs font-semibold tabular-nums text-foreground">
-                {percent}%
-              </span>
-            </div>
-
-            {/* Used-context graph: fills left → right as the window is used. */}
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <motion.div
-                initial={false}
-                animate={{ width: `${percent}%` }}
-                transition={{ duration: 0.35, ease: "easeOut" }}
-                className="h-full rounded-full bg-foreground/75"
-              />
-            </div>
-            <div className="mt-1 flex items-center justify-between text-[10px] tabular-nums text-muted-foreground/80">
-              <span>{formatTokens(used)} used</span>
-              <span>{formatTokens(contextWindow)} window</span>
-            </div>
-
-            <div className="my-2.5 h-px w-full bg-border/60" />
-
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>Session tokens</span>
-              <span className="font-medium tabular-nums text-foreground/80">
-                {formatTokens(sessionTokens)}
-              </span>
-            </div>
-            <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full bg-muted">
-              <motion.div
-                initial={false}
-                animate={{ width: `${inputShare}%` }}
-                transition={{ duration: 0.35, ease: "easeOut" }}
-                className="h-full bg-sky-500"
-              />
-              <motion.div
-                initial={false}
-                animate={{ width: `${outputShare}%` }}
-                transition={{ duration: 0.35, ease: "easeOut" }}
-                className="h-full bg-emerald-500"
-              />
-            </div>
-            <div className="mt-1.5 grid grid-cols-2 gap-2 text-[10px]">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <span className="size-1.5 shrink-0 rounded-full bg-sky-500" />
-                <span className="truncate text-muted-foreground">Input</span>
-                <span className="ml-auto font-medium tabular-nums text-foreground/80">
-                  {formatTokens(input)}
-                </span>
-              </div>
-              <div className="flex min-w-0 items-center gap-1.5">
-                <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-                <span className="truncate text-muted-foreground">Output</span>
-                <span className="ml-auto font-medium tabular-nums text-foreground/80">
-                  {formatTokens(output)}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-2.5 flex items-center justify-between border-t border-border/60 pt-2 text-[11px]">
-              <span className="text-muted-foreground">Session cost</span>
-              <span className="font-semibold tabular-nums text-foreground">
-                {cost || "—"}
-              </span>
-            </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

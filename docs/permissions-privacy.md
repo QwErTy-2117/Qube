@@ -40,16 +40,19 @@ time out rather than executing silently.
 
 ### Handled by you in person
 
-Logins, captchas, two-factor prompts and payments in the browser are never
-automated — Qube requests a takeover, you act in the Browser panel, and the
-task resumes. See [Browser automation](./browser.md).
+Qube handles CAPTCHAs, bot checks and payment steps in the browser itself. It
+requests a takeover only when the page needs credentials or another protected
+input that only you can supply — a login or two-factor prompt, for example.
+You act in the Browser panel, and the task resumes. See
+[Browser automation](./browser.md).
 
 ### Background runs have stricter rules
 
 The periodic check-in can read and prepare, but never sends, posts or
-deletes. Scheduled tasks can only take the actions their own permission flags
-allow, and a send inside a task you explicitly created is considered
-pre-approved by that task's instructions. See [Automations](./automations.md).
+deletes. Finance actions are allowed when the task calls for them. Scheduled
+tasks can only take the actions their own permission flags allow, and a send
+inside a task you explicitly created is considered pre-approved by that
+task's instructions. See [Automations](./automations.md).
 
 ## Where your data is stored
 

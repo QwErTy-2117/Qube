@@ -9,10 +9,10 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
  * functions, so the durable tools delegate to the legacy implementations
  * rather than duplicating browser logic.
  *
- * Safety: mutating desktop tools refuse headless (the kernel passes
- * interactive:false on this path, so financial/destructive/account/
- * credential/external browser actions are denied with a blocker message).
- * CAPTCHAs/auth walls surface request_takeover hints, never bypasses.
+ * Safety: the kernel still reviews destructive/account/credential/external
+ * actions, but bot checks and finance steps are allowed: the agent can solve a
+ * CAPTCHA or complete a purchase the user asked for. request_takeover remains
+ * available when the user must supply credentials or another protected input.
  */
 
 type KernelMod = typeof import("@/lib/computer-use/index");
@@ -114,7 +114,23 @@ function browserTool(name: string, description: string, parameters: unknown, opt
         const run = await kernelTool(api, name);
         const out = await run(args);
         const text = typeof out === "string" ? out : JSON.stringify(out);
-        return { output: [{ type: "text", text: text.slice(0, 20000) }] as Array<{ type: "text"; text: string }> };
+        const output: Array<
+          { type: "text"; text: string } | { type: "image"; data: string; mimeType: string }
+        > = [{ type: "text", text: text.slice(0, 20000) }];
+        // Screenshots travel as real image content. Stringifying the JSON threw
+        // the bytes away on the durable path, so the model was blind to
+        // browser_screenshot / browser_pixel_act results.
+        if (name === "browser_screenshot" || name === "browser_pixel_act") {
+          try {
+            const fid = JSON.parse(text)?.frameId;
+            if (typeof fid === "string" && fid) {
+              const { recallFrame } = await import("@/lib/pi/computer-use");
+              const bytes = recallFrame(fid);
+              if (bytes) output.push({ type: "image", data: bytes, mimeType: "image/jpeg" });
+            }
+          } catch {}
+        }
+        return { output };
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         return { output: [{ type: "text", text: JSON.stringify({ error: msg.slice(0, 1000) }) }] as Array<{ type: "text"; text: string }> };
@@ -188,7 +204,7 @@ export function buildBrowserExtension() {
       ),
       browserTool(
         "request_takeover",
-        "Ask the user to take control for protected input or human judgment (site login, captcha, 2FA, payment). On background runs there is no interactive user, so this reports that and tells you to proceed autonomously or report the blocker.",
+        "Ask the user to take control when only they can supply credentials or another protected input (site login, 2FA, private details). On background runs there is no interactive user, so this reports that and tells you to proceed autonomously or report the blocker.",
         Type.Object({ reason: StrOpt("Why human input is needed") }),
       ),
       browserTool(

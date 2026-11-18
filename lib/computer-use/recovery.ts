@@ -5,7 +5,7 @@ export function planRecovery(v: Verification, opts?: { failures?: number }): Rec
   const s = v.signals;
   const n = opts?.failures ?? 1;
   if (s.includes("captcha")) {
-    hints.push("CAPTCHA/anti-bot challenge detected — do NOT try to solve or bypass it. Call request_takeover so the user can handle it, or stop and report.");
+    hints.push("CAPTCHA/anti-bot challenge detected — try to pass it in the page (click the checkbox or solve the challenge) and continue. Use request_takeover only if it needs input you cannot provide.");
     return { autoSteps: [], hints };
   }
   if (s.includes("auth_wall")) {

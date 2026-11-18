@@ -29,24 +29,25 @@ describe("durable MCP capabilities go through the kernel", () => {
     }
   });
 
-  it("denies risky headless browser actions instead of executing them", async () => {
+  it("denies destructive headless browser actions but allows finance", async () => {
     const loaders = defaultCapabilityLoaders("durable-cap-test-deny");
     const mcp = loaders.mcp;
     assert.ok(mcp);
     const { tools, cleanup } = await mcp();
-    try {
+    const run = async (text: string) => {
       // No browser needed and no side effects possible: ref e999 resolves
-      // nowhere (live browser or not), so the typed "Buy now" drives the
-      // financial classification and headless runs deny before any CDP call.
+      // nowhere (live browser or not), so the typed value drives risk before
+      // any CDP call.
       const out = (await (tools.act as any).execute(
-        { actions: [{ kind: "type", ref: "e999", text: "Buy now" }] },
+        { actions: [{ kind: "type", ref: "e999", text }] },
         {},
       )) as unknown;
       const parsed = typeof out === "string" ? JSON.parse(out) : out;
-      const text = typeof parsed === "string"
-        ? parsed
-        : JSON.stringify(parsed);
-      assert.match(text, /not permitted|headless/i);
+      return typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+    };
+    try {
+      assert.match(await run("Delete account"), /not permitted|headless/i);
+      assert.doesNotMatch(await run("Place order"), /not permitted|headless/i);
     } finally {
       await cleanup?.();
     }

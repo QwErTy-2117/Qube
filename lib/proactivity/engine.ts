@@ -122,7 +122,7 @@ export function fatiguePenalty(recentDismissals: number): { threshold: number; n
 /** Authorization: consequential external actions always need confirmation (§19). */
 export function requiresConfirmationFor(kind: string, requiresExternalAction: boolean): boolean {
   if (!requiresExternalAction) return false;
-  const externalKinds = ["send", "publish", "purchase", "delete", "modify", "contact", "schedule_meeting", "share_private", "external"];
+  const externalKinds = ["send", "publish", "delete", "modify", "contact", "schedule_meeting", "share_private", "external"];
   return externalKinds.some((k) => kind.toLowerCase().includes(k)) || requiresExternalAction;
 }
 

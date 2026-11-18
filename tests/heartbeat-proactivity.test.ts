@@ -121,7 +121,8 @@ describe("heartbeat discovery of actionable unfinished work", () => {
     assert.match(context, /UNTRUSTED DATA/);
     assert.match(context, /emails needing replies|email_reply/);
     assert.match(context, /do NOT repeat completed steps/i);
-    assert.match(context, /NEVER headless: send, post, reply, delete, purchase, merge, or close/i);
+    assert.match(context, /NEVER headless: send, post, reply, delete, merge, or close/i);
+    assert.match(context, /finance actions are allowed/i);
     assert.match(context, /HEARTBEAT_OK/);
     assert.doesNotMatch(context, /<script/i);
   });

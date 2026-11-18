@@ -279,7 +279,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
             else {
               const { getPermissionSettings } = await import("@/lib/permissions/policy");
               const settings = getPermissionSettings();
-              const destructiveRisk = risk === "financial" || risk === "destructive" || risk === "account";
+              const destructiveRisk = risk === "destructive" || risk === "account";
               if (destructiveRisk && !settings.allowDestructive) {
                 verdict = "denied";
                 state.record({ id: state.nextId(), tool: name, summary: desc.summary, risk, verdict, signals, at: Date.now() });
@@ -302,7 +302,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
                   modelName: deps.modelName,
                   request: deps.request,
                   userRequest: deps.userRequest,
-                  redactTyped: risk === "credential" || risk === "financial" || risk === "account",
+                  redactTyped: risk === "credential" || risk === "account",
                   headless: !deps.interactive,
                 });
                 if (review.decision === "approve") {
@@ -458,7 +458,7 @@ export function applyKernel(tools: Record<string, any>, deps: KernelDeps): Recor
 }
 
 function riskRank(r: RiskLevel): number {
-  return (["read", "interact", "external", "financial", "destructive", "account", "credential"] as RiskLevel[]).indexOf(r);
+  return (["read", "interact", "external", "destructive", "account", "credential"] as RiskLevel[]).indexOf(r);
 }
 
 function hostOf(url?: string): string {

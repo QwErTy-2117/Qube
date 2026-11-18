@@ -19,13 +19,22 @@ export async function submitDurableChat(threadId: string, text: string, requestI
 
 export type DurableStreamCursor = {
   emittedText: Map<string, number>;
+  emittedReasoning: Map<string, number>;
   emittedToolCalls: Set<string>;
   emittedResults: Set<string>;
   openText: Set<string>;
+  openReasoning: Set<string>;
 };
 
 export function createDurableStreamCursor(): DurableStreamCursor {
-  return { emittedText: new Map(), emittedToolCalls: new Set(), emittedResults: new Set(), openText: new Set() };
+  return {
+    emittedText: new Map(),
+    emittedReasoning: new Map(),
+    emittedToolCalls: new Set(),
+    emittedResults: new Set(),
+    openText: new Set(),
+    openReasoning: new Set(),
+  };
 }
 
 function assistantTextOf(model: Array<Record<string, unknown>> | undefined): string {
@@ -36,6 +45,22 @@ function assistantTextOf(model: Array<Record<string, unknown>> | undefined): str
     if (!Array.isArray(content)) continue;
     for (const part of content as Array<Record<string, unknown>>) {
       if (part?.type === "text" && typeof part.text === "string") out.push(part.text);
+    }
+  }
+  return out.join("");
+}
+
+function assistantReasoningOf(model: Array<Record<string, unknown>> | undefined): string {
+  if (!Array.isArray(model)) return "";
+  const out: string[] = [];
+  for (const msg of model) {
+    const content = (msg as { content?: unknown })?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content as Array<Record<string, unknown>>) {
+      // pi-ai uses { type: "thinking", thinking }; accept the AI SDK-style
+      // reasoning part too so mixed/legacy transcripts keep rendering.
+      if (part?.type === "thinking" && typeof part.thinking === "string") out.push(part.thinking);
+      else if (part?.type === "reasoning" && typeof part.text === "string") out.push(part.text);
     }
   }
   return out.join("");
@@ -68,17 +93,41 @@ export function renderDurableViewDiff(
   const chunks: Array<Record<string, unknown>> = [];
   for (const entry of view.entries) {
     if (entry.kind === "pi.assistant") {
+      const reasoning = assistantReasoningOf(entry.model);
+      const emittedReasoning = cursor.emittedReasoning.get(entry.id) ?? 0;
+      if (reasoning.length > emittedReasoning) {
+        const reasoningId = `${entry.id}-reasoning`;
+        if (!cursor.openReasoning.has(entry.id)) {
+          chunks.push({ type: "reasoning-start", id: reasoningId });
+          cursor.openReasoning.add(entry.id);
+        }
+        chunks.push({
+          type: "reasoning-delta",
+          id: reasoningId,
+          delta: reasoning.slice(emittedReasoning),
+        });
+        cursor.emittedReasoning.set(entry.id, reasoning.length);
+      }
       const text = assistantTextOf(entry.model);
       const emitted = cursor.emittedText.get(entry.id) ?? 0;
-      if (emitted === 0 && text.length > 0) {
-        chunks.push({ type: "text-start", id: entry.id });
-        cursor.openText.add(entry.id);
-      }
       if (text.length > emitted) {
+        if (cursor.openReasoning.has(entry.id)) {
+          chunks.push({ type: "reasoning-end", id: `${entry.id}-reasoning` });
+          cursor.openReasoning.delete(entry.id);
+        }
+        if (emitted === 0) {
+          chunks.push({ type: "text-start", id: entry.id });
+          cursor.openText.add(entry.id);
+        }
         chunks.push({ type: "text-delta", id: entry.id, delta: text.slice(emitted) });
         cursor.emittedText.set(entry.id, text.length);
       }
-      for (const call of toolCallsOf(entry.model)) {
+      const calls = toolCallsOf(entry.model);
+      if (calls.length > 0 && cursor.openReasoning.has(entry.id)) {
+        chunks.push({ type: "reasoning-end", id: `${entry.id}-reasoning` });
+        cursor.openReasoning.delete(entry.id);
+      }
+      for (const call of calls) {
         if (cursor.emittedToolCalls.has(call.id)) continue;
         cursor.emittedToolCalls.add(call.id);
         chunks.push({ type: "tool-input-available", toolCallId: call.id, toolName: call.name, input: call.args });
@@ -104,7 +153,9 @@ export function renderDurableViewDiff(
 
 export function closeDurableStreamCursor(cursor: DurableStreamCursor): Array<Record<string, unknown>> {
   const chunks: Array<Record<string, unknown>> = [];
+  for (const id of cursor.openReasoning) chunks.push({ type: "reasoning-end", id: `${id}-reasoning` });
   for (const id of cursor.openText) chunks.push({ type: "text-end", id });
+  cursor.openReasoning.clear();
   cursor.openText.clear();
   return chunks;
 }
@@ -117,6 +168,7 @@ export function baselineDurableCursor(
   for (const entry of view.entries) {
     if (entry.kind === "pi.assistant") {
       cursor.emittedText.set(entry.id, assistantTextOf(entry.model).length);
+      cursor.emittedReasoning.set(entry.id, assistantReasoningOf(entry.model).length);
       for (const call of toolCallsOf(entry.model)) cursor.emittedToolCalls.add(call.id);
     } else if (entry.kind === "pi.tool-result") {
       cursor.emittedResults.add(entry.id);

@@ -3,6 +3,7 @@ import { createMistral } from "@ai-sdk/mistral";
 import { providerStore } from "./provider-store";
 import { chatGptAuth } from "@/lib/chatgpt/handler";
 import { OPENCODE_ZEN_HEADERS } from "./opencode-zen";
+import { reasoningAwareFetch, withReasoningExtraction } from "./reasoning-stream";
 
 type ChatModel = ReturnType<ReturnType<typeof createOpenAI>["chat"]> | ReturnType<ReturnType<typeof createOpenAI>["responses"]>;
 
@@ -80,7 +81,7 @@ export function createPiModelClient(qualifiedModelId?: string | null): ChatModel
       apiKey: provider.apiKey || "",
       baseURL: effectiveBaseURL,
     });
-    return client.chat(modelId);
+    return withReasoningExtraction(client.chat(modelId));
   }
 
   if (provider.id === "opencode") {
@@ -90,20 +91,22 @@ export function createPiModelClient(qualifiedModelId?: string | null): ChatModel
       apiKey: provider.apiKey || "",
       baseURL: effectiveBaseURL || "https://opencode.ai/zen/v1",
       headers: OPENCODE_ZEN_HEADERS,
+      fetch: reasoningAwareFetch as any,
     });
     // GPT/Grok/Muse-Spark live behind /responses; everything else Qube
     // supports lives behind /chat/completions.
     if (isZenResponsesModel(modelId)) {
-      return (client as any).responses(modelId);
+      return withReasoningExtraction((client as any).responses(modelId));
     }
-    return client.chat(modelId);
+    return withReasoningExtraction(client.chat(modelId));
   }
 
   const client = createOpenAI({
     apiKey: provider.apiKey || "",
     baseURL: effectiveBaseURL,
+    fetch: reasoningAwareFetch as any,
   });
-  return client.chat(modelId);
+  return withReasoningExtraction(client.chat(modelId));
 }
 
 export function createPiModelClientForRequest(
@@ -149,7 +152,7 @@ export function createPiModelClientForRequest(
       apiKey: "login-with-chatgpt-proxy",
       fetch: baseFetch as any,
     });
-    return (client as any).responses(modelId);
+    return withReasoningExtraction((client as any).responses(modelId));
   }
 
   const effectiveBaseURL = provider.baseURL;
@@ -159,7 +162,7 @@ export function createPiModelClientForRequest(
       apiKey: provider.apiKey || "",
       baseURL: effectiveBaseURL,
     });
-    return client.chat(modelId);
+    return withReasoningExtraction(client.chat(modelId));
   }
 
   if (provider.id === "opencode") {
@@ -169,18 +172,20 @@ export function createPiModelClientForRequest(
       apiKey: provider.apiKey || "",
       baseURL: effectiveBaseURL || "https://opencode.ai/zen/v1",
       headers: OPENCODE_ZEN_HEADERS,
+      fetch: reasoningAwareFetch as any,
     });
     if (isZenResponsesModel(modelId)) {
-      return (client as any).responses(modelId);
+      return withReasoningExtraction((client as any).responses(modelId));
     }
-    return client.chat(modelId);
+    return withReasoningExtraction(client.chat(modelId));
   }
 
   const client = createOpenAI({
     apiKey: provider.apiKey || "",
     baseURL: effectiveBaseURL,
+    fetch: reasoningAwareFetch as any,
   });
-  return client.chat(modelId);
+  return withReasoningExtraction(client.chat(modelId));
 }
 
 export function isChatGPTModel(qualifiedModelId?: string | null): boolean {

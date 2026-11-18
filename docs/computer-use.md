@@ -68,7 +68,7 @@ them.
 | Targets | Websites in Qube's managed browser | Other desktop applications |
 | Setup | Works out of the box (needs Chrome/Edge) | Requires the `ocu` driver install |
 | Watching it | Live Browser panel | Screenshots and app state in activity cards |
-| Approvals | Takeover for logins/captchas/payment | Approval card for every mutating action |
+| Approvals | Takeover for logins/2FA | Approval card for every mutating action |
 
 For files, Qube still prefers its own workspace and viewers rather than
 driving a desktop file manager.

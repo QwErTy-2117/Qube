@@ -70,7 +70,10 @@ export function verifyResult(raw: RawResult, pre: PageFingerprint | null, post: 
   if (formChanged) signals.push("form_changed");
   if (scrolled) signals.push("scrolled");
   const changed = urlChanged || textChanged || focusChanged || formChanged || scrolled || signals.includes("new_dialog");
-  if (signals.includes("captcha") || signals.includes("auth_wall")) return { verdict: "failed", changed, signals };
+  // A CAPTCHA is a step the agent may complete, not an automatic failure; it
+  // stays in signals so recovery suggests solving it. Auth walls still fail so
+  // the agent requests credentials instead of guessing.
+  if (signals.includes("auth_wall")) return { verdict: "failed", changed, signals };
   if (changed) return { verdict: "verified", changed: true, signals };
   return { verdict: "no_effect", changed: false, signals };
 }

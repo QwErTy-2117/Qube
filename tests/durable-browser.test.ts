@@ -105,13 +105,13 @@ describe("durable browser turn context", () => {
       assert.ok(tracked.history.some((r) => r.tool === "browser_snapshot"), "kernel state should live on the chat thread");
       assert.equal(StateTracker.forThread("probe-call").history.length, 0);
 
-      // Foreground + financial action asks (then times out fast) instead of
+      // Foreground + destructive action asks (then times out fast) instead of
       // headless-denying: approval path, not refusal path. Ref e999 resolves
       // nowhere (live browser or not), so the typed value drives risk and no
       // real element is ever touched.
       const act = byName.get("browser_act");
       assert.ok(act);
-      const res = await act.execute({ actions: [{ kind: "type", ref: "e999", text: "Buy now" }] }, api);
+      const res = await act.execute({ actions: [{ kind: "type", ref: "e999", text: "Delete account" }] }, api);
       const text = res.output?.[0]?.text ?? "";
       assert.match(text, /did not approve|not permitted/i);
       assert.doesNotMatch(text, /Headless\/background runs cannot perform/);

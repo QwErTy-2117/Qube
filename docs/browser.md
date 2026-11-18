@@ -47,20 +47,20 @@ rather than typing into search boxes.
 
 ## When you need to take over
 
-Qube handles public pages on its own, then hands control to you for anything
-protected. When it hits a login, captcha, two-factor prompt, or payment step,
-it pauses with a **takeover request** explaining why. You then:
+Qube handles public pages on its own, including CAPTCHAs, bot checks, and
+payment steps. When it hits a login or two-factor prompt that only you can
+complete, it pauses with a **takeover request** explaining why. You then:
 
 1. Click into the Browser panel.
-2. Complete the login, captcha, 2FA, or other human step yourself.
+2. Complete the login, 2FA, or other protected step yourself.
 3. Confirm in Qube, and the task continues.
 
 The takeover lease lasts fifteen minutes, which is enough for awkward logins.
 Qube never asks you for passwords in the chat, and it does not store them —
 the browser's own profile holds the session, just like a normal browser.
 
-It also stops before anything final such as submitting an order or paying,
-even when it has filled everything in.
+It completes an order or payment when you asked for it; it does not stop at
+the final step by default.
 
 ## What the browser cannot do
 
@@ -69,8 +69,8 @@ even when it has filled everything in.
 - It does not open untrusted links from emails inside this signed-in browser;
   those are read as plain text instead. See
   [Web research](./web-research.md#links-in-emails-and-messages-are-treated-cautiously).
-- It cannot defeat bot walls on its own; takeover or a headed window are the
-  intended escape hatches.
+- It attempts bot checks and CAPTCHAs itself, and asks for takeover only when
+  the challenge needs input it cannot supply.
 
 ## Advanced options
 

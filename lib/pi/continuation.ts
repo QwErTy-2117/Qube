@@ -177,7 +177,7 @@ export function buildRecoveryNudge(lastError: string): string {
     `Your turn ended right after a tool call failed with: ${lastError.slice(0, 400)}\n` +
     `Do not stop here: recover in this same turn — re-observe current state (fresh snapshot/screenshot), ` +
     `switch to a different method (ref ↔ coordinates ↔ keyboard, or navigate directly), and retry once. ` +
-    `If you already tried twice, if the blocker needs the user (login, CAPTCHA, payment, permission denied), ` +
+    `If you already tried twice, if the blocker needs the user (login, 2FA, permission denied), ` +
     `or if the error says the target is Blocked (policy block — retrying the same URL/action cannot succeed), ` +
     `stop and report the blocker concisely instead. Never repeat the exact failed call.`
   );

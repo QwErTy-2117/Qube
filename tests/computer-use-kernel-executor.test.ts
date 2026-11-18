@@ -24,15 +24,28 @@ describe("kernel executor", () => {
     assert.equal(p._kernel.verdict, "verified");
     assert.equal(p._kernel.changed, true);
   });
-  it("asks approval for financial actions and denies on refusal", async () => {
+  it("asks approval for destructive actions and denies on refusal", async () => {
     const tools = { browser_act: strTool(async () => JSON.stringify({ ok: true })) };
     const out = applyKernel(tools, {
       threadId: "t3", interactive: true,
       askApproval: async () => false,
-      resolveLabel: async (ref) => (ref === "e9" ? "Place order" : null),
+      resolveLabel: async (ref) => (ref === "e9" ? "Delete account" : null),
     });
     const raw = await (out.browser_act as any).execute({ actions: [{ kind: "click", ref: "e9" }] });
     assert.match(String(raw), /not permitted/i);
+  });
+  it("runs finance actions headless when the task asks for them", async () => {
+    let ran = 0;
+    const out = applyKernel(
+      { browser_act: strTool(async () => { ran++; return JSON.stringify({ ok: true, completed: 1 }); }) },
+      {
+        threadId: "t3b", interactive: false,
+        resolveLabel: async (ref) => (ref === "e9" ? "Place order" : null),
+      },
+    );
+    const raw = String(await (out.browser_act as any).execute({ actions: [{ kind: "click", ref: "e9" }] }));
+    assert.doesNotMatch(raw, /not permitted|headless\/background runs cannot/i);
+    assert.equal(ran, 1);
   });
   it("denies risky actions when headless", async () => {
     const tools = { browser_act: strTool(async () => JSON.stringify({ ok: true })) };
@@ -72,7 +85,7 @@ describe("kernel executor", () => {
     let inFlight = 0;
     let maxInFlight = 0;
     let calls = 0;
-    const labels: Record<string, string> = { e1: 'link "A"', e2: 'button "Place order"', e3: 'link "C"' };
+    const labels: Record<string, string> = { e1: 'link "A"', e2: 'button "Delete account"', e3: 'link "C"' };
     const out = applyKernel(tools, {
       threadId: "t10", interactive: true,
       askApproval: async () => false,
@@ -95,7 +108,7 @@ describe("kernel executor", () => {
     ] }));
     assert.equal(calls, 3);
     assert.equal(maxInFlight, 3);
-    // Highest-risk label ("Place order" → financial) drove the decision.
+    // Highest-risk label ("Delete account" → destructive) drove the decision.
     assert.match(raw, /not permitted/i);
   });
   it("fails open when the probe throws", async () => {
@@ -154,8 +167,8 @@ describe("kernel executor", () => {
   it("ignores cached labels from a different page", async () => {
     const { StateTracker } = await import("../lib/computer-use/state");
     StateTracker.resetForTests();
-    // Seed cache: e1 was "Place order" on page A.
-    StateTracker.forThread("t11").noteRefs("https://a.com/", [{ ref: "e1", role: "button", name: "Place order" }]);
+    // Seed cache: e1 was "Delete account" on page A.
+    StateTracker.forThread("t11").noteRefs("https://a.com/", [{ ref: "e1", role: "button", name: "Delete account" }]);
     const fpB = { at: 1, url: "https://b.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
     let asked = 0;
     let resolved = 0;
@@ -170,12 +183,12 @@ describe("kernel executor", () => {
     );
     const raw = String(await (out.browser_act as any).execute({ actions: [{ kind: "click", ref: "e1" }] }));
     JSON.parse(raw);
-    // Stale "Place order" must NOT trigger approval on page B; live DOM
+    // Stale "Delete account" must NOT trigger approval on page B; live DOM
     // resolution was attempted instead.
     assert.equal(asked, 0);
     assert.equal(resolved, 1);
     // Control: same-page cache still gates without live resolution.
-    StateTracker.forThread("t12").noteRefs("https://b.com/", [{ ref: "e1", role: "button", name: "Place order" }]);
+    StateTracker.forThread("t12").noteRefs("https://b.com/", [{ ref: "e1", role: "button", name: "Delete account" }]);
     let asked2 = 0;
     const out2 = applyKernel(
       { browser_act: strTool(async () => JSON.stringify({ ok: true })) },
@@ -307,15 +320,25 @@ describe("kernel executor", () => {
     const { StateTracker } = await import("../lib/computer-use/state");
     StateTracker.resetForTests();
     const fp = (focus: string | null) => ({ at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false, focus });
-    // Enter on a focused purchase button is financial even with no refs.
+    // Enter on a focused destructive button is gated even with no refs.
     let executed = 0;
     const out = applyKernel(
       { press_key: strTool(async () => { executed++; return JSON.stringify({ ok: true }); }) },
-      { threadId: "t18", interactive: false, probePage: async () => fp('button "Place order"') },
+      { threadId: "t18", interactive: false, probePage: async () => fp('button "Delete account"') },
     );
     const denied = String(await (out.press_key as any).execute({ key: "Enter" }));
     assert.match(denied, /headless|not permitted/i);
     assert.equal(executed, 0);
+    // Enter on a focused purchase button is allowed headless: finance is an
+    // ordinary interaction now.
+    let paid = 0;
+    const outPaid = applyKernel(
+      { press_key: strTool(async () => { paid++; return JSON.stringify({ ok: true }); }) },
+      { threadId: "t21", interactive: false, probePage: async () => fp('button "Place order"') },
+    );
+    const paidRaw = String(await (outPaid.press_key as any).execute({ key: "Enter" }));
+    assert.doesNotMatch(paidRaw, /headless|not permitted/i);
+    assert.equal(paid, 1);
     // Typing into a focused password field is credential-gated.
     let asked = 0;
     let ran = 0;

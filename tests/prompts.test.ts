@@ -46,8 +46,9 @@ describe("browser instructions describe the live kernel contract", () => {
       "repeat-warned",
       "Disabled targets fail before acting",
       "request_takeover",
-      "CAPTCHAs",
-      "approval",
+      "Bot checks and CAPTCHAs are allowed",
+      "Purchases and payments are allowed",
+      "ordinary review",
     ]) {
       assert.ok(text.includes(term), `browser instructions must mention: ${term}`);
     }

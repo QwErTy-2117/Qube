@@ -1,6 +1,6 @@
 export type ActionDomain = "browser" | "desktop" | "terminal" | "file" | "other";
 export type ActionKind = "observe" | "interact" | "navigate" | "input" | "exec" | "meta";
-export type RiskLevel = "read" | "interact" | "external" | "financial" | "destructive" | "account" | "credential";
+export type RiskLevel = "read" | "interact" | "external" | "destructive" | "account" | "credential";
 export type Verdict = "verified" | "no_effect" | "failed" | "unknown" | "blocked" | "denied";
 
 export interface ActionDescriptor {

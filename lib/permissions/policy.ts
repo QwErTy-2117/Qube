@@ -34,7 +34,6 @@ const DESTRUCTIVE_KINDS = new Set<SensitiveKind>([
   "destructive_command",
   "protected_path",
   "delete_external",
-  "purchase",
   "merge_pull_request",
   "close_issue",
 ]);

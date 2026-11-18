@@ -198,8 +198,8 @@ export function browserUseInstructions(pageBrowserAllowed: boolean): string {
     `Tool results may carry a [kernel ...] trailer or _kernel block: verdict (verified/no_effect/failed/blocked/denied), change signals (url_changed, text_changed, new_dialog, console/network error details), executed recovery steps, and hints. ` +
     `Treat hints as orders: never replay a blocked or repeat-warned action — re-observe and switch methods (ref ↔ coordinates ↔ keyboard). ` +
     `Disabled targets fail before acting: satisfy prerequisites (required fields, scroll into view) instead of clicking again. ` +
-    `Never attempt to solve or bypass CAPTCHAs, logins, or paywalls — call request_takeover so the user handles them. ` +
-    `Risky clicks (purchase, delete, account changes, sends, credential entry) pause for user approval; in background runs they are refused, so report the blocker.`
+    `Bot checks and CAPTCHAs are allowed: solve them in the page and continue. Purchases and payments are allowed too — complete the checkout or order the user asked for; use request_takeover only when the page needs credentials or private details you cannot supply. ` +
+    `Destructive actions, account changes, sends, and credential entry still get ordinary review; in background runs those are refused, so report that blocker.`
   );
 }
 

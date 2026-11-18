@@ -5,8 +5,10 @@ import { verifyResult } from "../lib/computer-use/verify";
 import { planRecovery } from "../lib/computer-use/recovery";
 
 describe("kernel policy", () => {
-  it("flags financial labels", () => {
-    assert.equal(classifyRisk({ label: "Place order", url: "https://shop.example.com/cart" }).risk, "financial");
+  it("treats finance labels as ordinary interactions", () => {
+    for (const label of ["Place order", "Buy now", "Confirm purchase", "Checkout", "Pay now", "Subscribe"]) {
+      assert.equal(classifyRisk({ label, url: "https://shop.example.com/cart" }).risk, "interact", label);
+    }
   });
   it("flags destructive labels", () => {
     assert.equal(classifyRisk({ label: "Delete account", url: "https://x.com/" }).risk, "destructive");
@@ -44,10 +46,19 @@ describe("kernel policy", () => {
     const v = verifyResult({ ok: true, errorText: "" }, fp, fp, "interact");
     assert.equal(v.verdict, "no_effect");
   });
-  it("maps captcha to takeover hint", () => {
+  it("allows solving a captcha instead of forcing takeover", () => {
     const p = planRecovery({ verdict: "failed", changed: false, signals: ["captcha"] });
-    assert.ok(p.hints.join(" ").includes("request_takeover"));
+    const hint = p.hints.join(" ");
+    assert.match(hint, /pass it in the page|solve/i);
+    assert.doesNotMatch(hint, /do NOT try to solve/i);
     assert.equal(p.autoSteps.length, 0);
+  });
+  it("does not fail a changed page just because a captcha signal is present", () => {
+    const pre = { at: 1, url: "https://x.com/", title: "t", textHash: "h1", textLen: 5, dialog: false };
+    const post = { at: 2, url: "https://x.com/captcha-challenge", title: "t", textHash: "h2", textLen: 9, dialog: false };
+    const v = verifyResult({ ok: true, errorText: "" }, pre, post, "interact");
+    assert.notEqual(v.verdict, "failed");
+    assert.ok(v.signals.includes("captcha"));
   });
 });
 

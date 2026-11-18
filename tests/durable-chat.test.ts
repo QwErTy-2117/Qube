@@ -29,6 +29,48 @@ describe("durable chat", () => {
     assert.deepEqual(closeDurableStreamCursor(cursor), [{ type: "text-end", id: "e1" }]);
   });
 
+  it("streams thinking parts as reasoning chunks before text", () => {
+    const cursor = createDurableStreamCursor();
+    const v1 = {
+      entries: [
+        {
+          id: "e1",
+          kind: "pi.assistant",
+          model: [{ role: "assistant", content: [{ type: "thinking", thinking: "Checking " }] }],
+        },
+      ],
+    };
+    assert.deepEqual(renderDurableViewDiff(v1, cursor), [
+      { type: "reasoning-start", id: "e1-reasoning" },
+      { type: "reasoning-delta", id: "e1-reasoning", delta: "Checking " },
+    ]);
+
+    const v2 = {
+      entries: [
+        {
+          id: "e1",
+          kind: "pi.assistant",
+          model: [
+            {
+              role: "assistant",
+              content: [
+                { type: "thinking", thinking: "Checking the file." },
+                { type: "text", text: "Done." },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    assert.deepEqual(renderDurableViewDiff(v2, cursor), [
+      { type: "reasoning-delta", id: "e1-reasoning", delta: "the file." },
+      { type: "reasoning-end", id: "e1-reasoning" },
+      { type: "text-start", id: "e1" },
+      { type: "text-delta", id: "e1", delta: "Done." },
+    ]);
+    assert.deepEqual(closeDurableStreamCursor(cursor), [{ type: "text-end", id: "e1" }]);
+  });
+
   it("emits tool calls and results once", () => {
     const cursor = createDurableStreamCursor();
     const view = {

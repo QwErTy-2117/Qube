@@ -12,6 +12,20 @@ function skillsFilePath(): string {
   return join(getDataDir(), ".memory", "skills.json");
 }
 
+/**
+ * Older system skills opened with "You are the <x> specialist", which made the
+ * model introduce itself as a research-mode persona whenever the playbook was
+ * applied. Rewrite only that role line so user edits elsewhere survive.
+ */
+function migratePlaybookIdentity(instructions: string): string {
+  const legacy = instructions.match(/^You are the (research|development|trip-planning|document) specialist\.[^\n]*/m);
+  if (!legacy) return instructions;
+  const skillName = legacy[1] === "document" ? "creating-documents" : legacy[1] === "development" ? "developing" : legacy[1];
+  const replacement = SYSTEM_SKILLS.find((s) => s.name === skillName)
+    ?.instructions.match(/^You are running [^\n]*/m)?.[0];
+  return replacement ? instructions.replace(legacy[0], replacement) : instructions;
+}
+
 class SkillStore {
   private skills: SkillConfig[] = [];
   private initialized = false;
@@ -42,7 +56,7 @@ class SkillStore {
             byName.set(name, {
               ...sys,
               description: s.description || sys.description,
-              instructions: s.instructions || sys.instructions,
+              instructions: migratePlaybookIdentity(s.instructions || sys.instructions),
               allowedTools: s.allowedTools ?? sys.allowedTools,
               disallowedTools: s.disallowedTools ?? sys.disallowedTools,
               color: s.color || sys.color,
@@ -101,7 +115,7 @@ class SkillStore {
         ...(incoming
           ? {
               description: incoming.description || sys.description,
-              instructions: incoming.instructions || sys.instructions,
+              instructions: migratePlaybookIdentity(incoming.instructions || sys.instructions),
               allowedTools: incoming.allowedTools ?? sys.allowedTools,
               disallowedTools:
                 incoming.disallowedTools ?? sys.disallowedTools,

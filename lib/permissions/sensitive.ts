@@ -3,8 +3,10 @@
  *
  * Muse runs a separate Sentinel that is the sole permission authority:
  * the agent proposes, Sentinel allows / denies / asks, and sensitive
- * actions (send email, purchase, delete, share private data) always pause
- * for an explicit user decision with a visible purpose + audit trail.
+ * actions (send email, delete, share private data) always pause for an
+ * explicit user decision with a visible purpose + audit trail. Finance
+ * actions are allowed by policy; they still flow through the ordinary
+ * reviewer like other external connector calls.
  *
  * Qube mirrors that here:
  * - read-only lookups never pause (clean requests auto-allow)

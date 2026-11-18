@@ -275,6 +275,9 @@ export function withBrowserFallback<T extends { fallback?: PixelFallback; error?
 
 // ---------- CDP helpers (managed Chrome) ----------
 
+/** Last target this process focused. /json/list has no active-tab marker. */
+let activeTargetId: string | null = null;
+
 export async function getPageTarget(): Promise<{ id: string; webSocketDebuggerUrl?: string; url?: string } | null> {
   try {
     const mod = await import("@/lib/browser/managed-chrome");
@@ -285,17 +288,23 @@ export async function getPageTarget(): Promise<{ id: string; webSocketDebuggerUr
     const pages = targets.filter((t) => t.type === "page" && t.webSocketDebuggerUrl);
     const http = pages.filter((t) => /^https?:\/\//i.test(t.url));
     const pool = http.length ? http : pages;
-    return pool[pool.length - 1] || null;
+    const active = activeTargetId ? pool.find((t) => t.id === activeTargetId) : undefined;
+    return active || pool[pool.length - 1] || null;
   } catch {
     return null;
   }
 }
 
 let _cdpId = 1;
-export async function cdpCall(wsUrl: string, method: string, params: Record<string, unknown> = {}): Promise<any> {
+export async function cdpCall(
+  wsUrl: string,
+  method: string,
+  params: Record<string, unknown> = {},
+  timeoutMs = 10000,
+): Promise<any> {
   const { default: WebSocket } = await import("ws");
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl, { handshakeTimeout: 8000 });
+    const ws = new WebSocket(wsUrl, { handshakeTimeout: Math.min(8000, timeoutMs) });
     let done = false;
     const id = _cdpId++ % 100000;
     const timer = setTimeout(() => {
@@ -304,7 +313,7 @@ export async function cdpCall(wsUrl: string, method: string, params: Record<stri
         try { ws.close(); } catch {}
         reject(new Error(`CDP ${method} timeout`));
       }
-    }, 10000);
+    }, timeoutMs);
     ws.on("open", () => ws.send(JSON.stringify({ id, method, params })));
     ws.on("message", (raw: Buffer) => {
       try {
@@ -609,7 +618,9 @@ export async function browserNavigate(url: string): Promise<{ url: string; title
   if (!target?.webSocketDebuggerUrl) {
     return withBrowserFallback({ url, title: "", fallback: "browser_pixel_act" as const, error: "Page browser is not attached. Use browser_pixel_act on the managed browser window instead." });
   }
+  activeTargetId = target.id;
   try {
+    await cdpCall(target.webSocketDebuggerUrl, "Page.bringToFront", {}, 5000).catch(() => {});
     await cdpCall(target.webSocketDebuggerUrl, "Page.navigate", { url });
     // Settle event-driven (short commit floor + DOM quiet) instead of a
     // fixed sleep: fast pages resolve sooner, slow ones stay bounded.
@@ -751,10 +762,29 @@ function frameIdFor(jpgBase64: string): string {
 export async function browserScreenshot(note = "browser observed"): Promise<{ text: string; imageBase64?: string; mimeType?: string; frameId?: string; unchanged?: boolean; error?: string }> {
   const target = await getPageTarget();
   if (!target?.webSocketDebuggerUrl) return { text: `${note}: no live browser target`, error: "no live browser target" };
+  activeTargetId = target.id;
   try {
-    const shot = await cdpCall(target.webSocketDebuggerUrl, "Page.captureScreenshot", { format: "jpeg", quality: 60 });
+    await cdpCall(target.webSocketDebuggerUrl, "Page.bringToFront", {}, 5000).catch(() => {});
+    // A background or just-created renderer can take longer than 10s to
+    // produce its first compositor frame. Retry once with a longer timeout and
+    // a renderer-surface capture instead of surfacing a one-shot timeout.
+    let shot: any = null;
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 2 && !shot?.data; attempt++) {
+      try {
+        shot = await cdpCall(
+          target.webSocketDebuggerUrl,
+          "Page.captureScreenshot",
+          { format: "jpeg", quality: 60, ...(attempt > 0 ? { fromSurface: false } : {}) },
+          attempt === 0 ? 20000 : 12000,
+        );
+      } catch (e) {
+        lastErr = e;
+      }
+      if (!shot?.data) await new Promise((r) => setTimeout(r, 300));
+    }
     const data = String((shot as any)?.data || "");
-    if (!data) return { text: `${note}: empty screenshot`, error: "empty screenshot" };
+    if (!data) return { text: `${note}: empty screenshot`, error: lastErr instanceof Error ? lastErr.message : "empty screenshot" };
     const frameId = frameIdFor(data);
     const unchanged = lastFrameId === frameId;
     lastFrameId = frameId;
@@ -772,13 +802,15 @@ export async function browserScreenshot(note = "browser observed"): Promise<{ te
 }
 
 /** browser_pixel_act: ordered batched x/y actions inside the managed browser window via CDP Input.*. */
-export async function browserPixelAct(actions: ComputerAction[], opts?: { observe?: boolean; settleMs?: number }): Promise<{ text: string; imageBase64?: string; completed: number; uncertain: boolean; error?: string }> {
+export async function browserPixelAct(actions: ComputerAction[], opts?: { observe?: boolean; settleMs?: number }): Promise<{ text: string; imageBase64?: string; frameId?: string; unchanged?: boolean; completed: number; uncertain: boolean; error?: string }> {
   const parsed = parsePixelActions(actions);
   const target = await getPageTarget();
   if (!target?.webSocketDebuggerUrl) return { text: "browser_pixel_act: no live browser target", completed: 0, uncertain: true, error: "no live target" };
   const wsUrl = target.webSocketDebuggerUrl;
+  activeTargetId = target.id;
   let completed = 0;
   try {
+    await cdpCall(wsUrl, "Page.bringToFront", {}, 5000).catch(() => {});
     for (const a of parsed) {
       if (a.kind === "pointer") {
         const base = { x: a.x, y: a.y, button: a.button };
@@ -817,7 +849,17 @@ export async function browserPixelAct(actions: ComputerAction[], opts?: { observ
     const settleMs = Math.min(Math.max(Math.round(Number(opts?.settleMs) || 0), 0), 5000);
     if (settleMs > 0) await new Promise((r) => setTimeout(r, settleMs));
     const obs = await browserScreenshot("browser_pixel_act result");
-    return { text: obs.text, imageBase64: obs.imageBase64, completed, uncertain: false };
+    // frameId must be top-level: tools.ts modelOutputWithFrame reads it to
+    // attach the real image bytes. Before this, pixel-act screenshots reached
+    // the model as text only.
+    return {
+      text: obs.text,
+      imageBase64: obs.imageBase64,
+      frameId: obs.frameId,
+      unchanged: obs.unchanged,
+      completed,
+      uncertain: false,
+    };
   } catch (e) {
     return {
       text: `browser_pixel_act confirmed ${completed}/${parsed.length} actions. Inspect current state before continuing; never replay completed or uncertain actions.`,

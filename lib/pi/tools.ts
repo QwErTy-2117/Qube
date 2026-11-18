@@ -487,7 +487,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
   });
   extraTools.request_takeover = tool({
     description:
-      "Ask the user to take control for protected input or human judgment (site login, captcha, 2FA, payment). The run pauses as waiting_takeover; the user acts in the Browser panel, then the run continues. Use when browser tools cannot operate or credentials must stay with the user.",
+      "Ask the user to take control for protected input or human judgment (site login, 2FA, private credentials). The run pauses as waiting_takeover; the user acts in the Browser panel, then the run continues. Use when browser tools cannot operate or credentials must stay with the user.",
     inputSchema: z.object({ reason: z.string().describe("Why human input is needed") }),
     execute: async ({ reason }: { reason: string }) => {
       if (!interactive) {

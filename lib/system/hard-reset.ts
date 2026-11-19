@@ -9,18 +9,21 @@
  * 3. clears in-memory caches that could otherwise resurrect deleted state;
  * 4. drains and removes the global announcement and heartbeat-work ledgers;
  * 5. removes every app-state file under .memory, including nested directories;
- * 6. removes the experimental durable DB and browser profile; and
+ * 6. removes the durable DB, browser profiles, learned skills, workspace
+ *    deliverables/attachments, diagnostics, and generated startup pages; and
  * 7. installs a fresh default task cache before restarting the scheduler.
  *
- * Workspace deliverables, sidecar logs, bundled skills, and application code
- * are deliberately preserved. Server-side state is never treated as trusted
- * instructions; it is only data being deleted at the user's explicit request.
+ * This is a *hard* reset: nothing the user created is preserved. Application
+ * code and bundled assets are not data and are left in place. Server-side
+ * state is never treated as trusted instructions; it is only data being
+ * deleted at the user's explicit request.
  */
 
 import { rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import { getDataDir } from "@/lib/data-dir";
+import { getWorkspacePath } from "@/lib/middleware/workspace";
 import { pauseSchedulerForHardReset } from "@/lib/scheduler/runtime-state";
 import { clearAnnouncementsForHardReset } from "@/lib/scheduler/announcements";
 import { clearHeartbeatWorkForHardReset } from "@/lib/proactivity/heartbeat-work";
@@ -52,22 +55,47 @@ function hardResetGlobal(): HardResetGlobalState {
 
 /** Documented, app-owned state locations inside the application data dir. */
 export function hardResetPaths(dataDir = getDataDir()): string[] {
-  return [
+  const root = resolve(dataDir);
+  const paths = [
     // Every settings, provider, chat, memory, scheduler, connector, goal,
     // announcement, work-ledger, and nested session/scratchpad file.
-    join(dataDir, ".memory"),
-    // Experimental durable runtime (main DB plus SQLite sidecars).
-    join(dataDir, "agent.sqlite"),
-    join(dataDir, "agent.sqlite-shm"),
-    join(dataDir, "agent.sqlite-wal"),
-    join(dataDir, "agent.sqlite-journal"),
+    join(root, ".memory"),
+    // Durable runtime (main DB plus SQLite sidecars).
+    join(root, "agent.sqlite"),
+    join(root, "agent.sqlite-shm"),
+    join(root, "agent.sqlite-wal"),
+    join(root, "agent.sqlite-journal"),
     // Managed-browser cookies, sessions, and legacy browser state.
-    join(dataDir, ".browser-profile"),
-    join(dataDir, ".camoufox"),
-    join(dataDir, ".camoufox-profile"),
-    join(dataDir, ".playwright-mcp"),
-    join(dataDir, ".superpowers"),
+    join(root, ".browser-profile"),
+    join(root, ".camoufox"),
+    join(root, ".camoufox-profile"),
+    join(root, ".playwright-mcp"),
+    join(root, ".superpowers"),
+    // Learned/durable skills written by the agent outside .memory.
+    join(root, ".agents"),
+    // Workspace deliverables, attachments, and legacy playground files.
+    join(root, "workspace"),
+    join(root, "playground"),
+    // Diagnostics and generated pages can contain prompts, URLs, and errors.
+    join(root, "sidecar.log"),
+    join(root, "combined.log"),
+    join(root, "error.log"),
+    join(root, "install.log"),
+    join(root, "startup-error.html"),
   ];
+
+  // A custom WORKSPACE_PATH is still Qube's workspace when it lives inside the
+  // data dir. Deleting an arbitrary external directory would be unsafe, so
+  // only include app-owned paths; never delete the data dir itself.
+  try {
+    const workspace = resolve(getWorkspacePath());
+    const insideDataDir = workspace !== root && workspace.startsWith(root + sep);
+    if (insideDataDir && !paths.includes(workspace)) paths.push(workspace);
+  } catch {
+    // getWorkspacePath() only reads env/cwd; ignore malformed paths.
+  }
+
+  return Array.from(new Set(paths));
 }
 
 function messageOf(error: unknown): string {
@@ -252,4 +280,16 @@ export function performHardReset(): Promise<HardResetResult> {
     });
   }
   return state.promise;
+}
+
+/**
+ * The bundled desktop sidecar must exit after a successful reset. The shell
+ * deletes its temp directory and starts a fresh sidecar; if an orphaned
+ * keep-alive server from a crashed app instance is still running, only the
+ * server itself can reliably stop it (the shell has no Child handle).
+ */
+export function shouldExitAfterHardReset(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env.QUBE_DESKTOP === "1";
 }

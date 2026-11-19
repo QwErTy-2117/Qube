@@ -216,6 +216,8 @@ describe("attachment model payload after send and retry", () => {
     const normalized = await normalizeAttachmentsForModel(messages, {
       threadId: "chat-attachments",
       persist: false,
+      supportsImageInput: true,
+      supportsPdfInput: true,
     });
     const files = (normalized[0].parts as any[]).filter((part) => part.type === "file");
     assert.equal(files.length, 2);

@@ -427,48 +427,25 @@ export const ComposerAttachments: FC = () => {
   );
 };
 
-const IMAGE_ACCEPT = "image/*,.pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
-const DOCS_ACCEPT = ".pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
-
-function modelSupportsImages(qualifiedModelId: string): boolean {
-  try {
-    const raw = localStorage.getItem("qube-providers");
-    if (!raw) return false;
-    const providers = JSON.parse(raw);
-    for (const p of providers) {
-      if (!p.models || !Array.isArray(p.models)) continue;
-      for (const m of p.models) {
-        if (m.id === qualifiedModelId) return m.imageInput === true;
-      }
-    }
-  } catch {}
-  return false;
-}
-
 export const ComposerAddAttachment: FC = () => {
   const aui = useAui();
-  const [model, setModel] = useState("");
-
-  useEffect(() => {
-    const saved = localStorage.getItem("qube-default-model") || "";
-    setModel(saved);
-  }, []);
-
-  const supportsImages = modelSupportsImages(model);
-  const accept = supportsImages ? IMAGE_ACCEPT : DOCS_ACCEPT;
 
   const handleClick = () => {
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = true;
-    input.accept = accept;
+    // Every file type is attachable. The server decides how to show it to the
+    // model: text/Office files are extracted, images go inline only for
+    // vision-capable models, and every attachment is saved to the workspace
+    // so the agent can read it there even when the provider cannot take it
+    // as a native file input.
+    input.accept = "*/*";
     input.hidden = true;
     document.body.appendChild(input);
     input.onchange = (e) => {
       const files = (e.target as HTMLInputElement).files;
       if (!files) { document.body.removeChild(input); return; }
       for (const file of files) {
-        if (!supportsImages && file.type.startsWith("image/")) continue;
         aui.composer().addAttachment(file).catch(console.error);
       }
       document.body.removeChild(input);
@@ -486,7 +463,7 @@ export const ComposerAddAttachment: FC = () => {
       variant="ghost"
       size="icon"
       className="aui-composer-add-attachment hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30 !size-7 rounded-full p-1 text-xs font-semibold"
-      aria-label={supportsImages ? "Add Attachment (images & docs)" : "Add Attachment (docs only)"}
+      aria-label="Add Attachment"
       onClick={handleClick}
     >
       <PlusIcon className="aui-attachment-add-icon size-4.5 stroke-[1.5px]" />

@@ -37,12 +37,15 @@ single guess stays low-confidence and can decay. When new information
 contradicts an old memory, Qube narrows or conditions the preference rather
 than blindly overwriting it.
 
-### Turning memory off
+### Deleting stored memories
 
-**Settings → Advanced → Memory** toggles the whole system. When off, Qube
-neither reads nor writes persistent memory, and the memory tools are removed
-from runs entirely. Existing memory files remain on disk until you delete
-them.
+There is no separate memory on/off switch in the current Settings UI; Qube
+keeps long-term memory on. To erase it, use **Settings → Advanced → Hard
+Reset** (which also erases chats, settings, workspace files, attachments and
+logs), or quit Qube and delete `memory.json` — plus the legacy
+`dual-memory.json` and `semantic-memory.json` files if present — from the
+`.memory/` folder. Deleting files while Qube is running can be overwritten by
+in-memory state, so quit first.
 
 ### Where it is stored
 
@@ -81,7 +84,7 @@ for an embedded app`.
 
 ### The skills marketplace
 
-**Settings → Skills** offers a curated catalog plus a live marketplace:
+**Settings → Advanced → Skills** offers a curated catalog plus a live marketplace:
 
 - Curated entries are hand-reviewed (for example `deep-research`,
   `code-review-pro`, `gmail-triage`, `pdf-master`).

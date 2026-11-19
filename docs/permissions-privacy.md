@@ -61,7 +61,7 @@ holding your data.
 
 ### Application data directory
 
-All durable state lives under the per-app data directory, identified by
+Most durable state lives under the per-app data directory, identified by
 `com.qube.desktop`:
 
 | OS | Path |
@@ -73,11 +73,15 @@ All durable state lives under the per-app data directory, identified by
 Inside it you will find:
 
 - `.memory/` — settings (`app-settings.json`), AI providers and keys
-  (`providers.json`), long-term memory, chat sessions and titles, scheduled
-  tasks and run logs, MCP server configs, skills, ChatGPT sign-in session,
-  and the local signing secret.
-- `.browser-profile/` — the managed browser's profile, cookies and sessions.
-- `sidecar.log` — the local server's diagnostic log.
+  (`providers.json`), long-term memory (`memory.json`, plus legacy
+  `dual-memory.json` and `semantic-memory.json`), chat sessions and titles,
+  scheduled tasks and run logs, MCP server configs, skills, ChatGPT sign-in
+  session, and the local signing secret.
+- `.agents/` — learned/durable skills written outside `.memory/`.
+- `.browser-profile/`, `.camoufox*`, `.playwright-mcp/`, `.superpowers/` —
+  managed browser profiles, cookies, sessions, and automation state.
+- `sidecar.log`, `combined.log`, `error.log`, `install.log`, and
+  `startup-error.html` — local diagnostics and generated error pages.
 - `agent.sqlite` — only present when the experimental durable storage flag is
   enabled; the default installation uses the JSON files above.
 
@@ -88,31 +92,43 @@ the `QUBE_DATA_DIR` environment variable).
 
 Files Qube creates live in its **workspace** — the `workspace/` folder in a
 source checkout, or the sidecar's local working directory in an installed
-desktop app. Treat the workspace as app-managed storage: use the **Download**
-button on file cards to keep important deliverables in your own folders.
-Workspace content is separate from the application data directory, which
-holds your settings, chats and memory and is preserved across updates and
-uninstalls.
+desktop app. Attachments are saved under `workspace/attachments/`. Treat the
+workspace as app-managed storage: use the **Download** button on file cards
+to keep important deliverables in your own folders. Workspace content is
+separate from the application data directory, which holds your settings,
+chats and memory and is preserved across updates and uninstalls. In the
+desktop app the workspace itself lives in the temporary sidecar copy, so an
+update can rebuild it; keep deliverables you care about with **Download**.
 
 The desktop app also keeps a temporary copy of its local server under the
-system temp directory (`qube-sidecar`); it is rebuilt automatically and is
-safe to clear while Qube is closed.
+system temp directory (`qube-sidecar` or a pid-suffixed `qube-sidecar-*`
+directory); it is rebuilt automatically and is safe to clear while Qube is
+closed. Hard Reset deletes this temporary copy, so the desktop workspace is
+erased too.
+
+If you set `WORKSPACE_PATH` to a folder outside the application data
+directory, Hard Reset does not delete that external folder. Remove it
+yourself if you want a complete wipe.
 
 ### Deleting your data
 
 - Delete individual chats from the sidebar; their sessions and snapshots are
   removed.
-- Turn memory off in **Settings → Advanced → Memory**, or delete the memory
-  files in the data directory.
-- **Settings → Advanced → Hard reset** signs out of ChatGPT, pauses background
+- There is no separate memory on/off switch in the current Settings UI. To
+  erase stored memories, use **Settings → Advanced → Hard Reset**, or quit
+  Qube and delete the memory files under `.memory/` in the data directory.
+- **Settings → Advanced → Hard Reset** signs out of ChatGPT, pauses background
   work, and wipes every local state file (`.memory/`, including scheduled
-  tasks, heartbeat work, approvals and the cross-chat announcement ledger),
-  the experimental `agent.sqlite`, the managed browser profile, connector
-  keys, provider settings and memories. It also clears in-browser storage and
-  in-process caches. Workspace deliverables, including chat attachments saved
-  under `workspace/attachments/`, and `sidecar.log` are preserved.
-- Uninstalling the app leaves the data directory in place deliberately; delete
-  it manually for a complete removal. See [Desktop app details](./desktop.md#uninstalling).
+  tasks, heartbeat work, approvals, memories, and the cross-chat announcement
+  ledger), learned skills (`.agents/`), the experimental `agent.sqlite`, the
+  managed browser profiles, connector keys, provider settings, diagnostics,
+  and workspace deliverables including chat attachments saved under
+  `workspace/attachments/`. It also clears browser storage, the webview's
+  native browsing data, and in-process caches, then reloads or restarts Qube.
+  This cannot be undone.
+- Uninstalling the app leaves the data directory in place deliberately; use
+  Hard Reset first or delete the data directory manually for a complete
+  removal. See [Desktop app details](./desktop.md#uninstalling).
 
 ## What leaves your device
 

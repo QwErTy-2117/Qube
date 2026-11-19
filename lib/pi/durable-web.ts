@@ -14,43 +14,18 @@ export const webSearchTool = defineTool({
     const { clampMaxResults } = await import("@/lib/agent/browser/ssrf-dns");
     const limit = clampMaxResults(args.maxResults);
     try {
-      const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(args.query)}`, {
-        headers: { "User-Agent": "Mozilla/5.0 Qube/Pi" },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!res.ok) throw new Error(`DuckDuckGo ${res.status}`);
-      const html = await res.text();
-      const links: Array<{ title: string; url: string; snippet: string }> = [];
-      const re = /<a[^>]+class="result__url"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(html)) && links.length < limit) {
-        try {
-          const href = m[1];
-          const title = m[2]?.trim() || href;
-          let url = href;
-          try {
-            const u = new URL(href, "https://duckduckgo.com");
-            if (u.searchParams.get("uddg")) url = decodeURIComponent(u.searchParams.get("uddg")!);
-          } catch {}
-          links.push({ title, url, snippet: "" });
-        } catch {}
+      const { searchWeb } = await import("@/lib/web/search");
+      const searched = await searchWeb(args.query, limit);
+      if (searched.results.length > 0) {
+        return {
+          output: [{
+            type: "text",
+            text: JSON.stringify({ query: args.query, results: searched.results, provider: searched.provider }),
+          }] as const,
+        };
       }
-      if (links.length > 0) {
-        return { output: [{ type: "text", text: JSON.stringify({ query: args.query, results: links }) }] as const };
-      }
-      const mod: Record<string, unknown> = await import("@phukon/duckduckgo-search");
-      const DDGS = (mod.DDGS || mod.default) as (new (opts: { timeout: number }) => {
-        text: (opts: { keywords: string; maxResults: number }) => Promise<Array<{ title: string; href: string; body: string }>>;
-      }) | undefined;
-      if (DDGS) {
-        const ddgs = new DDGS({ timeout: 8000 });
-        const raw = await ddgs.text({ keywords: args.query, maxResults: limit });
-        const results = raw
-          .map((r) => ({ title: r.title, url: r.href, snippet: (r.body || "").replace(/\s+/g, " ").trim().slice(0, 300) }))
-          .filter((r) => r.url);
-        return { output: [{ type: "text", text: JSON.stringify({ query: args.query, results }) }] as const };
-      }
-      return { output: [{ type: "text", text: JSON.stringify({ query: args.query, results: links }) }] as const };
+      const msg = searched.errors.join("; ") || "Web search failed";
+      return { output: [{ type: "text", text: JSON.stringify({ error: msg, query: args.query, results: [] }) }] as const };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       return { output: [{ type: "text", text: JSON.stringify({ error: msg, query: args.query, results: [] }) }] as const };

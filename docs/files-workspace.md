@@ -93,7 +93,11 @@ saving it into one of your own folders.
 
 Your chats, settings, memory and connected accounts are stored separately in
 the [application data directory](./permissions-privacy.md#where-your-data-is-stored)
-and are not affected by workspace changes, updates, or uninstallation.
+and are not affected by workspace changes or updates. Uninstalling leaves
+that directory in place, but **Settings → Advanced → Hard Reset** erases both
+the data directory and the workspace, including attachments. If you set
+`WORKSPACE_PATH` outside the data directory, remove that external folder
+separately.
 
 ## Related reading
 

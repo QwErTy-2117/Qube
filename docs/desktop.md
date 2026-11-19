@@ -72,7 +72,7 @@ cleaning up by hand:
 
 ```bash
 rm -f ~/.config/autostart/Qube.desktop    # only if you enabled Run on start
-rm -rf /tmp/qube-sidecar                  # temporary copy of the local server
+rm -rf /tmp/qube-sidecar*                 # temporary copies of the local server
 ```
 
 ### Windows and macOS
@@ -87,9 +87,16 @@ Chats, settings, memory, connected accounts and generated state live in the
 [application data directory](./permissions-privacy.md#where-your-data-is-stored)
 (`~/.local/share/com.qube.desktop` on Linux, `~/Library/Application Support/com.qube.desktop`
 on macOS, `%APPDATA%\com.qube.desktop` on Windows) and survive both updates
-and uninstalls. Delete that folder for a fully clean removal, or use
-**Settings → Advanced → Hard reset** to wipe Qube's stored state without
-uninstalling (workspace deliverables and the diagnostic log are kept).
+and uninstalls. Uninstalling does not erase this folder.
+
+To erase everything without uninstalling, use **Settings → Advanced → Hard
+Reset**. It clears browser storage and the webview's native browsing data,
+deletes the application data directory, the workspace and its attachments,
+learned skills, browser profiles, diagnostics such as `sidecar.log`, and the
+temporary sidecar copy, then starts a fresh sidecar. Delete the data folder
+manually only if you want a clean removal outside the app. If you set
+`WORKSPACE_PATH` to a folder outside the data directory, remove that external
+folder separately — Hard Reset does not delete arbitrary external paths.
 
 ## Diagnostics
 

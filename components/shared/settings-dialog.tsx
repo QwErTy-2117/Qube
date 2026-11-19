@@ -52,6 +52,11 @@ import { ConnectorsTab } from "./connectors-tab";
 import { SkillsTab } from "./skills-tab";
 import { AllowedDirectoriesSection } from "./allowed-directories";
 import { getTauriAppVersion, syncTauriAutostart } from "@/lib/tauri-utils";
+import {
+  clearClientStorageForHardReset,
+  finalizeTauriHardReset,
+  isTauriRuntime,
+} from "@/lib/system/client-reset";
 import { Switch } from "radix-ui";
 import { ChatGPTPreferencesCard } from "@/components/chatgpt/chatgpt-preferences";
 import { useLoginWithChatGPT } from "@opencoredev/loginwithchatgpt-react";
@@ -1641,8 +1646,27 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
       setHardResetConfirm(true);
       return;
     }
-    // Clear all localStorage only after the server reset is verified.
-    try { localStorage.clear(); } catch {}
+    // Clear every browser-side store only after the server reset is verified.
+    try {
+      await clearClientStorageForHardReset();
+    } catch {}
+    if (isTauriRuntime()) {
+      try {
+        // Desktop: clear native webview data/caches, delete the app data dir,
+        // restart the sidecar, and navigate to the fresh instance.
+        const restarted = await finalizeTauriHardReset();
+        if (restarted) return;
+        // Dev builds have no bundled sidecar to restart; reload the dev server.
+        setTimeout(() => location.reload(), 300);
+        return;
+      } catch (e) {
+        setHardResetError(
+          `Saved data was erased, but the app could not restart cleanly: ${e instanceof Error ? e.message : String(e)}. Restart Qube.`,
+        );
+        setHardResetConfirm(true);
+        return;
+      }
+    }
     setTimeout(() => location.reload(), 300);
   };
 
@@ -3051,7 +3075,7 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
               <DialogHeader>
                 <DialogTitle>Hard Reset</DialogTitle>
                 <DialogDescription>
-                  This will permanently delete all providers, models, ChatGPT login, memories, sessions, settings, scheduled tasks, heartbeat work and announcements, browser profile, and stored connector keys, then reload Qube. Workspace files are kept. This cannot be undone.
+                  This permanently erases all saved Qube data on this device. This cannot be undone.
                 </DialogDescription>
                 {hardResetError && (
                   <p className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-600">

@@ -3,7 +3,7 @@ mod sidecar;
 mod tray;
 
 use commands::AppState;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::Manager;
 
@@ -36,9 +36,18 @@ fn find_dist_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
 /// Write a styled startup-error page and navigate the main window to it so a
 /// failed sidecar start is visible instead of a silent "Loading Qube..."
 /// placeholder. Uses only the system font stack (no bundled fonts needed).
-fn show_startup_error(app: &tauri::AppHandle, title: &str, details: &str, data_dir: &std::path::Path) {
+fn show_startup_error(
+    app: &tauri::AppHandle,
+    title: &str,
+    details: &str,
+    data_dir: &std::path::Path,
+) {
     let _ = std::fs::create_dir_all(data_dir);
-    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let esc = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    };
     let html = format!(
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Qube — {t}</title></head>\
         <body style=\"margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#101514;color:#e8ece9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif\">\
@@ -82,12 +91,174 @@ fn focus_main(app: &tauri::AppHandle) {
 
 use tauri_plugin_autostart::MacosLauncher;
 
+fn remove_path_with_retries(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let mut last_error = String::new();
+    for attempt in 0..6u64 {
+        let result = if path.is_dir() {
+            std::fs::remove_dir_all(path)
+        } else {
+            std::fs::remove_file(path)
+        };
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error) => last_error = error.to_string(),
+        }
+        if !path.exists() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(150 * (attempt + 1)));
+    }
+    Err(format!(
+        "Could not delete {}: {}",
+        path.display(),
+        last_error
+    ))
+}
+
+fn remove_sidecar_temp_dirs() {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name == "qube-sidecar" || name.starts_with("qube-sidecar-") {
+            let _ = remove_path_with_retries(&entry.path());
+        }
+    }
+}
+
+fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for path in paths {
+        if !out.contains(&path) {
+            out.push(path);
+        }
+    }
+    out
+}
+
+/// Finish a hard reset in the desktop shell.
+///
+/// The server-side reset removes Qube's own files while the sidecar is still
+/// running. This command then clears native webview storage, stops the
+/// sidecar, deletes the app data/cache/config directories and the writable
+/// sidecar copy, starts a fresh sidecar, and navigates to it. Returns `false`
+/// for dev builds (no bundled sidecar); the frontend reloads in that case.
+#[tauri::command]
+pub async fn finalize_hard_reset(app: tauri::AppHandle) -> Result<bool, String> {
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || finalize_hard_reset_sync(&handle))
+        .await
+        .map_err(|error| format!("Hard reset task failed: {error}"))?
+}
+
+fn finalize_hard_reset_sync(app: &tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+
+    let _ = app.autolaunch().disable();
+
+    // Clear cookies/local storage/cache in the running webview before deleting
+    // directories it may be using. This also covers WebKit/WebView2 data that
+    // lives outside the Qube data dir.
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.clear_all_browsing_data();
+    }
+    std::thread::sleep(Duration::from_millis(300));
+
+    // Dev builds have no bundled sidecar; the web server is managed by npm.
+    // Browser storage and autostart are already cleared, so let the frontend
+    // reload into the freshly reset server.
+    let Some(dist_dir) = find_dist_dir(app) else {
+        return Ok(false);
+    };
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve the app data directory: {error}"))?;
+    let app_version = app.package_info().version.to_string();
+
+    let mut dirs = vec![data_dir.clone()];
+    if let Ok(path) = app.path().app_cache_dir() {
+        dirs.push(path);
+    }
+    if let Ok(path) = app.path().app_config_dir() {
+        dirs.push(path);
+    }
+    if let Ok(path) = app.path().app_local_data_dir() {
+        dirs.push(path);
+    }
+    if let Ok(path) = app.path().app_log_dir() {
+        dirs.push(path);
+    }
+
+    let state = app.state::<AppState>();
+    state.kill_child();
+    // The server exits itself after a successful desktop reset. Wait for the
+    // port to close before deleting its files, so a reused keep-alive sidecar
+    // (which has no Child handle) cannot keep writing into a deleted tree.
+    if let Some(port) = state.port() {
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while is_server_running(port) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    if let Some(path) = state.take_dir() {
+        dirs.push(path);
+    }
+
+    for path in unique_paths(dirs) {
+        remove_path_with_retries(&path)?;
+    }
+    remove_sidecar_temp_dirs();
+
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|error| format!("Could not recreate {}: {}", data_dir.display(), error))?;
+
+    match sidecar::Sidecar::start(&dist_dir, &data_dir, &app_version) {
+        Ok(started) => {
+            state.set_port(started.port);
+            state.set_dir(started.app_dir.clone());
+            if let Some(child) = started.child {
+                state.set_child(child);
+            }
+            let url = format!("http://127.0.0.1:{}", started.port);
+            let parsed = url::Url::parse(&url)
+                .map_err(|error| format!("Could not parse sidecar URL {url}: {error}"))?;
+            if let Some(window) = app.get_webview_window("main") {
+                window
+                    .navigate(parsed)
+                    .map_err(|error| format!("Could not navigate to the fresh sidecar: {error}"))?;
+            }
+            Ok(true)
+        }
+        Err(error) => {
+            show_startup_error(
+                app,
+                "Qube could not restart after the hard reset",
+                &error,
+                &data_dir,
+            );
+            Err(error)
+        }
+    }
+}
+
 fn read_app_settings(data_dir: &std::path::Path) -> (bool, bool) {
     let settings_path = data_dir.join(".memory").join("app-settings.json");
     if let Ok(raw) = std::fs::read_to_string(&settings_path) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
-            let keep_alive = json.get("keepAlive").and_then(|v| v.as_bool()).unwrap_or(false);
-            let run_on_start = json.get("runOnStart").and_then(|v| v.as_bool()).unwrap_or(false);
+            let keep_alive = json
+                .get("keepAlive")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let run_on_start = json
+                .get("runOnStart")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             return (keep_alive, run_on_start);
         }
     }
@@ -204,6 +375,7 @@ pub fn run() {
                     if running.as_deref() == Some(app_version.as_str()) {
                         let state = app.state::<AppState>();
                         state.set_port(preferred_port);
+                        state.set_dir(sidecar::sidecar_base_dir());
                         let url = format!("http://127.0.0.1:{}", preferred_port);
                         if let Some(window) = app.get_webview_window("main") {
                             if let Ok(parsed) = url::Url::parse(&url) {
@@ -222,7 +394,10 @@ pub fn run() {
                     Ok(s) => {
                         let state = app.state::<AppState>();
                         state.set_port(s.port);
-                        state.set_child(s.child.unwrap());
+                        state.set_dir(s.app_dir.clone());
+                        if let Some(child) = s.child {
+                            state.set_child(child);
+                        }
                         let url = format!("http://127.0.0.1:{}", s.port);
                         if let Some(window) = app.get_webview_window("main") {
                             if let Ok(parsed) = url::Url::parse(&url) {
@@ -277,7 +452,11 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![commands::get_port, commands::set_autostart])
+        .invoke_handler(tauri::generate_handler![
+            commands::get_port,
+            commands::set_autostart,
+            finalize_hard_reset
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
@@ -288,4 +467,3 @@ pub fn run() {
         }
     });
 }
-

@@ -65,7 +65,7 @@ persistent delivery record: Qube claims it for one conversation, marks it
 delivered only after the visible reply actually mentions it, and leaves failed
 or unmentioned items pending across chats and restarts. A genuinely new update
 gets a separate announcement; an explicit question about an old one is answered
-normally, not announced again. **Hard reset** clears this delivery history and
+normally, not announced again. **Hard Reset** clears this delivery history and
 the work ledger along with all other local state, so only a genuinely new fact
 is announced after the reset. You can also run any task immediately with
 **Run now** in its task panel.

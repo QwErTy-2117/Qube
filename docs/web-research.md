@@ -28,8 +28,8 @@ For anything non-trivial, Qube applies its built-in **research** playbook:
    source list.
 
 You can force it explicitly by typing `/research` before your question, and
-deeper research playbooks are available in **Settings → Skills** — see
-[Memory and skills](./memory-and-skills.md).
+deeper research playbooks are available in **Settings → Advanced → Skills** —
+see [Memory and skills](./memory-and-skills.md).
 
 ## Giving Qube a link directly
 

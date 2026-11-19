@@ -153,7 +153,10 @@ fn prepare_sidecar_dir(
     // Written last: a failed copy leaves no stamp, so the next launch retries
     // the full copy instead of trusting a half-populated directory.
     if let Err(e) = fs::write(&stamp, app_version) {
-        eprintln!("Failed to write sidecar version stamp {}: {e}", stamp.display());
+        eprintln!(
+            "Failed to write sidecar version stamp {}: {e}",
+            stamp.display()
+        );
     }
     Ok((
         base.to_path_buf(),
@@ -223,10 +226,18 @@ fn resolve_node_bin(app_dir: &Path) -> (PathBuf, bool) {
     }
 }
 
+/// Base temp directory holding the writable sidecar copy. A hard reset must
+/// delete this too: it contains the Next.js cache and the server's working
+/// directory, which can retain uploaded/workspace files.
+pub fn sidecar_base_dir() -> PathBuf {
+    std::env::temp_dir().join("qube-sidecar")
+}
+
 #[allow(dead_code)]
 pub struct Sidecar {
     pub child: Option<Child>,
     pub port: u16,
+    pub app_dir: PathBuf,
 }
 
 impl Sidecar {
@@ -261,7 +272,7 @@ impl Sidecar {
         // Only fall back to a pid-suffixed dir when the base dir is locked by
         // a still-running instance.
         let app_dir = {
-            let base = std::env::temp_dir().join("qube-sidecar");
+            let base = sidecar_base_dir();
             match prepare_sidecar_dir(dist_dir, &base, app_version) {
                 Ok((dir, stats)) if stats.resynced => {
                     log_line(
@@ -352,6 +363,11 @@ impl Sidecar {
             .env("PORT", port.to_string())
             .env("HOSTNAME", "127.0.0.1")
             .env("QUBE_DATA_DIR", data_dir.to_string_lossy().as_ref())
+            // Lets the server distinguish the bundled desktop sidecar from a
+            // dev/self-hosted server. Hard reset uses it to terminate the
+            // sidecar after responding, including a reused orphan that the
+            // shell has no Child handle for.
+            .env("QUBE_DESKTOP", "1")
             // Authoritative app version, straight from the desktop binary.
             // `/api/settings` prefers it over the package.json inside the
             // sidecar copy, so the version shown in Settings can never lag
@@ -404,6 +420,7 @@ impl Sidecar {
                 return Ok(Sidecar {
                     child: Some(child),
                     port,
+                    app_dir,
                 });
             }
             thread::sleep(Duration::from_millis(100));
@@ -435,10 +452,8 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "qube-sidecar-test-{}-{name}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("qube-sidecar-test-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

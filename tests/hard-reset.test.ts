@@ -12,7 +12,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +23,7 @@ process.env.QUBE_DATA_DIR = dataDir;
 const {
   performHardReset,
   hardResetPaths,
+  shouldExitAfterHardReset,
 } = await import("@/lib/system/hard-reset");
 const { POST } = await import("@/app/api/reset/route");
 const announcements = await import("@/lib/scheduler/announcements");
@@ -52,7 +52,10 @@ function seedFiles(): void {
   mkdirSync(join(memoryDir, "scratchpads"), { recursive: true });
   mkdirSync(join(memoryDir, "observability"), { recursive: true });
   mkdirSync(join(dataDir, ".browser-profile"), { recursive: true });
-  mkdirSync(join(dataDir, "workspace"), { recursive: true });
+  mkdirSync(join(dataDir, ".camoufox"), { recursive: true });
+  mkdirSync(join(dataDir, ".agents", "skills"), { recursive: true });
+  mkdirSync(join(dataDir, "workspace", "attachments"), { recursive: true });
+  mkdirSync(join(dataDir, "playground"), { recursive: true });
 
   writeFileSync(join(memoryDir, "app-settings.json"), JSON.stringify({ userName: "Old user" }));
   writeFileSync(join(memoryDir, "providers.json"), JSON.stringify({ providers: [{ id: "old" }], defaultModelId: "old:model" }));
@@ -72,8 +75,16 @@ function seedFiles(): void {
   writeFileSync(join(dataDir, "agent.sqlite"), "sqlite old state");
   writeFileSync(join(dataDir, "agent.sqlite-wal"), "sqlite wal old state");
   writeFileSync(join(dataDir, ".browser-profile", "Cookies"), "old cookie");
-  writeFileSync(join(dataDir, "sidecar.log"), "keep this diagnostic log");
-  writeFileSync(join(dataDir, "workspace", "keep.txt"), "keep this deliverable");
+  writeFileSync(join(dataDir, ".camoufox", "cookies.sqlite"), "old camoufox cookie");
+  writeFileSync(join(dataDir, ".agents", "skills", "custom.md"), "old learned skill");
+  writeFileSync(join(dataDir, "sidecar.log"), "old diagnostic log with user prompts");
+  writeFileSync(join(dataDir, "combined.log"), "old combined log");
+  writeFileSync(join(dataDir, "error.log"), "old error log");
+  writeFileSync(join(dataDir, "install.log"), "old install log");
+  writeFileSync(join(dataDir, "startup-error.html"), "<html>old startup error</html>");
+  writeFileSync(join(dataDir, "workspace", "keep.txt"), "old deliverable");
+  writeFileSync(join(dataDir, "workspace", "attachments", "old.txt"), "old attachment");
+  writeFileSync(join(dataDir, "playground", "legacy.txt"), "old playground file");
 }
 
 async function seedLiveState(): Promise<void> {
@@ -122,7 +133,7 @@ after(() => {
 });
 
 describe("hard reset", () => {
-  it("removes all durable state, clears live caches, and preserves workspace/log files", async () => {
+  it("removes all durable state and user files, clears live caches, and leaves no workspace or logs", async () => {
     seedFiles();
     await seedLiveState();
     assert.ok(existsSync(announcements.announcementLedgerPath()));
@@ -137,9 +148,21 @@ describe("hard reset", () => {
     for (const path of hardResetPaths(dataDir)) {
       assert.equal(existsSync(path), false, `${path} must be removed`);
     }
-    assert.equal(existsSync(join(dataDir, "sidecar.log")), true, "diagnostic log is preserved");
-    assert.equal(readFileSync(join(dataDir, "sidecar.log"), "utf-8"), "keep this diagnostic log");
-    assert.equal(existsSync(join(dataDir, "workspace", "keep.txt")), true, "workspace deliverable is preserved");
+    for (const relative of [
+      "sidecar.log",
+      "combined.log",
+      "error.log",
+      "install.log",
+      "startup-error.html",
+      ".agents",
+      "workspace",
+      "playground",
+      "agent.sqlite",
+      ".browser-profile",
+      ".camoufox",
+    ]) {
+      assert.equal(existsSync(join(dataDir, relative)), false, `${relative} must be removed`);
+    }
 
     // Ledgers are empty in memory, not merely unlinked on disk.
     assert.deepEqual(await announcements.getPendingAnnouncements(50), []);
@@ -213,5 +236,11 @@ describe("hard reset", () => {
     const again = await performHardReset();
     assert.equal(again.ok, true);
     assert.deepEqual(again.errors, []);
+  });
+
+  it("only exits the process for the bundled desktop sidecar", () => {
+    assert.equal(shouldExitAfterHardReset({ QUBE_DESKTOP: "1" }), true);
+    assert.equal(shouldExitAfterHardReset({}), false);
+    assert.equal(shouldExitAfterHardReset({ QUBE_DESKTOP: "0" }), false);
   });
 });

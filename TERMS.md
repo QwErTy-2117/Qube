@@ -1,6 +1,6 @@
 # Terms of Service 
 
-**Last updated: September 9, 2026**
+**Last updated: November 19, 2026**
 
 ---
 
@@ -44,7 +44,7 @@ Qube provides a chat interface to an autonomous agent that can, depending on how
 * operate your computer via browser automation when you enable that capability and grant the required system permissions — interacting with native applications, browser sessions and websites, windows, desktop interfaces, clipboard, and other computer state exposed through the driver, using an observe → decide → act → observe → verify loop;
 * operate your computer's desktop applications directly via Computer Use (open-codex-computer-use driver) when you install it, grant the OS permissions it needs (Accessibility and Screen Recording on macOS; the desktop accessibility session on Linux; no special grant on Windows), and ask for something outside the browser — read-only observation runs freely, while every click, keystroke, or change pauses for your explicit approval;
 * delegate parts of a task to subagents that operate with the same tool access and report back to the main Agent;
-* remember context across conversations through session history and persistent memory stored locally (which you can switch off in Advanced settings — see Section 3A);
+* remember context across conversations through session history and persistent memory stored locally (which you can erase with Hard Reset or by deleting the local memory files — see Section 3A);
 * connect to external services you explicitly authorize and perform actions in those services on your behalf;
 * run scheduled and recurring tasks, including a periodic heartbeat task, with permissions you control.
 
@@ -56,7 +56,7 @@ We may add, change, or remove capabilities over time as described in Section 16.
 
 Qube can retain facts across conversations ("persistent memory") so the Agent has continuity — for example your name, preferences, project context, decisions, constraints, and goals. This section describes what the memory system does, where it is known to be imperfect, and how you control it.
 
-* **What is stored and how it gets there.** The Agent saves memories proactively — it does not wait for you to say "remember this." It infers durable facts from indirect cues (such as "I always…", "I prefer…", "we decided…", "I'm working on…", corrections, goals, and constraints) and from a background heuristic that watches recent user messages for patterns like "remember", "don't forget", "my name is", or "my favorite". Each entry records a category, the fact text, and heuristic relevance/confidence scores, plus derived entities and topic tags. Facts are split across a factual store and a persona store for retrieval.
+* **What is stored and how it gets there.** The Agent saves memories proactively — it does not wait for you to say "remember this." It infers durable facts from indirect cues (such as "I always…", "I prefer…", "we decided…", "I'm working on…", corrections, goals, and constraints) and from a background heuristic that watches recent user messages for patterns like "remember", "don't forget", "my name is", or "my favorite". Each entry records a category, the fact text, and heuristic relevance/confidence scores, plus derived entities and topic tags. Entries are kept in a unified local store with observation and durable tiers for retrieval.
 * **How memories are reused.** Before answering, Qube ranks stored entries against your current message using keyword, entity, and topic overlap (not true semantic understanding), applies recency and relevance weighting, and injects at most the top few entries (roughly a few hundred tokens) into the prompt sent to your Model Provider. The Agent can also explicitly read, list, and recall past chat sessions when your request refers to them.
 * **Known problems you accept by leaving memory on.** Memory is a best-effort aid, not a reliable record:
   * it may save the wrong thing (misheard preferences, jokes, one-off remarks, or facts taken out of context) and may miss things you expected it to keep;
@@ -66,7 +66,7 @@ Qube can retain facts across conversations ("persistent memory") so the Agent ha
   * entries omitted from a given prompt for space or relevance reasons still remain stored locally;
   * the Agent may act on a faulty, stale, or misattributed memory (for example, applying an old preference or project fact to a new task), including via file, command, browser, or Connector actions for which you remain responsible under Section 6.
 * **Where memories go.** Recalled memory text and, where the Agent uses memory-curation helpers, transcript excerpts plus existing memories are transmitted to the Model Provider you configured as part of normal prompt processing (see Sections 8–9). Stored memories otherwise stay in a plain-text local file on your device and are not sent to us.
-* **Your controls.** You can switch long-term memory off at any time in **Settings → Advanced → Memory**. Switching it off stops future recall, proactive saving, background extraction, and memory tools for subsequent runs, but it does **not** delete entries already stored — delete those individually or clear them in the application. Do not ask Qube to remember secrets, passwords, tokens, or regulated data; the Agent is instructed not to store secrets, but that instruction is itself model-dependent and not guaranteed. You are responsible for reviewing, correcting, and deleting stored memories, and for the consequences of the Agent acting on them.
+* **Your controls.** Long-term memory is on by default in the current build, and there is no separate on/off switch in Settings. To erase stored memories, use **Settings → Advanced → Hard Reset** (which deletes all local Qube data, including chats, settings, workspace files, logs, and memory), or quit Qube and delete the memory files under `.memory/` in the local data directory. Because Hard Reset is a full wipe, export any files you want to keep first. Do not ask Qube to remember secrets, passwords, tokens, or regulated data; the Agent is instructed not to store secrets, but that instruction is itself model-dependent and not guaranteed. You are responsible for reviewing, correcting, and deleting stored memories, and for the consequences of the Agent acting on them.
 
 ## 4. Eligibility, installation, and accounts
 

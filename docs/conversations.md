@@ -52,10 +52,14 @@ judgment, states its assumptions, and continues.
 
 ## Attachments and voice
 
-- **Attach files** with the paperclip button or by dragging them in. Images
-  and PDFs are sent inline to supported models; text files are included as
-  clearly marked untrusted data, and other documents are saved under
-  `workspace/attachments/` where Qube's tools can read or convert them.
+- **Attach files** with the paperclip button or by dragging them in. Every
+  attachment is saved under `workspace/attachments/` and Qube tells the Agent
+  the exact path so it can read or convert the file with its tools. Text,
+  PDF, Word, PowerPoint and spreadsheet content is extracted into the prompt
+  where possible, and images are also sent inline only when the selected model
+  supports image input. PDFs are text-extracted and saved rather than sent as
+  native PDF parts; everything else stays available through its workspace
+  path.
 - **Previews survive sending, editing and retrying.** Qube keeps the
   attachment's data in the message itself, so opening the file chip later no
   longer depends on the original browser `File` object.

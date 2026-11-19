@@ -35,7 +35,8 @@ Open `sidecar.log` and look at the end of the file. Typical causes:
 ### Settings show the wrong version after an update
 
 The version in Settings always comes from the desktop binary. If it looks
-stale, the temporary sidecar copy (`<temp>/qube-sidecar`) was not rebuilt.
+stale, the temporary sidecar copy (`<temp>/qube-sidecar` or
+`<temp>/qube-sidecar-*`) was not rebuilt.
 Restart Qube; if it persists, quit the app, delete that temp folder, and
 restart.
 
@@ -203,13 +204,16 @@ Only stdio MCP servers are supported; HTTP/SSE servers won't connect.
 ## Resetting everything
 
 For a fresh start without uninstalling, use **Settings → Advanced → Hard
-reset**. It signs out of ChatGPT, pauses and clears background work, removes
+Reset**. It signs out of ChatGPT, pauses and clears background work, removes
 all local state files (providers, sessions, memory, tasks, heartbeat work,
-announcements, settings, connector keys, the durable database and browser
-profile), clears browser storage, then reloads. Workspace deliverables
-(including saved chat attachments) and the diagnostic log are kept. To remove
-those too, also delete the
-[application data directory](./permissions-privacy.md#where-your-data-is-stored).
+announcements, settings, connector keys, learned skills, diagnostics, the
+durable database and browser profiles), deletes workspace deliverables
+including saved chat attachments, clears browser storage and the webview's
+native browsing data, and reloads or restarts Qube with fresh defaults. This
+cannot be undone, so download any files you want to keep first. If you set
+`WORKSPACE_PATH` to a folder outside the
+[application data directory](./permissions-privacy.md#where-your-data-is-stored),
+remove that external folder separately.
 
 ## Reporting a problem
 

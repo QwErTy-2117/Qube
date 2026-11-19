@@ -61,8 +61,9 @@ The first launch walks through five short screens:
    **Settings → Connectors**.
 5. **Ready** — Qube opens the chat.
 
-Nothing here is permanent: providers, connectors, preferences and memory can
-all be changed later in **Settings**.
+Nothing here is permanent: providers, connectors and preferences can all be
+changed later in **Settings**. Long-term memory is managed locally and is
+erased by **Settings → Advanced → Hard Reset**.
 
 ## Say your first task
 

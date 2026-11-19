@@ -1,6 +1,6 @@
 # Privacy Policy 
 
-**Last updated: September 9, 2026**
+**Last updated: November 19, 2026**
 
 This Policy should be read together with the [Terms of Service](TERMS.md). Terms such as **Service, AI Agent, Browser Use, Model Provider, Connector, Workspace, and User Content** have the same meanings as in the Terms.
 
@@ -21,7 +21,7 @@ This Policy explains what information Qube may handle locally, what it may send 
 * **Computer Use sees your desktop only when you ask, and acts only with approval.** When you install the open-codex-computer-use driver and ask for something outside the browser, the Agent may list running apps and read the target app's visible state (see Section 5B). Clicks, keystrokes, and changes always pause for your explicit approval; observations needed to decide the next step may be sent to your Model Provider as described in Section 6.
 * **No advertising tracker.** Qube does not embed advertising, analytics, or cross-site tracking scripts. It uses essential local browser storage and, if you use Login with ChatGPT, a session cookie to keep you signed in.
 * **You are responsible for the Agent's actions.** Files it changes, messages it sends, and actions it takes in connected services are legally yours, not Qube's — even when you didn't foresee the exact steps. See Terms §6.
-* **You control deletion.** You can delete sessions, memory entries, tasks, workspace files, and local configuration at any time (see Sections 6 and 9).
+* **You control deletion.** You can delete sessions, tasks, workspace files, and local configuration at any time, and erase stored memory with Hard Reset or by deleting the local memory files (see Sections 6 and 9).
 
 ## 3. Information you provide directly
 
@@ -41,9 +41,9 @@ You are responsible for what you choose to put in prompts, files, and connected 
 As you chat and let the Agent work, Qube generates and stores on your device:
 
 * **Session history.** A record for each conversation, including an identifier, title, summary, timestamps, and, where stored, the transcript. Transcripts may be truncated if they become very large, with a notice where truncation occurs.
-* **Persistent memory.** Facts the Agent extracts from conversations (for example, preferences, project context, or personal details you mentioned) that may be useful in future sessions. These entries include a category, content, and relevance or confidence indicators. Where relevant, entries are included as context in future prompts to provide continuity. See Section 4A for how extraction and recall work, their known limitations, and how to switch memory off.
+* **Persistent memory.** Facts the Agent extracts from conversations (for example, preferences, project context, or personal details you mentioned) that may be useful in future sessions. These entries include a category, content, and relevance or confidence indicators. Where relevant, entries are included as context in future prompts to provide continuity. See Section 4A for how extraction and recall work, their known limitations, and how to erase stored memory.
 * **Task logs and operational context.** Records of scheduled or heartbeat task runs, file excerpts and directory listings the Agent has read (including, where you use external listing, the names and metadata of files outside the Workspace), command outputs, web search and fetch results, and — where browser automation is enabled — observations and context the Agent obtained through browser automation (such as window information, accessibility data, and screen-derived context the harness includes) to complete the task you requested. These values flow through the model context and into workspace files where applicable. They are not sent to us.
-* **Diagnostics.** Operational messages written to the local server console (for example, that certain tools were loaded or a stream error occurred). These logs stay on your device unless you choose to share them for support.
+* **Diagnostics.** Operational messages written to the local server console and to `sidecar.log` in the application data directory (for example, that certain tools were loaded or a stream error occurred). These logs stay on your device unless you choose to share them for support, and Hard Reset deletes them.
 
 Qube does not create a server-side profile of you and does not collect device advertising identifiers.
 
@@ -51,8 +51,8 @@ Qube does not create a server-side profile of you and does not collect device ad
 
 * **What the system does.** When long-term memory is on (the default), Qube watches recent user messages for durable facts using pattern matching (for example messages containing "remember", "don't forget", "my name is", "call me", "I prefer/like/love/hate", "my favorite", "I work at/on/as", or "my project/wife/husband/dog/cat/birthday/email/phone") and the Agent additionally saves facts proactively whenever it judges something durable — even when you never said "remember this". Each entry keeps a category (such as personal, preference, project, technology, decision, pattern, constraint, goal, or general), the fact text, heuristic relevance/confidence scores, derived entities and topic tags, and timestamps. Recall ranks entries by keyword, entity, and topic overlap with your current message plus recency and relevance weighting, and injects at most the top few entries (on the order of a few hundred tokens) into the prompt.
 * **Known problems.** The system is approximate and will sometimes be wrong: it can store remarks you did not intend as lasting facts (including jokes, hypotheticals, or one-off statements that happened to match a pattern); it can miss facts you did want kept; it can retrieve irrelevant, stale, or contradictory entries because matching is word-overlap based rather than true understanding; contradiction handling only *lowers* the old entry's relevance score instead of deleting it, so superseded facts persist on disk and may resurface; relevance/confidence scores are rough estimates; and entries left out of a given prompt for space reasons are still stored. Review stored entries before relying on them, and never ask Qube to remember passwords, secrets, tokens, or regulated data — the Agent is instructed not to store secrets, but compliance with that instruction depends on the model and is not guaranteed.
-* **Where memory data goes.** Stored entries live in a plain-text local file (`dual-memory.json` under the local data directory) and in browser-visible memory views; they are not sent to us. However, whenever a recalled entry is used, its text is transmitted to the Model Provider you configured as part of the prompt (Section 6.1), and when the Agent curates memory (extracting or reconciling entries), the relevant transcript and existing memories are likewise sent to that Provider. Past-chat titles and transcripts recalled through session tools follow the same path when the Agent includes them.
-* **How to control it.** Switch long-term memory off in **Settings → Advanced → Memory**. When off, Qube skips recall, proactive saving, background extraction, speculative prefetch, and memory tools for subsequent runs. Switching off does not delete what is already stored: delete individual entries, clear all memories in the application, or remove the local data file; then, if a cloud Provider was used while those memories were active, address retention of any transmitted context with that Provider under its policy.
+* **Where memory data goes.** Stored entries live in a plain-text local file (`memory.json` under `.memory/` in the local data directory, with legacy `dual-memory.json` and `semantic-memory.json` files migrated on read); they are not sent to us. However, whenever a recalled entry is used, its text is transmitted to the Model Provider you configured as part of the prompt (Section 6.1), and when the Agent curates memory (extracting or reconciling entries), the relevant transcript and existing memories are likewise sent to that Provider. Past-chat titles and transcripts recalled through session tools follow the same path when the Agent includes them.
+* **How to control it.** Long-term memory is on by default in the current build, and there is no separate on/off switch in Settings. To erase stored memories, use **Settings → Advanced → Hard Reset** (which deletes all local Qube data, including chats, settings, workspace files, logs, and memory), or quit Qube and delete the memory files under `.memory/` in the local data directory. Because Hard Reset is a full wipe, export any files you want to keep first. If a cloud Provider was used while those memories were active, address retention of any transmitted context with that Provider under its policy.
 
 ## 5. How Qube uses this information
 
@@ -139,7 +139,7 @@ We do not control third-party availability, security, or data handling. Using a 
 
 ### 7.1 Where
 
-* **On your device, in the local data directory.** By default this is the application's working directory, or the path set by your `QUBE_DATA_DIR` environment variable if you configure one. It holds application settings, provider configuration, session records, memory entries, scheduled tasks, task logs, and ChatGPT session state where applicable. The Workspace folder holds files you or the Agent create.
+* **On your device, in the local data directory.** In a source run this defaults to the application's working directory and can be overridden with the `QUBE_DATA_DIR` environment variable; the desktop app points it at the application data directory. It holds application settings, provider configuration, session records, memory entries, scheduled tasks, task logs, learned skills under `.agents/`, browser profiles, diagnostics such as `sidecar.log`, and ChatGPT session state where applicable. The Workspace folder — `workspace/` in a source run, or the sidecar's working directory in the desktop app — holds files you or the Agent create, including attachments saved under `workspace/attachments/`.
 * **In browser storage.** Preferences, provider configuration, and similar settings kept in local storage for the application origin.
 * **Remotely, only where you asked.** At the Model Provider, integration partner, and any external service you connected or URL you asked to fetch (including, where browser automation is enabled, any browser automation observations the harness included as model context), as described in Section 6.
 
@@ -148,7 +148,7 @@ We do not control third-party availability, security, or data handling. Using a 
 Data on your device is kept until you delete it:
 
 * Session records and transcripts persist until you delete the session or remove the underlying files. Very large transcripts may be truncated automatically with a notice.
-* Persistent memory entries persist until you delete or update them. Older entries may be omitted from context based on relevance over time but remain on disk until a cleanup or deletion removes them. Superseded entries are demoted (relevance reduced), not automatically deleted. Switching memory off in Settings → Advanced → Memory stops future recall and saving but does not delete stored entries.
+* Persistent memory entries persist until you delete or update them. Older entries may be omitted from context based on relevance over time but remain on disk until a cleanup or deletion removes them. Superseded entries are demoted (relevance reduced), not automatically deleted. There is no separate memory on/off switch in the current build; Hard Reset deletes the memory files along with all other local Qube data, and deleting those files manually while Qube is closed also removes them.
 * Task logs and task definitions persist until you delete them.
 * ChatGPT sessions expire according to the session time and are pruned, or removed when you sign out.
 * Provider credentials and settings persist until you change or clear them.
@@ -174,10 +174,10 @@ We take reasonable steps within a local-first desktop application, but we cannot
 
 Depending on your jurisdiction, you may have rights to access, correct, delete, restrict, object to, or export personal information, and to withdraw consent. In Qube you can exercise many of these directly:
 
-* **Access and export.** View stored content through the session list and memory views, or by opening the local data and workspace folders. Copying those files is an export.
-* **Correction.** Edit memory entries, tasks, or files in the application or by editing the underlying data.
-* **Deletion.** Delete individual sessions, memory entries, tasks, or workspace files in the UI; clear provider credentials or disconnect ChatGPT and Connectors in Settings; or remove the corresponding local data. To limit browser automation access, disable the browser automation toggle and revoke the associated system permissions at the OS level.
-* **Objection or restriction.** Leave optional profile fields blank, disable long-term memory in Settings → Advanced → Memory, disable the heartbeat task or browser automation, use a local model to avoid sending prompts (and, where applicable, browser automation observations) to a cloud provider, or avoid connecting a Connector.
+* **Access and export.** View stored content through the session list, or by opening the local data and workspace folders. Copying those files is an export.
+* **Correction.** Edit tasks or files in the application, or edit memory entries by editing the underlying data files while Qube is closed.
+* **Deletion.** Delete individual sessions, tasks, or workspace files in the UI; clear provider credentials or disconnect ChatGPT and Connectors in Settings; use **Settings → Advanced → Hard Reset** to erase all local Qube data (including memory, workspace files and attachments, logs, learned skills, browser profiles, and browser storage); or remove the corresponding local files while Qube is closed. To limit browser automation access, disable the browser automation toggle and revoke the associated system permissions at the OS level.
+* **Objection or restriction.** Leave optional profile fields blank, erase stored memory with Hard Reset or by deleting the local memory files, disable the heartbeat task or browser automation, use a local model to avoid sending prompts (and, where applicable, browser automation observations) to a cloud provider, or avoid connecting a Connector.
 * **Withdraw consent.** Disconnect a Connector or sign out of ChatGPT at any time; disable browser automation or change the default model or remove a Provider to stop future sends to that Provider.
 
 Requests that concern data held by a Model Provider, integration partner, or connected service (for example, deletion from an email or project service) must be made directly to that party under its policy.
@@ -186,9 +186,9 @@ Requests that concern data held by a Model Provider, integration partner, or con
 
 Qube does not maintain a Qube-hosted account. To remove data:
 
-1. In the application, delete sessions, memory entries, tasks, and workspace files you no longer want, and disconnect any Connectors and ChatGPT sessions. If you enabled browser automation, disable it and revoke the related system permissions if you no longer want that access path available.
-2. Quit Qube and delete the local data you wish to remove (the local data folder and, if desired, workspace contents). If you configured a custom data directory, remove that path instead.
-3. Clear browser storage for the Qube origin or clear site data for the local origin.
+1. Use **Settings → Advanced → Hard Reset** to erase Qube's local data, workspace files and attachments, logs, learned skills, browser profiles, and browser storage, then restart with fresh defaults. Alternatively, delete sessions, tasks, and workspace files individually, and disconnect any Connectors and ChatGPT sessions. If you enabled browser automation, disable it and revoke the related system permissions if you no longer want that access path available.
+2. If you prefer to remove files manually, quit Qube and delete the local data folder (including `.memory/`, `.agents/`, browser profiles, logs, and any `agent.sqlite` files) and the workspace. If you configured a custom data directory, remove that path instead. If `WORKSPACE_PATH` points outside the data directory, remove that workspace separately.
+3. Clear browser storage for the Qube origin or clear site data for the local origin if you did not use Hard Reset.
 4. At the external services, revoke access for Qube or the integration partner.
 5. Uninstall the desktop application.
 
@@ -204,7 +204,7 @@ Your browser and any sites you visit via web fetch or browser automation automat
 
 ## 12. Children's privacy
 
-Qube is not directed to children and is not intended for use by individuals who cannot form a legally binding contract. We do not knowingly collect personal information from children through Qube. If you believe a child has provided personal information via a Qube installation you control, delete the relevant sessions, memory entries, and files and, if you used a cloud Provider, Connector, or browser automation session that may have included that information as context, address retention with that third party. We do not have a separate mechanism to verify age because there are no Qube-hosted accounts.
+Qube is not directed to children and is not intended for use by individuals who cannot form a legally binding contract. We do not knowingly collect personal information from children through Qube. If you believe a child has provided personal information via a Qube installation you control, delete the relevant sessions and files, erase stored memory with Hard Reset or by deleting the local memory files, and, if you used a cloud Provider, Connector, or browser automation session that may have included that information as context, address retention with that third party. We do not have a separate mechanism to verify age because there are no Qube-hosted accounts.
 
 ## 13. International transfers
 

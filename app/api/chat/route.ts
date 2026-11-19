@@ -210,13 +210,28 @@ export async function POST(req: Request) {
 
     // Keep the original UIMessages for the client stream and history, but send
     // a normalized copy to the model. Unsupported attachment MIME types become
-    // fenced untrusted text and their bytes are saved in the workspace, so a
-    // sent/restored/retried attachment cannot trigger a provider file-part
-    // error. Images and PDFs remain inline for providers that support them.
+    // fenced untrusted text and every attachment's bytes are saved in the
+    // workspace, so a sent/restored/retried attachment cannot trigger a
+    // provider file-part error and the agent can always find the original.
+    let supportsImageInput = false;
+    if (typeof modelName === "string" && modelName) {
+      try {
+        const { providerStore } = await import("@/lib/pi/provider-store");
+        const resolved = providerStore.getProviderByModel(modelName);
+        if (resolved) {
+          const qualified = `${resolved.provider.id}:${resolved.modelId}`;
+          const modelConfig = resolved.provider.models.find(
+            (model) => model.id === qualified || model.id === resolved.modelId,
+          );
+          supportsImageInput = modelConfig?.imageInput === true;
+        }
+      } catch {}
+    }
     let modelMessages = Array.isArray(messages) ? messages as any[] : [];
     try {
       modelMessages = await normalizeAttachmentsForModel(modelMessages, {
         threadId: String(currentThreadId),
+        supportsImageInput,
       });
     } catch (error) {
       console.warn("[chat] attachment normalization failed (non-fatal):", (error as Error)?.message || String(error));

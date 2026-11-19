@@ -15,8 +15,8 @@ can be set in the app.
 | Variable | Purpose |
 | --- | --- |
 | `COMPOSIO_API_KEY` | Key for [connected apps](./connectors.md). Required when building from source; released desktop builds already embed a built-in key, and you can also set your own in **Settings → Advanced → Composio API Key**. Get one at the [Composio dashboard](https://dashboard.composio.dev/settings). |
-| `QUBE_DATA_DIR` | Directory for all durable state (`.memory/`, browser profile, logs, SQLite). Defaults to the current working directory in source runs; the desktop app points it at the [application data directory](./permissions-privacy.md#where-your-data-is-stored). |
-| `WORKSPACE_PATH` | Absolute path to the file workspace. Defaults to `./workspace` under the working directory (a legacy `./playground` folder is used if it already exists). |
+| `QUBE_DATA_DIR` | Directory for durable state (`.memory/`, `.agents/`, browser profiles, logs, SQLite). Defaults to the current working directory in source runs; the desktop app points it at the [application data directory](./permissions-privacy.md#where-your-data-is-stored). |
+| `WORKSPACE_PATH` | Absolute path to the file workspace. Defaults to `./workspace` under the working directory (a legacy `./playground` folder is used if it already exists). Hard Reset deletes the workspace only when it lives inside `QUBE_DATA_DIR`; remove an external path separately. |
 | `WORKSPACE_DIR_NAME` | Folder name for the workspace when `WORKSPACE_PATH` is not set (default `workspace`). |
 | `LWC_SECRET` | Secret used to sign ChatGPT sign-in session cookies. If unset, Qube generates and persists one in `.memory/lwc-secret.txt`, so this is mainly needed for stable multi-deploy hosting. Generate with `openssl rand -hex 32`. |
 | `PORT` | Port for the local web server (the dev script uses `3010`; the desktop sidecar defaults to `3010`). |
@@ -84,9 +84,9 @@ for the full feature context.
 
 ## How settings interact
 
-- In-app **Settings** (providers, memory toggle, custom instructions, run
-  on start, keep-alive, temperature) are stored in `.memory/app-settings.json`
-  and related files under `QUBE_DATA_DIR`; they apply regardless of how the
+- In-app **Settings** (providers, custom instructions, run on start,
+  keep-alive, temperature) are stored in `.memory/app-settings.json` and
+  related files under `QUBE_DATA_DIR`; they apply regardless of how the
   server was launched.
 - Environment variables fill in what the app settings don't cover and are
   useful for containers and CI. When both exist, the in-app setting generally

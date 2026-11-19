@@ -865,45 +865,20 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
         const limit = clampMaxResults(maxResults);
         const run = async (): Promise<string> => {
         try {
-          const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
-            headers: { "User-Agent": "Mozilla/5.0 Qube/Pi" },
-            signal: AbortSignal.timeout(10000),
-          });
-          if (!res.ok) throw new Error(`DuckDuckGo ${res.status}`);
-          const html = await res.text();
-          const links: any[] = [];
-          const re = /<a[^>]+class="result__url"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
-          let m;
-          while ((m = re.exec(html)) && links.length < limit) {
-            try {
-              const href = m[1];
-              const title = m[2]?.trim() || href;
-              let url = href;
-              try {
-                const u = new URL(href, "https://duckduckgo.com");
-                if (u.searchParams.get("uddg")) url = decodeURIComponent(u.searchParams.get("uddg")!);
-              } catch {}
-              links.push({ title, url, snippet: "" });
-            } catch {}
+          const { searchWeb } = await import("@/lib/web/search");
+          const searched = await searchWeb(query, limit);
+          if (searched.results.length > 0) {
+            return JSON.stringify({
+              query,
+              results: searched.results,
+              provider: searched.provider,
+            });
           }
-          if (links.length > 0) return JSON.stringify({ query, results: links });
-          try {
-            const mod: any = await import("@phukon/duckduckgo-search");
-            const DDGS = mod.DDGS || mod.default;
-            if (DDGS) {
-              const ddgs = new DDGS({ timeout: 8000 });
-              const raw: any[] = await ddgs.text({ keywords: query, maxResults: limit });
-              const results = raw
-                .map((r: any) => ({
-                  title: r.title,
-                  url: r.href,
-                  snippet: (r.body || "").replace(/\s+/g, " ").trim().slice(0, 300),
-                }))
-                .filter((r: any) => r.url);
-              return JSON.stringify({ query, results });
-            }
-          } catch {}
-          return JSON.stringify({ query, results: links });
+          return JSON.stringify({
+            error: searched.errors.join("; ") || "Web search failed",
+            query,
+            results: [],
+          });
         } catch (e: any) {
           return JSON.stringify({ error: e.message || String(e), query, results: [] });
         }

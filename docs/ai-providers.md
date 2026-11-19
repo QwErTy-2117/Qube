@@ -52,7 +52,9 @@ model picker in the chat header without opening Settings.
 
 Qube detects, per model:
 
-- **Image input (vision)** — needed for screenshots and image attachments.
+- **Image input (vision)** — needed for screenshots and inline image
+  attachments. Without it, images are still saved to the workspace and the
+  Agent receives the path.
 - **Reasoning/thinking** — when supported, the model picker offers
   **Off / Low / Medium / High** thinking effort. Higher effort takes longer
   and can cost more; Off is fine for everyday tasks.

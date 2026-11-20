@@ -2,6 +2,14 @@
 
 **Qube vs. OpenCode, Claude Code, and OpenAI Codex**
 
+> **Dated snapshot.** This review describes Qube at revision `f5dedc9`
+> (November 8, 2026) and is kept as design history; file and line references
+> point to that revision. Several findings were acted on afterwards — see
+> [Harness implementation](./agent-harness-implementation.md). Notably, the
+> per-pass step limit is now **60** (configurable with `PI_HARNESS_MAX_STEPS`,
+> in `lib/pi/execution-limits.ts`), not 40 as stated below. For the current
+> architecture, see [Architecture](./architecture.md).
+
 | Field | Value |
 |---|---|
 | Status | Final |

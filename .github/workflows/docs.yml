@@ -1,0 +1,103 @@
+# Builds the documentation website (docs-site/, Fumadocs static export) and
+# deploys it to GitHub Pages. Fully independent of the app's build.yml.
+#
+# One-time repository setting (cannot be done from a workflow):
+#   Settings → Pages → Build and deployment → Source: "GitHub Actions"
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'TERMS.md'
+      - 'PRIVACY.md'
+      - 'public/logo.png'
+      - 'public/qube-demo.gif'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'TERMS.md'
+      - 'PRIVACY.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; never cancel a deployment that is in progress.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs-site
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      # Reports the Pages base path (e.g. "/Qube" for a project site, "" for a
+      # custom domain). Skipped on pull requests, where Pages may not be set up.
+      - name: Configure Pages
+        id: pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+
+      # Pull requests (no Pages context) build as a project site: /<repo>.
+      - name: Resolve base path
+        id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          PAGES_BASE: ${{ steps.pages.outputs.base_path }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then value="/$REPO"; else value="$PAGES_BASE"; fi
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+          echo "Base path: '$value'"
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        env:
+          DOCS_BASE_PATH: ${{ steps.base.outputs.value }}
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: npm run build
+
+      - name: Check links
+        env:
+          DOCS_BASE_PATH: ${{ steps.base.outputs.value }}
+        run: npm run check-links
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site/out
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

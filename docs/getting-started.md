@@ -53,17 +53,17 @@ The first launch walks through five short screens:
 1. **Welcome** — what Qube is.
 2. **Terms and privacy** — read and accept the
    [Terms](../TERMS.md) and [Privacy Policy](../PRIVACY.md).
-3. **Choose how Qube thinks** — sign in with your ChatGPT account, or add an
-   API key from another provider, or point at a local model. This is the only
-   mandatory configuration step.
-4. **Tools and connectors** — optionally connect apps like Gmail or Google
-   Drive. You can skip this and connect any app later in
-   **Settings → Connectors**.
-5. **Ready** — Qube opens the chat.
+3. **Your worker's brain** — sign in with your ChatGPT account, add an API
+   key from another provider, or point at a local model, then pick a default
+   model. This is the only mandatory configuration step.
+4. **Your tools** — optionally connect apps like Gmail or Google Drive. You
+   can skip this and connect any app later in **Settings → Connectors**.
+5. **Qube is ready** — Qube opens the chat.
 
 Nothing here is permanent: providers, connectors and preferences can all be
-changed later in **Settings**. Long-term memory is managed locally and is
-erased by **Settings → Advanced → Hard Reset**.
+changed later in **Settings**. Everything Qube stores — chats, memory,
+settings, keys — stays in a local data folder and is erased by
+**Settings → Advanced → Hard Reset**.
 
 ## Say your first task
 
@@ -81,12 +81,26 @@ As Qube works, you will see:
   file), written in plain language rather than technical tool names.
 - A **goals checklist** in the corner for multi-step jobs, so you can see
   progress.
-- **Approval cards** that pause the run whenever it wants to do something
-  irreversible or outside its workspace — for example deleting a file,
-  sending an email, or clicking inside another app. Read-only work never
-  pauses. Read more in [Permissions and privacy](./permissions-privacy.md).
+- **Questions** in a panel above the composer when Qube genuinely needs a
+  decision from you (up to six short questions at once).
+- **Approval cards** for sensitive actions — deleting a file, sending an
+  email, working in a folder outside its workspace, or clicking inside another
+  app. Qube first runs an invisible self-review of the action; you only see a
+  card when that review is unsure. Read-only work never pauses.
 - **File cards** at the end of a reply for any documents, spreadsheets or
   presentations it produced.
+
+Two defaults are worth knowing on day one:
+
+- **Destructive actions are off.** Deleting files, destructive shell commands
+  and closing or merging items in connected apps are blocked until you turn on
+  **Destructive actions** in **Settings → Advanced → Heartbeat and Task →
+  Configure**.
+- **Qube works in its own workspace folder.** To let it work in other folders
+  without asking each time, add them under **Settings → Preferences → Allowed
+  directories**.
+
+Read more in [Permissions and privacy](./permissions-privacy.md).
 
 ## A realistic end-to-end example
 

@@ -7,52 +7,86 @@ machine. The legal wording lives in the [Terms](../TERMS.md) and
 
 ## The approval model
 
-Qube sorts every action into three buckets.
+Qube checks every action in up to three layers, in this order:
+
+```mermaid
+flowchart TD
+  A[Tool call] --> P{Hard policy: allowed by your Settings switches?}
+  P -- no --> Blocked[Blocked, Qube is told why]
+  P -- yes --> S{Sensitive?}
+  S -- no --> Run[Runs]
+  S -- yes --> AA{Auto-approve on?}
+  AA -- yes --> Run
+  AA -- no --> R{Invisible self-review: clearly what you asked for?}
+  R -- yes --> Run
+  R -- unsure --> H{Background run?}
+  H -- yes --> Denied[Denied]
+  H -- no --> Card[Approval card, waits up to 5 minutes]
+  Card -- approve --> Run
+  Card -- deny or timeout --> Denied
+```
+
+1. **Hard policy** — the switches in **Settings → Advanced → Heartbeat and
+   Task → Configure**:
+   - **Tools** (on by default) and **Connectors** (on by default) allow or
+     block those whole categories.
+   - **Destructive actions** (**off** by default) — while off, deleting files,
+     destructive shell commands (`rm -rf`, `sudo`, piped remote install
+     scripts, disk formatting and similar), writes to protected system paths,
+     deleting items in connected apps, merging pull requests and closing
+     issues are **blocked outright**, with no card.
+   - **Auto-approve actions** (**off** by default) — when on, sensitive actions
+     that pass the policy run without review or card.
+2. **Invisible self-review** — for a sensitive action, a separate short call
+   to your model compares the exact action with what you asked for. If it
+   clearly matches, the action runs without interrupting you; if not, it
+   escalates. Each review is logged in `.memory/action-reviews.jsonl`.
+3. **Approval card** — the run pauses and a card states the app, the action
+   and its target. If you deny, or don't respond within five minutes, the
+   action is cancelled and Qube continues with an alternative.
+
+### What counts as sensitive
+
+- **Files outside the workspace**, unless the folder is in your Allowed
+  directories list (**Settings → Preferences → Allowed directories**).
+- **Sending, posting, creating, updating or deleting** in a connected app —
+  emails, Slack messages, GitHub issues, calendar events, Notion pages and
+  similar. Creating or editing an email **draft** is not sensitive.
+- **Computer-use actions** that click, type, press keys, scroll, drag or
+  launch an app outside Qube.
+- **Destructive actions** listed above, once you have allowed them.
 
 ### Runs without asking
 
-- Reading and writing files **inside its workspace**.
+- Reading and writing files **inside its workspace** (deleting files is a
+  destructive action — see above).
+- Ordinary shell commands in the workspace.
 - Read-only web searches and page fetches.
 - Read-only connector calls: listing mail, searching tickets, reading pages.
 - Read-only computer observations: listing apps, reading a window.
-- Creating an email **draft** (drafts stay in your account and are
-  reversible; sending still prompts).
-
-### Always asks first
-
-An approval card appears and the run pauses until you decide:
-
-- **Deleting anything**, including files inside the workspace.
-- Accessing files **outside the workspace**, unless the folder is in your
-  Allowed directories list (**Settings → Preferences**).
-- **Sending, posting, creating, updating or deleting** in a connected app —
-  emails, Slack messages, GitHub issues, calendar events, Notion pages and
-  similar.
-- **Purchases, payments, sharing private data.**
-- **Destructive shell commands** — patterns such as `rm -rf`, `sudo`, piped
-  remote install scripts, disk formatting.
-- **Any computer-use action** that clicks, types, presses keys, scrolls,
-  drags or launches an app outside Qube.
-
-If you deny, or don't respond within five minutes, the action is cancelled and
-Qube continues with an in-workspace alternative. Sensitive connector calls
-time out rather than executing silently.
+- **Tools from MCP servers you added** — these are not routed through the
+  approval layers at all. See [Custom MCP servers](./mcp.md#security-considerations).
+- **Actions inside the browser panel** — navigating, clicking, typing and
+  submitting forms on websites are not routed through the approval layers.
+  Qube is instructed to complete purchases and form submissions you asked
+  for, so be specific. See [Browser automation](./browser.md).
 
 ### Handled by you in person
 
-Qube handles CAPTCHAs, bot checks and payment steps in the browser itself. It
-requests a takeover only when the page needs credentials or another protected
-input that only you can supply — a login or two-factor prompt, for example.
-You act in the Browser panel, and the task resumes. See
-[Browser automation](./browser.md).
+Qube handles CAPTCHAs and bot checks in the browser itself. It requests a
+takeover only when the page needs credentials or another protected input that
+only you can supply — a login or two-factor prompt, for example. You act in
+the Browser panel, and the task resumes.
 
 ### Background runs have stricter rules
 
-The periodic check-in can read and prepare, but never sends, posts or
-deletes. Finance actions are allowed when the task calls for them. Scheduled
-tasks can only take the actions their own permission flags allow, and a send
-inside a task you explicitly created is considered pre-approved by that
-task's instructions. See [Automations](./automations.md).
+There is nobody to show a card to, so a sensitive action that the self-review
+does not clearly approve is denied. The periodic check-in can read and
+prepare, but its send, post and delete tools are replaced with draft-only
+versions. Scheduled tasks can only take the actions their own permission
+switches allow, and a send inside a task you explicitly created is treated as
+requested by that task's instructions. Computer use is read-only in the
+background. See [Automations](./automations.md).
 
 ## Where your data is stored
 
@@ -73,10 +107,13 @@ Most durable state lives under the per-app data directory, identified by
 Inside it you will find:
 
 - `.memory/` — settings (`app-settings.json`), AI providers and keys
-  (`providers.json`), long-term memory (`memory.json`, plus legacy
+  (`providers.json`, **stored as plain text** — protect your user account
+  and backups accordingly), long-term memory (`memory.json`, plus legacy
   `dual-memory.json` and `semantic-memory.json`), chat sessions and titles,
-  scheduled tasks and run logs, MCP server configs, skills, ChatGPT sign-in
-  session, and the local signing secret.
+  scheduled tasks and run logs, MCP server configs, skills, the ChatGPT
+  sign-in session (`chatgpt-sessions.json`), the local signing secret
+  (`lwc-secret.txt`), the action-review log (`action-reviews.jsonl`) and
+  your Composio connection ID (`composio-user-id`).
 - `.agents/` — learned/durable skills written outside `.memory/`.
 - `.browser-profile/`, `.camoufox*`, `.playwright-mcp/`, `.superpowers/` —
   managed browser profiles, cookies, sessions, and automation state.
@@ -92,7 +129,8 @@ the `QUBE_DATA_DIR` environment variable).
 
 Files Qube creates live in its **workspace** — the `workspace/` folder in a
 source checkout, or the sidecar's local working directory in an installed
-desktop app. Attachments are saved under `workspace/attachments/`. Treat the
+desktop app (see [Files and the workspace](./files-workspace.md#where-files-live)).
+Attachments are saved under `attachments/<chat>/` in the workspace. Treat the
 workspace as app-managed storage: use the **Download** button on file cards
 to keep important deliverables in your own folders. Workspace content is
 separate from the application data directory, which holds your settings,
@@ -114,18 +152,23 @@ yourself if you want a complete wipe.
 
 - Delete individual chats from the sidebar; their sessions and snapshots are
   removed.
-- There is no separate memory on/off switch in the current Settings UI. To
-  erase stored memories, use **Settings → Advanced → Hard Reset**, or quit
-  Qube and delete the memory files under `.memory/` in the data directory.
+- There is no memory on/off switch or memory list in the current Settings
+  UI. To erase stored memories, use **Settings → Advanced → Hard Reset**, or
+  quit Qube and delete the memory files under `.memory/` in the data
+  directory.
 - **Settings → Advanced → Hard Reset** signs out of ChatGPT, pauses background
   work, and wipes every local state file (`.memory/`, including scheduled
   tasks, heartbeat work, approvals, memories, and the cross-chat announcement
   ledger), learned skills (`.agents/`), the experimental `agent.sqlite`, the
   managed browser profiles, connector keys, provider settings, diagnostics,
-  and workspace deliverables including chat attachments saved under
-  `workspace/attachments/`. It also clears browser storage, the webview's
-  native browsing data, and in-process caches, then reloads or restarts Qube.
-  This cannot be undone.
+  and workspace deliverables including chat attachments. It also clears
+  browser storage, the webview's native browsing data, and in-process caches,
+  and in the desktop app turns off launch-at-login, then reloads or restarts
+  Qube. This cannot be undone.
+- Hard Reset does **not** delete anything held by outside services: apps you
+  connected through Composio stay connected at Composio until you disconnect
+  them in **Settings → Connectors** (do this *before* a reset), and data
+  already sent to your AI provider is governed by that provider.
 - Uninstalling the app leaves the data directory in place deliberately; use
   Hard Reset first or delete the data directory manually for a complete
   removal. See [Desktop app details](./desktop.md#uninstalling).
@@ -137,9 +180,16 @@ yourself if you want a complete wipe.
   to answer — under that provider's own terms. Choose a local model
   (Ollama/LM Studio) if you want fully offline reasoning.
 - **Connected services receive only the actions you request**, routed through
-  the connector infrastructure when an integration requires it.
+  [Composio](https://composio.dev/), which holds the app connections.
 - **Browser and computer observations** (page text, screenshots, app window
   state) are included in model context only when the task needs them.
+- **Web search terms** go to DuckDuckGo and Bing; pages Qube reads are
+  fetched directly from their sites.
+- **Other network requests Qube makes:** checking GitHub for app updates;
+  looking up the current Codex client version on the npm registry (ChatGPT
+  sign-in); loading site icons for cited sources from DuckDuckGo's icon
+  service and app logos from Composio's logo service; browsing the skills
+  marketplace when you open it; and your MCP servers, if you added any.
 - Qube itself embeds no advertising, analytics, or cross-site tracking. The
   ChatGPT sign-in uses a local session cookie to keep you signed in.
 

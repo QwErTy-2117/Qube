@@ -25,7 +25,7 @@ npm run acp     # tsx lib/acp/stdio.ts — JSON-RPC on stdin/stdout
 
 A model must be resolvable from either `QUBE_MODEL` or a configured default,
 otherwise prompts fail with “No model configured”. Set one up in the app first
-(Settings → Providers & Models) or pass `QUBE_MODEL` explicitly.
+(Settings → Advanced → Providers & Models) or pass `QUBE_MODEL` explicitly.
 
 ## Editor setup (Zed)
 

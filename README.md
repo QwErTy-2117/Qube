@@ -1,9 +1,7 @@
 # Qube
 
 <p align="center">
-  <video src="public/qube-demo.mp4" width="720" controls autoplay loop muted playsinline>
-    Your browser does not support the video tag.
-  </video>
+  <video src="https://github.com/user-attachments/assets/8b3ca071-8e71-4d52-af9a-546ab772f2e5" controls muted width="720"></video>
 </p>
 
 <p align="center">

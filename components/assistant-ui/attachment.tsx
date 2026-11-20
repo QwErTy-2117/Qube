@@ -32,6 +32,7 @@ import {
   previewAttachment,
   type AttachmentPreview,
 } from "@/lib/chat/attachments";
+import { pickFiles } from "@/lib/chat/pick-files";
 
 
 const useFileSrc = (file: File | undefined) => {
@@ -431,29 +432,15 @@ export const ComposerAddAttachment: FC = () => {
   const aui = useAui();
 
   const handleClick = () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.multiple = true;
-    // Every file type is attachable. The server decides how to show it to the
-    // model: text/Office files are extracted, images go inline only for
-    // vision-capable models, and every attachment is saved to the workspace
-    // so the agent can read it there even when the provider cannot take it
-    // as a native file input.
-    input.accept = "*/*";
-    input.hidden = true;
-    document.body.appendChild(input);
-    input.onchange = (e) => {
-      const files = (e.target as HTMLInputElement).files;
-      if (!files) { document.body.removeChild(input); return; }
-      for (const file of files) {
-        aui.composer().addAttachment(file).catch(console.error);
-      }
-      document.body.removeChild(input);
-    };
-    input.oncancel = () => {
-      if (!input.files || input.files.length === 0) document.body.removeChild(input);
-    };
-    input.click();
+    // No `accept` filter: every file type is attachable, and MIME filters
+    // make the native dialog unselectable in the Linux desktop webview.
+    pickFiles({ multiple: true })
+      .then((files) => {
+        for (const file of files) {
+          aui.composer().addAttachment(file).catch(console.error);
+        }
+      })
+      .catch(console.error);
   };
 
   return (

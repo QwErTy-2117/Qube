@@ -102,6 +102,7 @@ import { BrowserPanel } from "@/components/workspace";
 import { ArtifactPopup } from "@/components/artifact/ArtifactPopup";
 import { HtmlPanel } from "@/components/artifact/HtmlPanel";
 import { openBrowserWorkspace, useWorkspaceStore } from "@/lib/workspace/store";
+import { pickFiles } from "@/lib/chat/pick-files";
 
 const baseToolGroupBy = groupPartByType({
   reasoning: ["group-tool", "group-chainOfThought"],
@@ -676,31 +677,13 @@ const Composer: FC<{ threadId?: string }> = ({ threadId }) => {
   );
 
   const attachFiles = useCallback(() => {
-    try {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.multiple = true;
-      input.accept = "image/*,.pdf,.docx,.xlsx,.csv,.zip,.pptx,.txt,.md";
-      input.hidden = true;
-      document.body.appendChild(input);
-      input.onchange = () => {
-        const files = input.files;
-        if (files) {
-          for (const file of files) {
-            aui.composer().addAttachment(file).catch(console.error);
-          }
+    pickFiles({ multiple: true })
+      .then((files) => {
+        for (const file of files) {
+          aui.composer().addAttachment(file).catch(console.error);
         }
-        document.body.removeChild(input);
-      };
-      input.oncancel = () => {
-        if (!input.files || input.files.length === 0) {
-          try { document.body.removeChild(input); } catch {}
-        }
-      };
-      input.click();
-    } catch (e) {
-      console.error("[slash] failed to open file picker", e);
-    }
+      })
+      .catch((e) => console.error("[slash] failed to open file picker", e));
   }, [aui]);
 
   const slash = unstable_useSlashCommandAdapter({

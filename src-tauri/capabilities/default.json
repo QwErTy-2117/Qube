@@ -10,6 +10,9 @@
   },
   "permissions": [
     "core:default",
+    "allow-finalize-hard-reset",
+    "allow-set-autostart",
+    "allow-get-port",
     "core:window:default",
     "core:window:allow-start-dragging",
     "core:window:allow-minimize",

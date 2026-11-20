@@ -99,3 +99,15 @@ export async function finalizeTauriHardReset(): Promise<boolean> {
   const { invoke } = await import("@tauri-apps/api/core");
   return Boolean(await invoke<boolean>("finalize_hard_reset"));
 }
+
+/**
+ * Relaunch the whole desktop app. This is the recovery path when the sidecar
+ * is already dead or the shell could not finish an in-place hard-reset restart:
+ * a fresh process starts a fresh sidecar instead of leaving the webview on a
+ * dead server (which renders a blank page on the next message).
+ */
+export async function relaunchTauriApp(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  const { relaunch } = await import("@tauri-apps/plugin-process");
+  await relaunch();
+}

@@ -1,0 +1,23 @@
+# Permissions for Qube's own Tauri commands.
+#
+# Tauri 2 blocks custom app commands from remote origins (the bundled sidecar
+# is served over http://127.0.0.1:*) unless the command is granted by an app
+# permission. Without these, `finalize_hard_reset` fails with
+# "Command finalize_hard_reset not allowed by ACL" after the server has
+# already erased the data directory, leaving the sidecar running against a
+# deleted data dir. `set_autostart` was silently failing for the same reason.
+
+[[permission]]
+identifier = "allow-finalize-hard-reset"
+description = "Enables the finalize_hard_reset command without any pre-configured scope."
+commands.allow = ["finalize_hard_reset"]
+
+[[permission]]
+identifier = "allow-set-autostart"
+description = "Enables the set_autostart command without any pre-configured scope."
+commands.allow = ["set_autostart"]
+
+[[permission]]
+identifier = "allow-get-port"
+description = "Enables the get_port command without any pre-configured scope."
+commands.allow = ["get_port"]

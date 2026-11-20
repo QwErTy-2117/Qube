@@ -56,6 +56,7 @@ import {
   clearClientStorageForHardReset,
   finalizeTauriHardReset,
   isTauriRuntime,
+  relaunchTauriApp,
 } from "@/lib/system/client-reset";
 import { Switch } from "radix-ui";
 import { ChatGPTPreferencesCard } from "@/components/chatgpt/chatgpt-preferences";
@@ -1642,6 +1643,15 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         return;
       }
     } catch (e) {
+      // A "Load failed" here usually means the sidecar is already dead (for
+      // example a previous reset exited it before the shell restarted it).
+      // Relaunching the desktop app is the only way back to a usable window.
+      if (isTauriRuntime()) {
+        try {
+          await relaunchTauriApp();
+          return;
+        } catch {}
+      }
       setHardResetError(`${e instanceof Error ? e.message : String(e)} Nothing was cleared in your browser.`);
       setHardResetConfirm(true);
       return;
@@ -1660,11 +1670,23 @@ export function SettingsDialog({ children }: { children: ReactNode }) {
         setTimeout(() => location.reload(), 300);
         return;
       } catch (e) {
-        setHardResetError(
-          `Saved data was erased, but the app could not restart cleanly: ${e instanceof Error ? e.message : String(e)}. Restart Qube.`,
-        );
-        setHardResetConfirm(true);
-        return;
+        // The server has already erased the data directory. If the shell
+        // could not restart the sidecar (for example an older build blocked
+        // `finalize_hard_reset` through Tauri's ACL), do not leave the user
+        // on a dead sidecar where the next message renders a blank page.
+        // Relaunch the whole app; startup recreates a fresh data dir.
+        console.error("[hard-reset] desktop finalize failed", e);
+        try {
+          await relaunchTauriApp();
+          return;
+        } catch (restartError) {
+          const detail = restartError instanceof Error ? restartError.message : String(restartError);
+          setHardResetError(
+            `Saved data was erased, but the app could not restart cleanly: ${detail}. Restart Qube.`,
+          );
+          setHardResetConfirm(true);
+          return;
+        }
       }
     }
     setTimeout(() => location.reload(), 300);

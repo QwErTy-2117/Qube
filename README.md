@@ -1,7 +1,7 @@
 # Qube
 
 <p align="center">
-  <img src="public/qube-demo.gif" alt="Qube demo" width="720">
+  <img src="public/qube-demo.gif" alt="Qube demo" width="640">
 </p>
 
 <p align="center">

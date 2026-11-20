@@ -1,7 +1,7 @@
 # Qube
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/8b3ca071-8e71-4d52-af9a-546ab772f2e5" controls muted width="720"></video>
+  <img src="public/qube-demo.gif" alt="Qube demo" width="720">
 </p>
 
 <p align="center">

@@ -1,7 +1,9 @@
 # Qube
 
 <p align="center">
-  <img src="public/logo.png" alt="Qube" width="180">
+  <video src="public/qube-demo.mp4" width="720" controls autoplay loop muted playsinline>
+    Your browser does not support the video tag.
+  </video>
 </p>
 
 <p align="center">

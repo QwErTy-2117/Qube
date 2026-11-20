@@ -14,6 +14,10 @@ import {
 } from "lucide-react";
 import { useAuiState } from "@assistant-ui/react";
 import { isPptxFile, readPptxMeta, type PptxMeta } from "@/lib/workspace/pptx";
+import {
+  preparePptxForPreview,
+  pptxFontStack,
+} from "@/lib/workspace/pptx-preview-source";
 import { useWorkspaceStore } from "@/lib/workspace/store";
 import { cn } from "@/lib/utils";
 
@@ -127,13 +131,20 @@ export function SlidesViewer({
       if (nextMeta.slideCount === 0) throw new Error("No slides found in this presentation");
       if (cancelled) return;
 
+      const prepared = await preparePptxForPreview(buffer);
+      if (cancelled) return;
+
       const height = Math.round(BASE_WIDTH * nextMeta.aspectRatio);
       const { init } = await import("pptx-preview");
       if (cancelled) return;
 
       instance = init(host, { width: BASE_WIDTH, height, mode: "slide" });
       previewerRef.current = instance;
-      await instance.preview(buffer);
+      // Runs without an explicit font inherit this. The renderer drops
+      // `<a:latin>` on the floor, so without this the deck renders in the
+      // app's Geist Sans instead of Calibri/Cambria/Arial.
+      host.style.fontFamily = pptxFontStack(prepared.minorFont);
+      await instance.preview(prepared.buffer);
       if (cancelled) return;
 
       // Our toolbar owns the controls; remove the library's own buttons.

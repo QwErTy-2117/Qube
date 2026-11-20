@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { readPptxMeta, type PptxMeta } from "@/lib/workspace/pptx";
+import {
+  preparePptxForPreview,
+  pptxFontStack,
+} from "@/lib/workspace/pptx-preview-source";
 
 export type PptxThumb = {
   html: string;
@@ -52,6 +56,9 @@ export function usePptxThumbnails(
       if (meta.slideCount === 0) throw new Error("No slides found");
       if (cancelled) return;
 
+      const prepared = await preparePptxForPreview(buffer);
+      if (cancelled) return;
+
       host = document.createElement("div");
       host.setAttribute("aria-hidden", "true");
       host.style.cssText = [
@@ -75,8 +82,18 @@ export function usePptxThumbnails(
         mode: "list",
       });
       previewer = instance;
-      await instance.preview(buffer);
+      host.style.fontFamily = pptxFontStack(prepared.minorFont);
+      await instance.preview(prepared.buffer);
       if (cancelled) return;
+
+      // The thumbnails are captured as HTML and re-mounted elsewhere, so the
+      // inherited font has to be baked into each slide wrapper.
+      const font = pptxFontStack(prepared.minorFont);
+      host
+        .querySelectorAll<HTMLElement>(".pptx-preview-slide-wrapper")
+        .forEach((slide) => {
+          slide.style.fontFamily = font;
+        });
 
       const slides = Array.from(
         host.querySelectorAll<HTMLElement>(".pptx-preview-slide-wrapper"),

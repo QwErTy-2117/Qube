@@ -48,10 +48,14 @@ failing silently.
 - **Look without touching:** list running and recent apps, and read an app's
   visible state (its accessibility tree and a screenshot). These read-only
   actions never prompt.
-- **Act with approval:** click, right-click, type text, press keys, set field
-  values, scroll, drag, launch or activate an application, and use the
-  clipboard. Every one of these pauses on an approval card describing the app
-  and the action before anything happens.
+- **Act with review:** click, right-click, type text, press keys, set field
+  values, scroll, drag, launch or activate an application, and write to the
+  clipboard. Every one of these is a sensitive action: Qube's invisible
+  self-review checks it against what you asked for, and an approval card
+  describing the app and the action appears whenever the review is unsure.
+  If you turned on **Auto-approve actions**, they run directly. If
+  **Tools** is switched off in **Settings → Advanced → Heartbeat and Task**,
+  they are blocked.
 - **Verify itself:** after a click it can re-read the window to confirm the
   screen actually changed, and retries with a fresh approach if it didn't.
 - **Work in sequences:** observe-and-act steps run together so element
@@ -68,7 +72,7 @@ them.
 | Targets | Websites in Qube's managed browser | Other desktop applications |
 | Setup | Works out of the box (needs Chrome/Edge) | Requires the `ocu` driver install |
 | Watching it | Live Browser panel | Screenshots and app state in activity cards |
-| Approvals | Takeover for logins/2FA | Approval card for every mutating action |
+| Approvals | Not approval-gated; takeover for logins/2FA | Self-review, then an approval card when unsure, for every mutating action |
 
 For files, Qube still prefers its own workspace and viewers rather than
 driving a desktop file manager.

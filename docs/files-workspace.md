@@ -65,17 +65,24 @@ preview computes the same values Excel would show.
 ## The shell tool
 
 For builds, tests, data processing and Python scripts, Qube can run shell
-commands inside the workspace (120-second timeout per command). Ordinary
-commands run without interrupting you, but a destructive command — `rm -rf`,
-`sudo`, piped install scripts, disk formatting and similar patterns — always
-pauses for an approval card first.
+commands inside the workspace (120-second default timeout per command, up to
+10 minutes when a task needs it). Ordinary commands run without interrupting
+you. Destructive commands — `rm -rf`, `sudo`, piped install scripts, disk
+formatting and similar patterns — are **blocked by default**; if you turn on
+**Destructive actions** in **Settings → Advanced → Heartbeat and Task →
+Configure**, they go through the invisible self-review and, when it is unsure,
+an approval card.
+
+Qube can also start a local development server (for example a web app it is
+building), read its log, and open the result — only on `localhost`.
 
 ## Folders outside the workspace
 
 By default Qube can only touch its workspace. If a task needs a file
 elsewhere (for example your Desktop or Downloads), one of two things happens:
 
-1. Qube shows an **approval card** for that specific access, or
+1. Qube asks for that specific access (self-review first, then an
+   **approval card** if needed), or
 2. You pre-approve the folder in **Settings → Preferences → Allowed
    directories**, choosing read-only or read/write access.
 
@@ -83,21 +90,30 @@ Allowed directories are the safest way to let Qube work on an existing
 project folder without repeated prompts. Anything outside both the workspace
 and the allowed list stays off-limits until you approve it.
 
-## Keeping the files you care about
+## Where files live
 
-The workspace is Qube's app-managed working area. In a source checkout it is
-the `workspace/` folder in the repository. In installed desktop builds it
-runs inside the local sidecar's working directory, so the reliable way to
-keep a deliverable permanently is the **Download** button on its file card,
-saving it into one of your own folders.
+The workspace is Qube's app-managed working area: a `workspace/` folder in
+the directory the local server runs from (a legacy `playground/` folder is
+used if it already exists).
+
+- **Source checkout:** `workspace/` in the repository.
+- **Installed desktop app:** the server runs from a copy of the app in your
+  system's temporary folder (`qube-sidecar`), so the workspace is
+  `<temp>/qube-sidecar/workspace`.
+
+> **Warning — installed app:** that temporary copy is rebuilt whenever Qube is
+> updated to a new version, which also removes the workspace and its
+> attachments. Your operating system may clean temporary folders too. Use the
+> **Download** button on a file card to keep a deliverable permanently, or
+> work in a folder you added under **Allowed directories**.
 
 Your chats, settings, memory and connected accounts are stored separately in
 the [application data directory](./permissions-privacy.md#where-your-data-is-stored)
 and are not affected by workspace changes or updates. Uninstalling leaves
-that directory in place, but **Settings → Advanced → Hard Reset** erases both
-the data directory and the workspace, including attachments. If you set
-`WORKSPACE_PATH` outside the data directory, remove that external folder
-separately.
+that directory in place. **Settings → Advanced → Hard Reset** erases the data
+directory and, in the desktop app, the temporary server copy including the
+workspace. If you run from source and set `WORKSPACE_PATH` outside the data
+directory, Hard Reset leaves that folder alone — remove it yourself.
 
 ## Related reading
 

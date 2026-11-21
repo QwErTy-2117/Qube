@@ -8,9 +8,22 @@ steer it.
 ## How a task runs
 
 When you send a message, Qube works in a loop: plan → act → verify → repeat,
-up to about 40 tool steps in a single turn. If the job is not finished when a
-turn ends, it silently continues with another pass (up to eight continuation
-rounds) rather than handing you a half-done result.
+up to 60 tool steps in a single pass. If the job is not finished when a pass
+ends — for example goals on the checklist are still open — it silently
+continues with another pass (up to eight continuation rounds), and it can run
+up to two extra verification passes to check its own work, rather than handing
+you a half-done result. A single message can run for up to five minutes.
+
+```mermaid
+flowchart LR
+  You([Your message]) --> Plan[Plan]
+  Plan --> Act[Act with tools]
+  Act --> Verify{Done and verified?}
+  Verify -- no --> Plan
+  Verify -- yes --> Reply([Reply with results and file cards])
+  Act -. sensitive action .-> Review[Self-review / approval card]
+  Review -.-> Act
+```
 
 During the run you will see:
 
@@ -19,8 +32,8 @@ During the run you will see:
 - **The goals panel** — a floating checklist for multi-step work. Each item
   moves through pending, in progress, and completed so you always know where
   the job stands.
-- **Approval cards** — for anything irreversible or outside the workspace.
-  See [Permissions and privacy](./permissions-privacy.md).
+- **Approval cards** — for sensitive actions the invisible self-review is
+  not sure about. See [Permissions and privacy](./permissions-privacy.md).
 - **File cards** — finished documents, spreadsheets, presentations and images
   appear as cards at the end of the reply. Open them in the built-in viewer
   or download them.
@@ -39,13 +52,14 @@ with a free-text alternative. Several questions for one decision are batched
 into a single panel, so you won't be interrogated one question at a time.
 
 If you don't answer within five minutes, Qube proceeds with its best
-judgment, states its assumptions, and continues.
+judgment, states its assumptions in one sentence, and continues.
 
 ## Steering and stopping
 
-- **Change direction mid-run:** just send another message. Qube aborts the
-  current run gracefully and starts again with your new instruction — the
-  conversation stays one continuous thread.
+- **Change direction mid-run:** just send another message. Qube quietly
+  stops the current run and starts again with your new instruction — the
+  conversation stays one continuous thread. Switching to another chat does
+  not stop a run; several chats can work at the same time.
 - **Stop a run:** use the stop button in the composer. The partial work
   (files written, notes taken) remains in place.
 - **Edit a message:** you can edit a previous message and re-run from there.
@@ -53,7 +67,7 @@ judgment, states its assumptions, and continues.
 ## Attachments and voice
 
 - **Attach files** with the paperclip button or by dragging them in. Every
-  attachment is saved under `workspace/attachments/` and Qube tells the Agent
+  attachment is saved under `attachments/<chat>/` in the workspace and Qube tells the Agent
   the exact path so it can read or convert the file with its tools. Text,
   PDF, Word, PowerPoint and spreadsheet content is extracted into the prompt
   where possible, and images are also sent inline only when the selected model
@@ -88,8 +102,10 @@ weeks ago” is retrievable. Qube can also read past chats itself when relevant
 
 Models have finite context windows. Before a request gets too large, Qube
 automatically **compacts** older history: it summarizes the older messages
-into a checkpoint and keeps the most recent exchange verbatim. You will see a
-small compaction notice in the chat when this happens.
+into a checkpoint and keeps roughly the most recent 15,000 tokens verbatim.
+You will see a small compaction notice in the chat when this happens. Very
+large tool results (long command output, big pages) are stored to disk and
+paged back in on demand instead of filling the conversation.
 
 Compaction only changes what the model receives on the next call. The full
 conversation remains on disk and in your history; nothing is deleted.
@@ -97,8 +113,8 @@ conversation remains on disk and in your history; nothing is deleted.
 ## Helpers working behind the scenes
 
 For big jobs, Qube can spawn **subagents** — focused helpers with fresh
-context windows — for reconnaissance, research, or review, so the main thread
-stays clear. Their results are folded back into the final answer. You will see
+context windows (explorer, researcher, reviewer or general-purpose) — so the
+main thread stays clear. Subagents cannot spawn further subagents. Their results are folded back into the final answer. You will see
 their activity as cards; you don't manage them yourself.
 
 ## Tips for better results

@@ -6,12 +6,17 @@ short, sourced answer.
 
 ## What it does
 
-- **Web search** — runs a search and reads the results (up to ten per query).
+- **Web search** — runs a search and reads the results (six by default, up
+  to ten per query). Search needs no account or API key: Qube queries
+  DuckDuckGo (HTML and Lite pages) and Bing's RSS feed in parallel and uses
+  whichever answers first, so your search terms are sent to those services.
 - **Page reading** — fetches a specific URL, strips scripts and styling, and
-  extracts the page's text (up to about 50,000 characters), optionally
-  restricted to one CSS section.
+  extracts the page's text (25,000 characters by default, up to 50,000),
+  optionally restricted to one CSS section. Each fetch times out after 15
+  seconds.
 - **Synthesis** — compares sources, notes where they disagree, and cites the
-  pages it actually read. It never invents a URL or a fact it did not fetch.
+  pages it actually read. The agent is instructed never to invent a URL or a
+  fact it did not fetch — still double-check anything important.
 
 Read-only research does not pause for approval, so a question like “what's a
 good kids' bike under €150?” goes straight through to an answer with source
@@ -27,8 +32,9 @@ For anything non-trivial, Qube applies its built-in **research** playbook:
    inline source links, trade-offs or open questions, and a deduplicated
    source list.
 
-You can force it explicitly by typing `/research` before your question, and
-deeper research playbooks are available in **Settings → Advanced → Skills** —
+You can force it explicitly: type `/` in the composer and pick **research**
+(it appears as a skill chip), then ask your question. More
+research playbooks can be added in **Settings → Advanced → Skills** —
 see [Memory and skills](./memory-and-skills.md).
 
 ## Giving Qube a link directly

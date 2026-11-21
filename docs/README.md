@@ -3,10 +3,11 @@
 **An AI agent for anyone.** Qube is a local-first desktop assistant: you say
 what you want in plain words, and it does the work — files, research, browser
 tasks, connected apps, and recurring automations — while staying on your
-computer and asking before anything irreversible.
+computer and checking with you before sensitive actions.
 
 These docs are written to be read directly on GitHub or in any Markdown
-viewer. No documentation website required.
+viewer, and are also published as a searchable website at
+[qwerty-2117.github.io/Qube](https://qwerty-2117.github.io/Qube/).
 
 ## New here?
 
@@ -19,8 +20,8 @@ viewer. No documentation website required.
 | Guide | What you'll learn |
 | --- | --- |
 | [Files and the workspace](./files-workspace.md) | Where Qube puts files, built-in viewers, real Office documents, folders outside the workspace |
-| [Web research](./web-research.md) | Sourced answers, reading links and attachments, research briefs |
-| [Browser automation](./browser.md) | The watchable browser window, logins and captchas, Chrome requirements |
+| [Web research](./web-research.md) | Sourced answers, reading links, research briefs |
+| [Browser automation](./browser.md) | The watchable browser window, logins and two-factor prompts, Chrome requirements |
 | [Computer use](./computer-use.md) | Letting Qube click and type in your other desktop apps (optional setup) |
 | [Connected apps (connectors)](./connectors.md) | Gmail, Drive, Calendar, Slack, GitHub, Notion and more, with approval rules |
 | [Memory and skills](./memory-and-skills.md) | What Qube remembers across chats, past conversations, reusable playbooks |
@@ -37,6 +38,17 @@ viewer. No documentation website required.
 | [Environment variables](./configuration.md) | Reference for running from source or self-hosting |
 | [Troubleshooting](./troubleshooting.md) | Symptoms, fixes, and where the logs are |
 | [Development and architecture](./development.md) | Building from source, the codebase layout, tests, contributing |
+
+## Developer reference
+
+| Page | What you'll learn |
+| --- | --- |
+| [Architecture](./architecture.md) | How the desktop shell, local server, agent harness and subsystems fit together, with diagrams |
+| [Documentation website](./docs-site.md) | How the Fumadocs site in `docs-site/` is built, previewed and deployed to GitHub Pages |
+| [Maintainability audit](./maintainability-audit.md) | Findings and recommendations from the November 2026 repository audit (not implemented) |
+| [Legal and privacy review checklist](./legal-review-checklist.md) | Statements in the Terms and Privacy Policy that need confirmation by the maintainer or counsel |
+| [Agent harness comparison](./agent-harness-architecture-comparison.md) · [Harness implementation](./agent-harness-implementation.md) | Design research and the reliability work that followed (dated snapshots) |
+| [Design history](./superpowers/README.md) | Plans and specs for the task board and tool titles (dated snapshots) |
 
 ## Legal
 

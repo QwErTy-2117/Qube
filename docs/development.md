@@ -6,14 +6,17 @@ and contributing changes. Everyday users should start with
 
 ## Prerequisites
 
-- **Node.js** — the CI uses Node 22; use a current LTS (20 or newer).
+- **Node.js** — the CI uses Node 22, so that is the tested version. The
+  repository does not declare an `engines` range.
 - **npm** — ships with Node.
 - **Rust and the Tauri prerequisites** — only needed to build or run the
   desktop shell. Follow the official
   [Tauri prerequisites](https://tauri.app/start/prerequisites) for your OS
   (on Linux this includes WebKitGTK, GTK, AppIndicator and related libraries).
 - **Python 3 with pip** — optional, but needed at runtime if you want the
-  agent to produce real `.docx`/`.pptx`/`.xlsx` files.
+  agent to produce real `.docx`/`.pptx`/`.xlsx` files: it writes small Python
+  scripts using `python-docx`, `python-pptx` or `openpyxl` and installs them
+  with pip when missing. The same applies to installed desktop builds.
 - A Chrome/Chromium/Edge installation for browser automation.
 
 ## Run the web app from source
@@ -26,7 +29,9 @@ cp .env.example .env.local   # optional: add keys now, or configure them in the 
 npm run dev
 ```
 
-Open <http://localhost:3010> and complete onboarding. The dev server is a
+Open `http://localhost:3010` and complete onboarding. `npm install` and
+`npm run dev` also copy the PDF viewer worker into `public/` via
+`scripts/sync-pdf-worker.mjs`. The dev server is a
 plain Next.js app, so all settings and data are written under the repository
 working directory (`.memory/`, `workspace/`) unless you set `QUBE_DATA_DIR`.
 
@@ -38,16 +43,23 @@ key, source builds do not. See [Environment variables](./configuration.md).
 
 ```bash
 # 1. Build the standalone Next.js server bundle used as the Tauri sidecar
-TAURI_BUILD=true node scripts/build-sidecar.js
+#    (writes sidecar-dist/; the script sets TAURI_BUILD=true itself)
+node scripts/build-sidecar.js
 
-# 2a. Run the desktop shell against the dev server during development
+# 2a. Run the desktop shell during development — Tauri starts `npm run dev`
+#     and loads http://localhost:3010
 npm run tauri:dev
 
-# 2b. Or package installers for your platform
+# 2b. Or package installers for your platform (runs build-sidecar.js again
+#     as Tauri's beforeBuildCommand)
 npm run tauri:build
 ```
 
-Packaged artifacts appear under `src-tauri/target/`. The build pipeline
+Step 1 is needed even for `tauri:dev`, because `tauri.conf.json` bundles
+`../sidecar-dist/**/*` as a resource and the glob fails if the folder is
+missing. Packaged artifacts appear under `src-tauri/target/`. Release builds
+also bake `COMPOSIO_API_KEY` from the environment into the sidecar's
+`env.json`. The build pipeline
 (run in CI on Linux x64/ARM64, Windows x64/ARM64 and macOS arm64/x64)
 produces `.deb`/`.rpm`, NSIS/MSI Windows installers, and macOS `.dmg`/`.app`
 bundles.
@@ -57,11 +69,14 @@ bundles.
 The Tauri shell (`src-tauri/`) is a thin native wrapper:
 
 1. On launch it copies the bundled `sidecar-dist` into a writable temp
-   directory (`qube-sidecar`), reusing unchanged files between launches and
-   rebuilding on version changes.
+   directory (`qube-sidecar`), reusing unchanged files between launches. When
+   the app version changes, the whole directory — including the `workspace/`
+   folder inside it — is deleted and recopied.
 2. It starts the bundled Node.js runtime against `server.js` with
    `QUBE_DATA_DIR` pointed at the OS application data directory, on
-   `127.0.0.1:3010`.
+   `127.0.0.1:3010`. A server already running on that port from the same app
+   version (left behind by **Keep background server alive**) is reused;
+   one from a different version is ignored and a fresh server is started.
 3. The webview points at that local server. A system tray, deep links
    (`qube://`), auto-start and the updater are native Tauri plugins.
 
@@ -69,15 +84,17 @@ The Tauri shell (`src-tauri/`) is a thin native wrapper:
 
 ```bash
 npm test          # cross-platform runner: tsx --test against tests/*.test.ts
-npm run acp:test  # the ACP integration tests only
+npm run acp:test  # only tests/acp.test.ts
 npx tsc --noEmit  # type checking (strict TypeScript)
+cd src-tauri && cargo test   # Rust unit tests for the desktop shell
 ```
 
 The test runner creates an isolated temporary `QUBE_DATA_DIR` per run, so
 tests never touch your real data and work identically on Windows, macOS and
-Linux. The CI additionally builds the sidecar, boots the exact bundled
-artifact with the packaged Node binary, and smoke-tests the browser MCP
-service on all three operating systems.
+Linux. The CI (`.github/workflows/build.yml`) runs type checking, the
+tests and `cargo test`, builds the sidecar, boots the exact bundled artifact
+with the packaged Node binary, and smoke-tests the browser MCP service
+(`scripts/smoke-mcp.js`) before packaging releases.
 
 ## Architecture at a glance
 
@@ -91,7 +108,7 @@ Tauri shell (src-tauri/)            Next.js app (app/, components/, lib/)
                                                     ▼
                               Pi harness (lib/pi/harness.ts)
                               model resolution · tool registry · streaming
-                              40-step loop · continuation · compaction
+                              60-step loop · continuation · compaction
                  ┌────────────┬───────────────┬───────────────┬───────────┐
                  ▼            ▼               ▼               ▼           ▼
            file/shell     web + browser   connectors      memory +     scheduler
@@ -125,9 +142,12 @@ Tauri shell (src-tauri/)            Next.js app (app/, components/, lib/)
   separate SQLite-backed durable harness exists behind the
   `PI_DURABLE_ENABLED` flag as an unfinished migration and is not the default.
 - **Tools are permission-wrapped, not permission-aware.** Tool definitions
-  stay generic; `lib/middleware/permission-middleware.ts` and
-  `lib/permissions/sensitive.ts` decide whether a call runs, prompts, or is
-  denied, including headless background runs.
+  stay generic; `lib/permissions/policy.ts` (hard Settings switches),
+  `lib/permissions/sensitive.ts` (classification),
+  `lib/middleware/permission-middleware.ts` (self-review and approval cards)
+  decide whether a call runs, prompts, or is denied, including headless
+  background runs. Built-in, connector and computer-use tools are wrapped;
+  tools from user-added MCP servers currently are not.
 - **The browser is a shared managed Chromium** driven over CDP by the
   auto-MCP service (`lib/browser/auto-mcp/server.mjs`) and mirrored into the
   side panel. It is separate from optional OS-level computer use (`ocu`).
@@ -141,13 +161,16 @@ Tauri shell (src-tauri/)            Next.js app (app/, components/, lib/)
 ## Contributing
 
 1. Work on a branch and keep changes focused; run `npx tsc --noEmit` and
-   `npm test` before opening a pull request.
+   `npm test` before opening a pull request. The repository has no ESLint
+   or Prettier configuration, so follow the style of the surrounding code.
 2. Match existing patterns: tools live in `lib/pi/`, UI cards for tool
    activity in `components/assistant-ui/tools/`, and user-facing strings use
    plain language rather than raw tool names.
 3. Add or update tests in `tests/` for behavior changes — the suites are
    fast, network-free and use an isolated data directory.
 4. User-visible behavior changes should be reflected in the relevant page of
-   `docs/` in the same pull request.
+   `docs/` in the same pull request. The documentation website in
+   `docs-site/` is generated from those files — see
+   [Documentation website](./docs-site.md).
 5. The project is licensed under Apache 2.0 (see [LICENSE](../LICENSE));
    by contributing you agree your changes are provided under that license.

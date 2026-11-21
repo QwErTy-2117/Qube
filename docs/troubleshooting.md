@@ -15,9 +15,10 @@ the terminal where `npm run dev` is running.
 
 ### “No model configured” when sending a message
 
-Qube has no built-in AI. Add one in **Settings → Providers & Models** —
-sign in with ChatGPT, paste a provider API key, or add a local Ollama/LM
-Studio server — and set a default model. See
+Qube has no built-in AI. Sign in with ChatGPT in **Settings → Preferences**,
+or add a provider API key or a local Ollama/LM Studio server in **Settings →
+Advanced → Providers & Models**, then pick a model in the composer's model
+picker. See
 [Choose your AI](./ai-providers.md).
 
 ### The desktop app says the local server failed to start
@@ -25,9 +26,8 @@ Studio server — and set a default model. See
 Open `sidecar.log` and look at the end of the file. Typical causes:
 
 - An incomplete install (missing `sidecar-dist/server.js`) — reinstall Qube.
-- Port 3010 already occupied by another process — close it or restart Qube;
-  the sidecar falls back to a free port automatically and reconnects the
-  window.
+- Port 3010 is normally not a problem: if another process holds it, the
+  sidecar picks a free port automatically and points the window at it.
 - A bundled runtime that doesn't match your architecture — download the build
   for your platform/architecture from the
   [Releases page](https://github.com/QwErTy-2117/Qube/releases).
@@ -47,17 +47,18 @@ cleanly:
 
 | Symptom in chat | Cause | Fix |
 | --- | --- | --- |
-| Invalid key / `401` / unauthorized | Wrong or rotated API key | Re-enter the key in **Settings → Providers & Models** |
+| Invalid key / `401` / unauthorized | Wrong or rotated API key | Re-enter the key in **Settings → Advanced → Providers & Models** |
 | Rate limit / `429` / quota | Chat credits or rate window exhausted on the provider | Check provider billing, wait 1–2 minutes, use a smaller model, or switch providers |
 | `403` / blocked upstream | Workspace flagged or model disabled on the account | Check the provider dashboard |
-| Model not found / `404` | Model renamed or retired | Refresh models in Settings and pick from the live list |
-| ChatGPT sign-in missing or expired | Session expired | Reconnect in **Settings → ChatGPT** |
+| Model not found / `404` | Model renamed or retired | Use **Save & Fetch Models** again and pick from the live list |
+| ChatGPT sign-in missing or expired | Session expired | Sign in again in **Settings → Preferences** |
 | ChatGPT usage limit | Plan limit enforced by OpenAI | Wait for the reset window, pick a smaller model, or use another provider |
 | OpenCode Zen free-tier block | Zen free models only work in OpenCode's own client | Add Zen billing and use a paid Zen model, or switch providers |
 
-Listing models successfully in Settings does not guarantee chat works —
-quotas and workspace blocks are only visible on a real chat request, which is
-why Qube runs a chat probe during validation.
+Listing models successfully in Settings does not guarantee chat works — the
+key check only fetches the provider's model list, while quotas, billing and
+account blocks are only visible on a real chat request. See
+[Choose your AI](./ai-providers.md#why-a-working-key-can-still-fail-in-chat).
 
 ### Local models (Ollama / LM Studio) won't respond
 
@@ -78,7 +79,7 @@ Chromium (on Windows, the built-in Edge is detected automatically). If your
 browser is in a non-standard location, set `CHROME_PATH` to its binary — see
 [Environment variables](./configuration.md).
 
-### “Browser Use (connection closed)” appears in chat
+### A “Browser Use … Connection closed” warning appears in chat
 
 The built-in browser service could not start. In a source checkout, ensure the
 repository is complete (the service script lives at
@@ -140,17 +141,19 @@ python3 -m pip --version
 Install Python if missing, then ask Qube to regenerate the file. See
 [Files and the workspace](./files-workspace.md).
 
-### Access to a folder keeps showing approval cards
+### Access to a folder keeps asking for permission
 
 Add the folder once in **Settings → Preferences → Allowed directories** with
 read or read/write access. Qube will then stop prompting for paths inside it.
 
 ### A file card can't be opened after an app update
 
-Workspace files live in app-managed working storage; an update can rebuild
-that area. Keep deliverables you care about by using the **Download** button
-on the file card to save them into your own folders. Your chats, settings and
-memory are unaffected — they live in the application data directory.
+In the installed app, updating to a new version deletes the temporary server
+copy that holds the workspace, so older file cards and attachments point to
+files that no longer exist. Those files cannot be recovered by Qube. In
+future, use the **Download** button on file cards to keep deliverables. Your
+chats, settings and memory are unaffected — they live in the application data
+directory. See [Files and the workspace](./files-workspace.md#where-files-live).
 
 ## Connectors and connected apps
 
@@ -167,25 +170,37 @@ server, or enter the key in **Settings → Advanced → Composio API Key**.
 
 ### A send/create action keeps waiting
 
-Sensitive connector actions pause on an approval card until you approve or
-deny. Unanswered cards time out after five minutes and the action is
-cancelled. Background check-ins never send at all — they only draft.
+When the self-review is unsure, a sensitive connector action pauses on an
+approval card until you approve or deny. Unanswered cards time out after five
+minutes and the action is cancelled. Background check-ins never send at all —
+they only draft.
+
+### “Blocked: … turned off in Settings → Advanced → Heartbeat and Task”
+
+The action falls under a switch that is off — most often **Destructive
+actions** (deleting files, `rm -rf`, merging pull requests, closing issues),
+which is off by default. Turn it on under **Settings → Advanced → Heartbeat
+and Task → Configure** only if you want Qube to be able to do this; it will
+still be reviewed and, if needed, shown as an approval card.
 
 ## Scheduled tasks and automations
 
 ### Tasks never run when Qube is closed
 
 That's expected: the scheduler runs inside the Qube process. Keep the app open
-(with **Keep server running** enabled) and consider **Run on start**. Overdue
+(with **Keep background server alive** enabled) and consider **Run on start**. Overdue
 tasks run once, deduplicated, when Qube reopens. See
 [Automations](./automations.md).
 
 ### A scheduled task is allowed but does nothing in the background
 
 Check the task's permission switches (shell, web, external files, destructive
-commands) — a background task cannot prompt, so any action outside its
-permissions is refused. Its execution log in **Settings → Tasks** shows
-the exact failure.
+commands) and the global switches under **Settings → Advanced → Heartbeat and
+Task → Configure** — a background task cannot prompt, so any action outside
+its permissions, or one the self-review does not clearly approve, is refused.
+Background runs also cannot use a ChatGPT sign-in model; make sure at least
+one API-key or local model is enabled. Ask Qube for the task's recent runs to
+see the exact failure.
 
 ## MCP servers
 

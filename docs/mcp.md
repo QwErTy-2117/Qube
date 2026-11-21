@@ -50,9 +50,12 @@ has. Treat adding one like installing software:
 
 - Only add servers you trust, and review what they do before installing.
 - Prefer pinned versions over `latest` tags for `npx`/`uvx` commands.
-- Remember that sensitive actions (sending, deleting, outside-workspace
-  access) still flow through Qube's [approval system](./permissions-privacy.md)
-  when the matching tools are called interactively.
+- **Tools from MCP servers you add are not routed through Qube's
+  [approval system](./permissions-privacy.md#the-approval-model).** There is
+  no self-review or approval card for them, and the Settings switches for
+  tools and destructive actions do not apply. Whatever a server's tool can
+  do, Qube can do without asking — so prefer servers with read-only tools or
+  their own confirmation step, and remove servers you no longer use.
 
 ## Disabling and troubleshooting
 

@@ -22,13 +22,17 @@ documents and spreadsheets, organizing files, driving a browser, and working
 inside the apps you already use.
 
 It is an autonomous agent, not a chatbot: it plans the steps, uses tools,
-checks its own work, and keeps going until the task is finished — pausing for
-your approval before anything irreversible. Everything runs on your machine,
-and your files, chats and settings stay there.
+checks its own work, and keeps going until the task is finished. Before
+sensitive actions it double-checks them against your request and asks for
+your approval when in doubt; destructive actions such as deleting files are
+off unless you turn them on. Qube itself runs on your machine, and your
+files, chats and settings stay there — what you ask is sent to the AI
+provider you choose.
 
 You bring the AI. Qube doesn't ship with a model — sign in with a ChatGPT
-subscription, paste an API key from OpenAI, Anthropic, Google and 40+ other
-providers, or point it at a local model through Ollama or LM Studio. You only
+subscription, paste an API key for one of 40+ built-in provider presets
+(OpenAI, Anthropic, Google, OpenRouter and many more) or any OpenAI-compatible
+endpoint, or point it at a local model through Ollama or LM Studio. You only
 ever pay your AI provider.
 
 ## What you can do with it
@@ -41,17 +45,18 @@ ever pay your AI provider.
   and images, all organized in a tidy local workspace and shown as file cards.
 - **Research without a dozen tabs.** Qube searches, reads pages, and returns
   short sourced answers with citations — and opens a watchable browser for
-  forms, bookings and tracking, handing you control for logins and captchas.
+  forms, bookings and tracking, handing you control for logins and two-factor
+  prompts.
 - **Work inside your apps.** Connect Gmail, Google Calendar and Drive, Slack,
   GitHub, Notion, Linear, Jira, Trello, Asana, Airtable, HubSpot, Dropbox and
-  more with a normal sign-in window. Sends, creates and deletes wait for your
-  approval; read-only lookups don't.
+  Canva with a normal sign-in window. Sends and creates are double-checked
+  and wait for your approval when in doubt; read-only lookups don't.
 - **Let it remember and repeat.** It remembers your preferences and projects
   across chats, learns reusable playbooks, and can run scheduled tasks and a
   periodic check-in while the app is open.
 - **Control your whole computer when you ask.** An optional driver lets it
   click and type in other desktop applications, with every mutating action
-  gated behind an approval card.
+  reviewed and confirmed with you when in doubt.
 
 ## Quickstart
 
@@ -77,8 +82,9 @@ Full details in [Getting started](docs/getting-started.md).
 
 ## Documentation
 
-All documentation lives in [`docs/`](docs/README.md) and reads directly on
-GitHub — no documentation website required.
+Read the documentation website at
+**[qwerty-2117.github.io/Qube](https://qwerty-2117.github.io/Qube/)**, or
+browse the same pages directly in [`docs/`](docs/README.md) on GitHub.
 
 **Start here**
 
@@ -95,6 +101,7 @@ GitHub — no documentation website required.
 **Power users and contributors**
 
 - [Custom MCP servers](docs/mcp.md) · [Qube as an ACP agent](docs/acp.md) · [Environment variables](docs/configuration.md) · [Development and architecture](docs/development.md)
+- [Architecture](docs/architecture.md) · [Documentation website](docs/docs-site.md) · [Maintainability audit](docs/maintainability-audit.md)
 - [Terms of Service](TERMS.md) · [Privacy Policy](PRIVACY.md)
 
 ## Run from source
@@ -113,7 +120,7 @@ Building the desktop app additionally needs Rust and the
 [Tauri prerequisites](https://tauri.app/start/prerequisites):
 
 ```bash
-TAURI_BUILD=true node scripts/build-sidecar.js
+node scripts/build-sidecar.js
 npm run tauri:build
 ```
 
@@ -126,9 +133,12 @@ Qube acts on your instructions and your approvals, which means you are
 responsible for what it does on your behalf — including actions in connected
 apps that you didn't foresee step by step. It can make mistakes like any AI,
 so review important work and keep backups. Reads and in-workspace work happen
-freely; sends, deletes, purchases, outside-workspace access and computer
-control always ask first. Your data stays local and is sent to your chosen AI
-provider only to fulfill your requests. See
+freely; sends, outside-workspace access and computer control are checked
+against your request and confirmed with you when in doubt; deletes and other
+destructive actions are blocked unless you enable them. Actions inside the
+built-in browser and tools from MCP servers you add are not approval-gated, so
+be specific. Your data stays local and is sent to your chosen AI provider
+(and, for connected apps, through Composio) to fulfill your requests. See
 [Permissions and privacy](docs/permissions-privacy.md), the
 [Terms](TERMS.md) and [Privacy Policy](PRIVACY.md).
 

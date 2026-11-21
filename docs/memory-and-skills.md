@@ -78,9 +78,11 @@ Four skills ship with Qube, always available and not deletable:
 | `creating-documents` | Polished documents, presentations, spreadsheets and images |
 | `trip-planning` | Travel itineraries with live-verified prices, hours and availability |
 
-Qube picks the relevant skill automatically. You can force one by starting a
-message with its name, for example `/research compare PostgreSQL and SQLite
-for an embedded app`.
+Qube picks the relevant skill automatically. You can force one by typing `/`
+in the composer and choosing it from the list — it is inserted as a skill chip
+— then writing your request, for example *research* + “compare PostgreSQL and
+SQLite for an embedded app”. Skills marked as manual-only are applied only
+when you choose them this way.
 
 ### The skills marketplace
 

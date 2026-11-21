@@ -1,0 +1,165 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+/* Plain CSS with a qd- prefix (instead of Tailwind utilities) keeps the site's
+   styling self-contained. */
+
+html {
+  scrollbar-gutter: stable;
+}
+
+.qd-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+.qd-brand img {
+  border-radius: 6px;
+}
+
+.qd-home {
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 5rem;
+}
+
+.qd-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 1rem;
+  padding: 2rem 0 1rem;
+}
+.qd-hero-logo {
+  border-radius: 20px;
+}
+.qd-hero h1 {
+  font-size: clamp(2rem, 6vw, 3.5rem);
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.qd-subtitle {
+  max-width: 44rem;
+  font-size: 1.125rem;
+  color: var(--color-fd-muted-foreground);
+}
+.qd-platforms {
+  font-size: 0.875rem;
+  color: var(--color-fd-muted-foreground);
+}
+
+.qd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.qd-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.6rem 1.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-fd-border);
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: background-color 0.15s;
+}
+.qd-button:hover {
+  background: var(--color-fd-accent);
+}
+.qd-button-primary {
+  background: var(--color-fd-primary);
+  color: var(--color-fd-primary-foreground);
+  border-color: transparent;
+}
+.qd-button-primary:hover {
+  background: var(--color-fd-primary);
+  opacity: 0.9;
+}
+
+.qd-demo {
+  display: flex;
+  justify-content: center;
+  margin: 2.5rem 0 1rem;
+}
+.qd-demo img {
+  width: 100%;
+  max-width: 56rem;
+  height: auto;
+  border-radius: 14px;
+  border: 1px solid var(--color-fd-border);
+  box-shadow: 0 20px 50px -20px rgb(0 0 0 / 0.35);
+}
+
+.qd-section {
+  margin-top: 4rem;
+}
+.qd-section h2 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-bottom: 1.25rem;
+  text-align: center;
+}
+
+.qd-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+}
+.qd-grid-3 {
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+}
+.qd-card {
+  display: block;
+  padding: 1.15rem 1.25rem;
+  border-radius: 14px;
+  border: 1px solid var(--color-fd-border);
+  background: var(--color-fd-card);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.qd-card:hover {
+  border-color: var(--color-fd-primary);
+  background: var(--color-fd-accent);
+}
+.qd-card h3 {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+.qd-card p {
+  font-size: 0.925rem;
+  color: var(--color-fd-muted-foreground);
+}
+
+.qd-notfound {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 6rem;
+}
+.qd-notfound h1 {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.qd-mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+}
+.qd-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.qd-mermaid-fallback {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}

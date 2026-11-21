@@ -11,20 +11,27 @@ Qube does not download a browser. It launches a Chromium-based browser already
 on your system, in this order of preference:
 
 1. A path set with the `CHROME_PATH` environment variable (advanced).
-2. Google Chrome or Chromium from its standard install location.
-3. Microsoft Edge on Windows (always present on a standard Windows install).
-4. A Playwright-bundled Chromium, if one exists in its cache.
+2. The standard install locations for your system:
+   - **Windows:** Google Chrome, then Microsoft Edge (present on a standard
+     Windows install).
+   - **macOS:** Google Chrome in `/Applications`.
+   - **Linux:** `google-chrome`, `google-chrome-stable`, `chromium`,
+     `chromium-browser`, `/opt/google/chrome/chrome` and Snap Chromium.
+3. A Playwright-bundled Chromium, if one exists in its cache (also honoring
+   `PLAYWRIGHT_BROWSERS_PATH`).
 
 If none is available, browser tasks fail with a clear message. Install Google
-Chrome or Chromium and try again. On Linux, `google-chrome`,
-`google-chrome-stable`, `chromium` and Snap Chromium are all detected.
+Chrome (or Chromium on Linux) and try again.
 
 ## What the browser looks like
 
 The browser runs **headless by default** — there is no separate browser
 window; the side panel *is* the browser window, streamed live over the Chrome
-DevTools Protocol. Tabs and their cookies persist between tasks, so Qube can
-pick up where it left off and stays signed in to sites you have logged into.
+DevTools Protocol. Qube uses its own browser profile (`.browser-profile` in
+the [data directory](./permissions-privacy.md#where-your-data-is-stored)), not
+your everyday Chrome profile. Tabs and their cookies persist between tasks, so
+Qube can pick up where it left off and stays signed in to sites you have
+logged into in the panel.
 
 You can also click, scroll and type directly in the panel; input is forwarded
 to the same browser Qube is driving.
@@ -61,6 +68,12 @@ the browser's own profile holds the session, just like a normal browser.
 
 It completes an order or payment when you asked for it; it does not stop at
 the final step by default.
+
+> **Important:** actions inside the browser panel (clicking, typing,
+> submitting forms, checking out) are **not** routed through Qube's approval
+> cards or the Destructive actions switch. Qube follows what you asked for, so
+> be specific about purchases and submissions, and watch the panel for
+> anything sensitive.
 
 ## What the browser cannot do
 

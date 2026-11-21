@@ -46,9 +46,14 @@ than turned into a task.
 ### Task permissions
 
 Each task carries least-privilege switches: shell commands, destructive
-commands, files outside the workspace, and web access. A task can only do what
-its permissions allow — there is no interactive prompt to fall back on in the
-background, so anything not granted is simply refused.
+commands, files outside the workspace, and web access. New tasks start with
+all four off; the built-in check-in starts with shell commands and web access
+on. A task can only do what its permissions allow — there is no interactive
+prompt to fall back on in the background, so anything not granted is simply
+refused. The global switches in **Settings → Advanced → Heartbeat and Task →
+Configure** (Tools, Connectors, Destructive actions, Auto-approve actions)
+apply on top of the per-task switches. Controlling other desktop apps
+([computer use](./computer-use.md)) is read-only in background runs.
 
 A user-created task **can** perform the sends or creates its instructions
 explicitly request (creating the task is your authorization). The automatic
@@ -92,9 +97,23 @@ untrusted data, never as instructions. It operates in three lanes:
    permission card still confirms it.
 
 When nothing useful can be carried forward, the check-in stays silent (no model
-call, no notification) and simply records a quiet tick. You can change its interval,
-rewrite its instructions, or disable it in **Settings → Tasks** or by
-asking Qube directly. It cannot be deleted, only switched off.
+call, no notification) and simply records a quiet tick. To change its interval,
+rewrite its instructions, or switch it off, ask Qube (for example “check in
+every two hours” or “pause the heartbeat”); its findings appear as rows in the
+to-do section of **Settings → Tasks**. It cannot be deleted, only switched
+off.
+
+```mermaid
+flowchart TD
+  Tick[Scheduler tick, every minute] --> Due{Check-in due?}
+  Due -- no --> Wait[Wait for next tick]
+  Due -- yes --> Sweep[Deterministic sweep: workspace, goals, reminders, connected apps read-only]
+  Sweep --> Work{Anything actionable?}
+  Work -- no --> Quiet[Record a quiet tick, no model call]
+  Work -- yes --> Prepare[Prepare drafts, files, fixes; update work ledger]
+  Prepare --> Hold[Hold sends/deletes for your approval]
+  Hold --> Announce[Announce once in your next chat]
+```
 
 ## Important limitation: Qube must be running
 
@@ -102,12 +121,17 @@ There is no cloud service behind automations — the scheduler lives in the
 Qube process and ticks once a minute. If the app is closed, tasks don't run;
 when it reopens, overdue tasks are detected and run once (deduplicated, never
 bursted). For reliable daily schedules, enable **Settings → Advanced →
-Startup & Background → Run on start** and **Keep server running** so Qube and
-its local server stay active.
+Startup & Background → Run on start** and **Keep background server alive**.
+With the second switch on, closing the window hides Qube instead of quitting,
+so the local server and scheduler keep running; use **Quit Qube** in the tray
+menu to stop it.
 
-Background runs are also more constrained than an interactive chat: roughly
-12 steps for check-in runs and 20 for scheduled tasks (with a few continuation
-rounds), versus the fuller loop you get in a live conversation.
+Background runs are also more constrained than an interactive chat: 12 steps
+per round for check-in runs and 20 for scheduled tasks, with up to three
+rounds and a three-minute time limit, versus up to 60 steps per pass in a live
+conversation. Background runs use your default model — or, if that is a
+ChatGPT sign-in model, your first enabled non-ChatGPT model (see
+[Choose your AI](./ai-providers.md)).
 
 ## Example requests
 

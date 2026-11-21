@@ -47,12 +47,17 @@ for the full feature context.
 | `COMPUTER_USE_TIMEOUT_MS` | `60000` | Timeout for a driver call. |
 | `COMPUTER_TAKEOVER_TTL_MS` | `900000` (15 min) | How long a browser takeover request waits for you. |
 | `COMPUTER_USE_KERNEL` | on | The describe → permission → verify kernel wrapper; set to `0` to disable. |
+| `BROWSER_CDP_ENDPOINT` | `http://127.0.0.1:9222` | CDP endpoint the built-in browser service connects to. |
 
 ## Agent execution limits
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PI_HARNESS_TIMEOUT_MS` | `300000` (5 min) | Hard timeout for one interactive chat run. |
+| `PI_HARNESS_MAX_STEPS` | `60` (1–500) | Max model/tool steps in one pass of an interactive run. |
+| `QUBE_VERIFICATION_ROUNDS` | `2` (0–10) | Extra passes allowed to repair a failed completion check. |
+| `PI_MAX_CONCURRENT_RUNS` | `32` (1–128) | How many chats can run at the same time. |
+| `QUBE_RUN_STALE_MS` | `45000` | After this long without progress, a run record is treated as stale. |
 | `QUBE_SILENT_CONTINUATIONS` | `8` | Extra silent continuation rounds when goals remain unfinished; `0` disables them. |
 | `PI_TASK_TIMEOUT_MS` | `180000` | Timeout for one background task run. |
 | `PI_TASK_HEARTBEAT_STEPS` | `12` | Max tool steps for a check-in run. |
@@ -62,7 +67,8 @@ for the full feature context.
 | `PI_MCP_TIMEOUT_MS` | `45000` | Startup/communication timeout for custom MCP servers. |
 | `PI_CONNECTOR_TIMEOUT_MS` | `30000` | Timeout for connector (Composio) tool calls. |
 | `PERMISSION_TIMEOUT_MS` | `300000` | How long an approval card waits before timing out. |
-| `ASK_USER_TIMEOUT_MS` | `300000` | How long a question panel waits for an answer. |
+| `ASK_USER_TIMEOUT_MS` | `300000` | How long a single-question prompt (`ask_user` tool) waits for an answer. The multi-question panel (`ask_question` tool) uses `PERMISSION_TIMEOUT_MS` instead. |
+| `QUBE_HEARTBEAT_CONNECTOR_TIMEOUT_MS` | `6000` | Timeout for each read-only connector check during the check-in sweep. |
 
 ## Memory, compaction and UI
 
@@ -74,6 +80,13 @@ for the full feature context.
 | `QUBE_COMPACTION_KEEP_RECENT_TOKENS` | `15000` | Recent history kept verbatim alongside the summary. |
 | `QUBE_COMPACTION_SUMMARY_TOKENS` | `4096` | Maximum size of a generated summary. |
 | `QUBE_COMPACTION_TOOL_CHARS` | `2000` | Per-tool-output truncation when serializing history for a summary. |
+| `QUBE_COMPACTION_SUMMARY_MAX_CHARS` | `24000` | Character cap on a stored summary. |
+| `QUBE_TOOL_OUTPUT_INLINE_CHARS` | `16000` | Tool results larger than this are saved to `.memory/tool-outputs/` and paged back on demand. |
+| `QUBE_TOOL_OUTPUT_MAX_CHARS` | `24000` | Maximum characters of a tool result kept in the conversation. |
+| `QUBE_TOOL_OUTPUT_READ_CHARS` | `30000` | Characters returned per page when the agent reads a stored tool result. |
+| `QUBE_TOOL_OUTPUT_MAX_FILES` | `200` | Stored tool results kept per chat. |
+| `QUBE_TOOL_OUTPUT_RETENTION_HOURS` | `168` (7 days) | How long stored tool results are kept. |
+| `QUBE_READ_FILE_MAX_CHARS` | `30000` | Default character limit when the agent reads a file. |
 
 ## ACP and experimental flags
 
@@ -82,10 +95,40 @@ for the full feature context.
 | `QUBE_MODEL` | Default model as `provider:model` for [ACP editor sessions](./acp.md); falls back to the app's configured default. |
 | `PI_DURABLE_ENABLED` | Set to `1` to route chat through the experimental SQLite-backed durable harness instead of the default in-memory Pi harness. Unfinished migration path — not recommended for daily use. |
 
+## Model settings that are not environment variables
+
+A few model parameters are set by the app rather than by environment
+variables:
+
+- **Temperature** — there is no temperature control in the interface. The
+  agent uses `0.3` when the chat request does not include one. However, the
+  Settings dialog keeps a temperature value of `0.7` and writes it to the
+  browser's local storage (`qube-temperature`) whenever you save Preferences
+  or close Settings, and chat requests send that stored value. In practice,
+  chats use `0.7` once Settings has been opened at least once.
+- **Reasoning effort** — chosen per chat in the composer's model picker (Off,
+  Low, Medium, High; non-reasoning models show only Off).
+- **Context window and price** — taken from the provider's model list where
+  available and used for compaction and the usage meter; otherwise
+  `QUBE_COMPACTION_CONTEXT_TOKENS` applies.
+
+## Build and release variables
+
+These are read by build scripts and CI, not by the running app:
+
+| Variable | Purpose |
+| --- | --- |
+| `TAURI_BUILD` | Set by the desktop build so Next.js produces the standalone server the sidecar runs. |
+| `GITHUB_TOKEN` / `GH_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_REF_NAME`, `GITHUB_API_URL` | Used by `scripts/build-updater-json.mjs` in the release workflow to assemble `latest.json` for the updater. |
+
+The desktop shell itself sets `PORT`, `HOSTNAME=127.0.0.1`, `QUBE_DATA_DIR`,
+`QUBE_DESKTOP=1` and `QUBE_APP_VERSION` for the sidecar; you do not set these
+yourself.
+
 ## How settings interact
 
 - In-app **Settings** (providers, custom instructions, run on start,
-  keep-alive, temperature) are stored in `.memory/app-settings.json` and
+  keep-alive) are stored in `.memory/app-settings.json` and
   related files under `QUBE_DATA_DIR`; they apply regardless of how the
   server was launched.
 - Environment variables fill in what the app settings don't cover and are

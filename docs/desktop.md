@@ -36,15 +36,30 @@ The version in **Settings** comes from the installed desktop binary, so it
 always reflects the app you are actually running even while the local server
 is starting.
 
+> **Updating clears the workspace.** The local server runs from a temporary
+> copy of the app, and that copy — including the `workspace/` folder with
+> generated files and chat attachments — is deleted and recreated when the
+> version changes. Chats, settings and memory in the application data
+> directory are not affected. Download deliverables you want to keep before
+> updating. See [Files and the workspace](./files-workspace.md#where-files-live).
+
 ## Tray, window and background behavior
 
-- A system-tray icon provides **Show window** and **Quit Qube**.
-- Closing the window hides it by default; quitting from the tray fully exits.
+- A system-tray icon provides **Show Window** and **Quit Qube**.
 - **Settings → Advanced → Startup & Background** offers two switches:
   - **Run on start** — launch Qube automatically when you log in (on Linux
-    this creates a `~/.config/autostart/Qube.desktop` entry).
-  - **Keep server running** — keep the local server alive with the window
-    closed, so scheduled tasks and the periodic check-in continue to run.
+    this creates a `~/.config/autostart/Qube.desktop` entry). Qube starts
+    with the `--autostart` flag.
+  - **Keep background server alive** — closing the window then only hides
+    it, and the local server keeps running so scheduled tasks and the
+    periodic check-in continue. Use **Quit Qube** in the tray to exit.
+- With **Keep background server alive** off, closing the window quits Qube
+  and stops the local server. The switch appears on by default in Settings,
+  but the desktop shell only sees it after your settings have been saved at
+  least once (saving Preferences or closing Settings does this); before
+  that, closing the window quits.
+- Opening Qube a second time focuses the existing window instead of starting
+  another copy.
 - Connector sign-ins return to the app through a registered `qube://` deep
   link, which refocuses Qube after the browser OAuth step.
 

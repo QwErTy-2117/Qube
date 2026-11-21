@@ -57,7 +57,9 @@ export async function verifyCompletion(input: VerificationInput): Promise<Verifi
   const reasons: string[] = [];
   const evidence: string[] = [];
 
-  const incomplete = todos.filter((t) => t?.status !== "completed");
+  // `cancelled` is terminal too (durable checklists can carry it): the item was
+  // intentionally dropped, so it must not fail the completion gate.
+  const incomplete = todos.filter((t) => t?.status !== "completed" && t?.status !== "cancelled");
   if (incomplete.length > 0) {
     const names = incomplete.slice(0, 6).map((t) => String(t?.content || "untitled")).join("; ");
     reasons.push(`${incomplete.length} todo item(s) still unfinished: ${names}`);

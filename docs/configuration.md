@@ -53,16 +53,23 @@ for the full feature context.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PI_HARNESS_TIMEOUT_MS` | `300000` (5 min) | Hard timeout for one interactive chat run. |
+| `PI_HARNESS_TIMEOUT_MS` | `300000` (5 min) | Rolling timeout for one interactive chat round; re-armed by every goal continuation. |
 | `PI_HARNESS_MAX_STEPS` | `60` (1–500) | Max model/tool steps in one pass of an interactive run. |
 | `QUBE_VERIFICATION_ROUNDS` | `2` (0–10) | Extra passes allowed to repair a failed completion check. |
 | `PI_MAX_CONCURRENT_RUNS` | `32` (1–128) | How many chats can run at the same time. |
 | `QUBE_RUN_STALE_MS` | `45000` | After this long without progress, a run record is treated as stale. |
-| `QUBE_SILENT_CONTINUATIONS` | `8` | Extra silent continuation rounds when goals remain unfinished; `0` disables them. |
-| `PI_TASK_TIMEOUT_MS` | `180000` | Timeout for one background task run. |
+| `PI_HARNESS_MAX_TOTAL_MS` | `3600000` (1 h) | Absolute wall clock for one chat run; goal continuation extends the rolling timeout only up to this. |
+| `QUBE_SILENT_CONTINUATIONS` | `8` | Silent nudge rounds for a stalled turn or a failed tool call; `0` disables them. |
+| `QUBE_GOAL_CONTINUATIONS` | `30` (0–500) | Continuation rounds while TodoWrite goals are unfinished; `0` disables goal continuation. |
+| `QUBE_GOAL_STALL_ROUNDS` | `3` (1–20) | Consecutive goal rounds with no progress (no completed item, no successful tool call) before stopping. |
+| `QUBE_GOAL_ERROR_ROUNDS` | `2` (0–10) | Consecutive provider/tool-error rounds tolerated while goals remain open. |
+| `QUBE_GOAL_INHERITED_ROUNDS` | `5` (0–50) | Rounds granted to a checklist inherited from an earlier turn before it must be re-written or cancelled. |
+| `PI_TASK_TIMEOUT_MS` | `180000` | Rolling timeout for one background task run (reset by each productive round). |
+| `PI_TASK_MAX_TOTAL_MS` | `1800000` (30 min) | Absolute wall clock for one background task run. |
 | `PI_TASK_HEARTBEAT_STEPS` | `12` | Max tool steps for a check-in run. |
 | `PI_TASK_SCHEDULED_STEPS` | `20` | Max tool steps for a scheduled task run. |
-| `PI_TASK_MAX_ROUNDS` | `3` | Continuation rounds inside a background run. |
+| `PI_TASK_MAX_ROUNDS` | `12` (1–50) | Continuation rounds inside a background run while its plan has open items. |
+| `PI_TASK_STALL_ROUNDS` | `3` (1–20) | Consecutive no-progress background rounds before the run stops. |
 | `PI_SUBAGENT_TIMEOUT_MS` | `180000` | Timeout for a subagent. |
 | `PI_MCP_TIMEOUT_MS` | `45000` | Startup/communication timeout for custom MCP servers. |
 | `PI_CONNECTOR_TIMEOUT_MS` | `30000` | Timeout for connector (Composio) tool calls. |

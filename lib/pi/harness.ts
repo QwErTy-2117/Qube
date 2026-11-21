@@ -20,12 +20,19 @@ import { createPiModelClient, createPiModelClientForRequest } from "./model-clie
 import { loadMcpTools, closeMcpClients } from "./mcp";
 import {
   maxSilentRounds,
+  maxGoalRounds,
+  maxStalledGoalRounds,
+  maxGoalErrorRounds,
+  maxInheritedGoalRounds,
   getIncompleteTodos,
   hasUnfinishedGoals,
+  findLastTodoSnapshot,
   buildContinuationNudge,
   buildIdleContinueNudge,
   buildRecoveryNudge,
   extractToolError,
+  goalProgressSignature,
+  shouldContinueGoals,
   shouldIdleContinue,
   shouldRecoverContinue,
   type TodoSnapshotItem,
@@ -38,6 +45,7 @@ import {
   finishRun,
   heartbeatRun,
   isMutatingToolName,
+  loadRun,
   recordEvidence,
   recordFileTouched,
   setRunTodos,
@@ -394,16 +402,41 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
   }
 
   // Timeout handling: default 5 min, env override, per-run configurable via config? Not in PiConfig yet, use env
-  const timeoutMs = parseInt(process.env.PI_HARNESS_TIMEOUT_MS || "300000", 10); // 300s matches maxDuration
+  // Rolling per-round timeout, not a whole-run cap: it is re-armed every time
+  // a goal continuation proves the run is still working.
+  const timeoutMs = parseInt(process.env.PI_HARNESS_TIMEOUT_MS || "300000", 10);
+  // Absolute ceiling for timeout extensions. Goal continuation extends the
+  // rolling timeout so a healthy multi-round run is not killed mid-plan, but
+  // the whole run still has a hard wall clock.
+  const maxTotalMs = (() => {
+    const n = parseInt(process.env.PI_HARNESS_MAX_TOTAL_MS || "3600000", 10);
+    return Number.isFinite(n) && n > 0 ? n : 3_600_000;
+  })();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+  let runEntry: ActiveRun | undefined;
+  const armTimeout = () => {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return;
+    if (timeoutId) clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
       console.warn(`[pi-harness] Timeout after ${timeoutMs}ms [${threadId}]`);
       abortController.abort(new Error(`Pi run timed out after ${timeoutMs}ms`));
     }, timeoutMs);
-  }
+    // Keep the cancellable run entry pointing at the live timer so
+    // cancelPiRun/shutdown clears the armed timeout, not a stale one.
+    if (runEntry) runEntry.timeoutId = timeoutId;
+  };
+  armTimeout();
+  // Called by the goal-continuation loop: the run is demonstrably making
+  // progress (it produced a round that still has open goals), so grant it
+  // another timeout window instead of stopping while goals are unfinished.
+  const extendRunTimeout = () => {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return;
+    if (abortController.signal.aborted) return;
+    if (Date.now() - startedAt + timeoutMs > maxTotalMs) return;
+    armTimeout();
+  };
 
-  const runEntry: ActiveRun = {
+  runEntry = {
     threadId,
     modelName: effectiveModel,
     abortController,
@@ -447,6 +480,7 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
         modelName: effectiveModel,
         resumeNotice: resumeInfo?.notice,
         traceId,
+        extendTimeout: extendRunTimeout,
       },
       abortController.signal,
     );
@@ -515,7 +549,14 @@ export async function runPiHarness(writer: any, config: PiConfig): Promise<void>
 
 async function runPiWithVercel(
   writer: any,
-  config: PiConfig & { threadId: string; modelName: string; resumeNotice?: string; traceId?: string },
+  config: PiConfig & {
+    threadId: string;
+    modelName: string;
+    resumeNotice?: string;
+    traceId?: string;
+    /** Extends the run's rolling timeout while goals are still being worked. */
+    extendTimeout?: () => void;
+  },
   signal: AbortSignal,
 ): Promise<{ verification: VerificationResult | null; sawError: boolean }> {
   const { streamText } = await import("ai");
@@ -804,10 +845,38 @@ async function runPiWithVercel(
   // the harness can nudge the model (via a server-side-only message, never
   // shown in the UI) to recover and keep working.
   // The transcript remains the store — this is just an in-run observer.
-  let lastTodoSnapshot: TodoSnapshotItem[] | null = null;
+  // Seed from history first: a plan created in an earlier turn is still the
+  // user's open checklist, so the run must continue it instead of stopping.
+  let lastTodoSnapshot: TodoSnapshotItem[] | null = findLastTodoSnapshot(config.messages);
+  // Was the plan recovered from prior history rather than written this run?
+  // The nudge wording differs so the model can honestly drop abandoned work.
+  let planInherited = !!lastTodoSnapshot;
+  if (!lastTodoSnapshot && config.resumeNotice) {
+    // Resuming an interrupted run: the ledger keeps the last plan even when
+    // the client history was compacted. Only used for an actual resume — a
+    // finished run's todos are history, not current work.
+    try {
+      const ledger = await loadRun(config.threadId);
+      const stored = Array.isArray(ledger?.todos) ? (ledger!.todos as TodoSnapshotItem[]) : null;
+      if (stored && stored.length > 0) lastTodoSnapshot = stored;
+    } catch {}
+  }
+  if (lastTodoSnapshot) {
+    console.log(
+      `[pi-harness] Continuing plan [${config.threadId}] — ${getIncompleteTodos(lastTodoSnapshot).length} item(s) unfinished`,
+    );
+  }
   let lastToolError: string | null = null;
+  // Latest error of the CURRENT round only. Verification judges the round that
+  // just ended, so an error from round 3 must not fail a run that recovered and
+  // finished at round 30.
+  let roundToolError: string | null = null;
   let toolCallTotal = 0;
   let successfulToolCalls = 0;
+  // Did THIS run do real work? Used to gate inheriting a historical plan:
+  // a Plan recovered from history only continues when the current turn is
+  // actually working, never for a plain answer that left an old checklist open.
+  let runWorkSignals = 0;
   const filesTouched: string[] = [];
   const SELF_BOUNDED = new Set(["read_file", "read_tool_output", "list_directory", "run_command"]);
   try {
@@ -818,9 +887,11 @@ async function runPiWithVercel(
         const startedAt = Date.now();
         const input = args?.[0];
         let writeAheadKey: string | null = null;
+        runWorkSignals++;
         try {
           if (toolName === "TodoWrite" && input && Array.isArray(input.todos)) {
             lastTodoSnapshot = input.todos as TodoSnapshotItem[];
+            planInherited = false;
             void setRunTodos(config.threadId, lastTodoSnapshot);
           }
         } catch {}
@@ -853,6 +924,7 @@ async function runPiWithVercel(
           // denied action feeds recovery instead of looking clean.
           const err = extractToolError(toolName, out);
           lastToolError = err;
+          roundToolError = err;
           toolCallTotal++;
           if (!err) successfulToolCalls++;
           if (!err) {
@@ -891,6 +963,7 @@ async function runPiWithVercel(
         } catch (e: any) {
           const msg = e instanceof Error ? e.message : String(e);
           lastToolError = `${toolName}: ${msg.slice(0, 400)}`;
+          roundToolError = lastToolError;
           toolCallTotal++;
           if (writeAheadKey) {
             void toolFinished(config.threadId, toolName, writeAheadKey, { ok: false, result: msg.slice(0, 1_000), durationMs: Date.now() - startedAt });
@@ -1018,23 +1091,59 @@ async function runPiWithVercel(
   // Separately, when a turn ends with unfinished TodoWrite goals, silent
   // server-side-only nudges (never shown in the UI) continue the work.
   let sawError = false;
+  let roundError = false;
   let toolCallCount = 0;
   let reader: ReadableStreamDefaultReader<any> | null = null;
   let overflowRetried = false;
   let silentRounds = 0;
   let completionVerification: VerificationResult | null = null;
   const silentBudget = maxSilentRounds();
+  // Goal continuation has its own, larger budget: an unfinished TodoWrite plan
+  // must keep the agent working instead of being cut off by the small
+  // stall/recovery budget. Stall, error and total budgets keep it bounded.
+  const goalBudget = maxGoalRounds();
+  const goalStallLimit = maxStalledGoalRounds();
+  const goalErrorLimit = maxGoalErrorRounds();
+  const inheritedGoalBudget = maxInheritedGoalRounds();
+  let goalRounds = 0;
+  let stalledGoalRounds = 0;
+  let consecutiveGoalErrors = 0;
+  let goalProgressMarker = "";
   let verificationRounds = 0;
   const verificationBudget = maxVerificationRounds();
   const stepBudget = maxStepsPerRound();
   // Hard ceiling on rounds: initial + one overflow retry + silent budget +
-  // verification budget + slack. Guarantees the outer loop is bounded even if
-  // every continuation path somehow keeps returning.
-  const roundLimit = computeRoundLimit(silentBudget, verificationBudget);
+  // goal budget + verification budget + slack. Guarantees the outer loop is
+  // bounded even if every continuation path somehow keeps returning.
+  const roundLimit = computeRoundLimit(silentBudget, verificationBudget, goalBudget);
   // Server-side-only continuation history: this round's assistant/tool
   // messages plus the silent nudge. Never merged into activeUiMessages
   // (the client-visible history), so the nudge stays invisible in the UI.
   let pendingNudge: Array<Record<string, unknown>> = [];
+  // A long goal run appends one round of messages per continuation. Keep that
+  // history bounded so round 30 does not overflow the context window: drop the
+  // oldest rounds once it grows past a fraction of the model window. The
+  // continuation nudge re-states the remaining goals, so nothing actionable is
+  // lost — only old tool chatter.
+  const continuationBudgetTokens = Math.max(8_000, Math.floor(contextWindowTokens * 0.35));
+  const appendContinuation = (roundMessages: Array<Record<string, unknown>>, nudge: string) => {
+    pendingNudge = [...pendingNudge, ...roundMessages, { role: "user", content: nudge } as Record<string, unknown>];
+    if (pendingNudge.length > 8 && estimateModelMessagesTokens(pendingNudge) > continuationBudgetTokens) {
+      // Trim whole rounds from the front until the estimate fits, then start
+      // at a user turn: a tool result without its tool call is an invalid
+      // message sequence for most providers. Every continuation ends with a
+      // user nudge, so such a boundary always exists.
+      let cut = 0;
+      while (
+        cut < pendingNudge.length - 1 &&
+        estimateModelMessagesTokens(pendingNudge.slice(cut)) > continuationBudgetTokens
+      ) {
+        cut++;
+      }
+      while (cut < pendingNudge.length - 1 && (pendingNudge[cut] as any)?.role !== "user") cut++;
+      pendingNudge = pendingNudge.slice(cut);
+    }
+  };
 
   try {
     for (let attempt = 0; ; attempt++) {
@@ -1051,6 +1160,8 @@ async function runPiWithVercel(
         };
         break;
       }
+      roundError = false;
+      roundToolError = null;
       const baseMessages = await toModelMessages(activeUiMessages);
       const modelMessages = [...baseMessages, ...pendingNudge];
       // Estimate what this round actually sends (system + tools + messages)
@@ -1127,6 +1238,7 @@ async function runPiWithVercel(
             break;
           }
           sawError = true;
+          roundError = true;
           const hint = formatProviderError(errText, config.modelName);
           const id = `pi-error-${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
           try {
@@ -1212,7 +1324,40 @@ async function runPiWithVercel(
       // unfinished. Append this round's messages plus a silent nudge
       // (server-side only — never written to the UI stream) and run another
       // round so the agent finishes all goals within the same turn.
-      if (!sawError && !signal.aborted && hasUnfinishedGoals(lastTodoSnapshot) && silentRounds < silentBudget) {
+      //
+      // This path has its OWN budget (goalBudget), much larger than the
+      // stall/failure-recovery budget: a visible answer does not end the turn
+      // while items remain open. It stays bounded by three independent
+      // guards — total goal rounds, consecutive rounds with zero progress,
+      // and consecutive surfaced errors.
+      const goalsUnfinished = hasUnfinishedGoals(lastTodoSnapshot);
+      if (goalsUnfinished) {
+        const signature = goalProgressSignature(lastTodoSnapshot, successfulToolCalls);
+        if (signature !== goalProgressMarker) {
+          goalProgressMarker = signature;
+          stalledGoalRounds = 0;
+        } else {
+          stalledGoalRounds++;
+        }
+        if (roundError) consecutiveGoalErrors++;
+        else consecutiveGoalErrors = 0;
+      }
+      // An inherited plan gets a small budget until the model re-writes
+      // TodoWrite (which proves the work is current, not stale history).
+      const effectiveGoalBudget = planInherited ? Math.min(goalBudget, inheritedGoalBudget) : goalBudget;
+      if (
+        shouldContinueGoals({
+          hasUnfinished: goalsUnfinished,
+          rounds: goalRounds,
+          budget: effectiveGoalBudget,
+          stalledRounds: stalledGoalRounds,
+          stallLimit: goalStallLimit,
+          consecutiveErrors: consecutiveGoalErrors,
+          errorLimit: goalErrorLimit,
+          aborted: signal.aborted,
+          hasRunWork: runWorkSignals > 0,
+        })
+      ) {
         const incomplete = getIncompleteTodos(lastTodoSnapshot);
         let roundMessages: Array<Record<string, unknown>> = [];
         try {
@@ -1221,20 +1366,28 @@ async function runPiWithVercel(
             roundMessages = (response as any).messages as Array<Record<string, unknown>>;
           }
         } catch {}
-        pendingNudge = [
-          ...pendingNudge,
-          ...roundMessages,
-          { role: "user", content: buildContinuationNudge(incomplete, lastToolError) } as Record<string, unknown>,
-        ];
-        silentRounds++;
+        appendContinuation(roundMessages, buildContinuationNudge(incomplete, lastToolError, { inherited: planInherited }));
+        goalRounds++;
+        // Keep the run alive while the plan is still being worked: a fixed
+        // 5-minute wall clock was stopping long but healthy runs mid-goal.
+        config.extendTimeout?.();
         console.log(
-          `[pi-harness] Silent continuation ${silentRounds}/${silentBudget} [${config.threadId}] — ${incomplete.length} goal(s) unfinished`
+          `[pi-harness] Goal continuation ${goalRounds}/${effectiveGoalBudget}${planInherited ? " (inherited)" : ""} [${config.threadId}] — ${incomplete.length} goal(s) unfinished, stalled=${stalledGoalRounds}/${goalStallLimit}, errors=${consecutiveGoalErrors}/${goalErrorLimit}`
         );
         continue;
       }
-      if (lastTodoSnapshot && silentRounds >= silentBudget && hasUnfinishedGoals(lastTodoSnapshot)) {
+      if (goalsUnfinished && runWorkSignals > 0) {
+        const why = signal.aborted
+          ? "run aborted"
+          : goalRounds >= effectiveGoalBudget
+            ? `goal round budget exhausted (${effectiveGoalBudget}${planInherited ? ", inherited plan" : ""})`
+            : stalledGoalRounds >= goalStallLimit
+              ? `no progress for ${stalledGoalRounds} consecutive round(s)`
+              : consecutiveGoalErrors > goalErrorLimit
+                ? `${consecutiveGoalErrors} consecutive error round(s)`
+                : "goal continuation stopped";
         console.warn(
-          `[pi-harness] Silent continuation budget exhausted [${config.threadId}] — ${getIncompleteTodos(lastTodoSnapshot).length} goal(s) still unfinished`
+          `[pi-harness] Goal continuation stopped [${config.threadId}] — ${why}; ${getIncompleteTodos(lastTodoSnapshot).length} goal(s) still unfinished`
         );
       }
       // Failure recovery: the turn ran tools and ended right after one
@@ -1242,7 +1395,9 @@ async function runPiWithVercel(
       // (typical for demos / ad-hoc browser runs — the model narrates the
       // failure and quits). Nudge once per failure: lastToolError is
       // consumed here, so a NEW failure is required to nudge again.
-      if (!sawError && !signal.aborted && !hasUnfinishedGoals(lastTodoSnapshot) && shouldRecoverContinue({ toolCallCount, lastError: lastToolError, silentRounds, budget: silentBudget })) {
+      // Gate on the CURRENT round, not the whole run: an error recovered in an
+      // earlier round must not disable recovery for the rest of the turn.
+      if (!roundError && !signal.aborted && !hasUnfinishedGoals(lastTodoSnapshot) && shouldRecoverContinue({ toolCallCount, lastError: lastToolError, silentRounds, budget: silentBudget })) {
         const err = String(lastToolError);
         lastToolError = null;
         let roundMessages: Array<Record<string, unknown>> = [];
@@ -1252,11 +1407,7 @@ async function runPiWithVercel(
             roundMessages = (response as any).messages as Array<Record<string, unknown>>;
           }
         } catch {}
-        pendingNudge = [
-          ...pendingNudge,
-          ...roundMessages,
-          { role: "user", content: buildRecoveryNudge(err) } as Record<string, unknown>,
-        ];
+        appendContinuation(roundMessages, buildRecoveryNudge(err));
         silentRounds++;
         console.log(
           `[pi-harness] Failure recovery continuation ${silentRounds}/${silentBudget} [${config.threadId}] — ${err.slice(0, 120)}`
@@ -1269,8 +1420,8 @@ async function runPiWithVercel(
       // Q&A) IS the answer, so it must never be re-run: previously any
       // tool-less turn was re-continued up to the silent budget, which
       // streamed the same reply many times for a simple "hi".
-      if (!sawError && !signal.aborted && shouldIdleContinue({ toolCallCount, producedText, silentRounds, budget: silentBudget })) {
-        pendingNudge = [...pendingNudge, { role: "user", content: buildIdleContinueNudge(silentRounds) } as Record<string, unknown>];
+      if (!roundError && !signal.aborted && shouldIdleContinue({ toolCallCount, producedText, silentRounds, budget: silentBudget })) {
+        appendContinuation([], buildIdleContinueNudge(silentRounds));
         silentRounds++;
         console.log(`[pi-harness] Idle stall recovery ${silentRounds}/${silentBudget} [${config.threadId}] — no text or tools produced`);
         continue;
@@ -1280,13 +1431,19 @@ async function runPiWithVercel(
       // says so: todos, successful tool calls, the last error and the files
       // claimed on disk are checked independently. Pure Q&A turns (no tools,
       // todos or files) are "not checked" and pass straight through.
+      // An inherited checklist only counts as current work when this run
+      // actually worked on it. Otherwise an old, abandoned plan would fail the
+      // completion gate (and trigger correction rounds) on an unrelated reply.
+      const verificationTodos = planInherited && runWorkSignals === 0 ? null : lastTodoSnapshot;
       const verification = await verifyCompletion({
-        todos: lastTodoSnapshot,
+        todos: verificationTodos,
         toolCalls: toolCallTotal,
         successfulToolCalls,
         producedText,
-        sawError,
-        lastToolError,
+        // Judge the round that just finished: an error recovered in an earlier
+        // round must not mark a long, ultimately successful run unverified.
+        sawError: roundError,
+        lastToolError: roundToolError,
         filesTouched,
       });
       completionVerification = verification;
@@ -1312,7 +1469,7 @@ async function runPiWithVercel(
           );
         }
       }
-      if (verification.checked && !verification.complete && !sawError && !signal.aborted) {
+      if (verification.checked && !verification.complete && !roundError && !signal.aborted) {
         if (verificationRounds < verificationBudget) {
           verificationRounds++;
           let roundMessages: Array<Record<string, unknown>> = [];
@@ -1322,11 +1479,7 @@ async function runPiWithVercel(
               roundMessages = (response as any).messages as Array<Record<string, unknown>>;
             }
           } catch {}
-          pendingNudge = [
-            ...pendingNudge,
-            ...roundMessages,
-            { role: "user", content: buildVerificationNudge(verification) } as Record<string, unknown>,
-          ];
+          appendContinuation(roundMessages, buildVerificationNudge(verification));
           console.log(
             `[pi-harness] Completion verification failed ${verificationRounds}/${verificationBudget} [${config.threadId}] — ${verification.reasons.slice(0, 3).join("; ").slice(0, 240)}`
           );

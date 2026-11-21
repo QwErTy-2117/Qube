@@ -211,10 +211,14 @@ runtime dependency was introduced.
 |---|---:|---:|---|
 | Steps per model round | 60 | 500 | `PI_HARNESS_MAX_STEPS` |
 | Verification retry rounds | 2 | 10 | `QUBE_VERIFICATION_ROUNDS` |
-| Silent continuations | 8 | 100 | `QUBE_SILENT_CONTINUATIONS` |
-| Outer rounds | silent + verification + 8 | 118 | derived |
+| Silent nudge rounds | 8 | 100 | `QUBE_SILENT_CONTINUATIONS` |
+| Goal continuation rounds | 30 | 500 | `QUBE_GOAL_CONTINUATIONS` |
+| Goal stall rounds (no progress) | 3 | 20 | `QUBE_GOAL_STALL_ROUNDS` |
+| Goal consecutive error rounds | 2 | 10 | `QUBE_GOAL_ERROR_ROUNDS` |
+| Inherited plan rounds | 5 | 50 | `QUBE_GOAL_INHERITED_ROUNDS` |
+| Outer rounds | silent + goal + verification + 8 | 618 | derived |
 | Concurrent foreground runs | 32 | 128 | `PI_MAX_CONCURRENT_RUNS` |
-| Harness timeout | 300 s | fixed | `PI_HARNESS_TIMEOUT_MS` |
+| Harness timeout (rolling) | 300 s | 3600 s total | `PI_HARNESS_TIMEOUT_MS`, `PI_HARNESS_MAX_TOTAL_MS` |
 | Model retries | 2 | fixed | — |
 | Command timeout | 120 s | 600 s | per call |
 
@@ -224,6 +228,15 @@ timeouts record `failed`.
 
 ### Completion
 
+- Goal continuation runs before this gate and has its own budget: a turn whose
+  TodoWrite list still has open items gets another round (up to 30) even when
+  the round ended with a visible answer. It stops only on completion, budget,
+  three consecutive no-progress rounds, two consecutive error rounds, or
+  cancellation. The run timeout is extended (rolling) by every goal round, up
+  to `PI_HARNESS_MAX_TOTAL_MS`.
+- A plan is seeded from the visible history (and, for a resumed run, from the
+  ledger) so an unfinished checklist from an earlier turn keeps the agent
+  working. A run that did no tool work at all does not revive an old plan.
 - `verifyCompletion` is checked after every normal terminal round.
 - Conversational turns with no tools/todos/files/errors are `checked: false`
   and pass through.

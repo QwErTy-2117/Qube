@@ -145,10 +145,25 @@ export async function executePiTask(
   activeTaskRuns.set(threadId, abortController);
 
   const timeoutMs = parseInt(process.env.PI_TASK_TIMEOUT_MS || "180000", 10);
+  // Background runs with a multi-round plan legitimately take longer than a
+  // single 3-minute window. The timeout is rolling: each productive
+  // continuation round resets it, but the absolute ceiling still applies.
+  const maxTotalMs = (() => {
+    const n = parseInt(process.env.PI_TASK_MAX_TOTAL_MS || "1800000", 10);
+    return Number.isFinite(n) && n > 0 ? n : 1_800_000;
+  })();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  if (timeoutMs > 0) {
+  const armTimeout = () => {
+    if (!(timeoutMs > 0)) return;
+    if (timeoutId) clearTimeout(timeoutId);
     timeoutId = setTimeout(() => abortController.abort(new Error(`Pi task timeout ${timeoutMs}ms`)), timeoutMs);
-  }
+  };
+  armTimeout();
+  const extendTimeout = () => {
+    if (abortController.signal.aborted) return;
+    if (Date.now() - startTime + timeoutMs > maxTotalMs) return;
+    armTimeout();
+  };
 
   const cleanup = () => {
     if (timeoutId) clearTimeout(timeoutId);
@@ -156,7 +171,7 @@ export async function executePiTask(
   };
 
   try {
-    return await runPiTaskInternal(task, threadId, abortController.signal, startTime);
+    return await runPiTaskInternal(task, threadId, abortController.signal, startTime, extendTimeout);
   } finally {
     cleanup();
   }
@@ -166,7 +181,8 @@ async function runPiTaskInternal(
   task: ScheduledTask,
   threadId: string,
   signal: AbortSignal,
-  startTime: number
+  startTime: number,
+  extendTimeout: () => void = () => {},
 ): Promise<{ status: "success" | "error"; output: string; duration: number }> {
   if (signal.aborted) throw new Error("Pi task aborted before start");
 
@@ -563,7 +579,17 @@ async function runPiTaskInternal(
     const maxSteps = task.type === "heartbeat"
       ? parseInt(process.env.PI_TASK_HEARTBEAT_STEPS || "12", 10)
       : parseInt(process.env.PI_TASK_SCHEDULED_STEPS || "20", 10);
-    const maxRounds = parseInt(process.env.PI_TASK_MAX_ROUNDS || "3", 10);
+    // Rounds are bounded, but high enough that a real multi-step plan is not
+    // cut in half: the old default of 3 stopped background runs with open
+    // plan items. Stall/error guards below still end a stuck run early.
+    const maxRounds = (() => {
+      const n = parseInt(process.env.PI_TASK_MAX_ROUNDS || "12", 10);
+      return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), 50) : 12;
+    })();
+    const stallLimit = (() => {
+      const n = parseInt(process.env.PI_TASK_STALL_ROUNDS || "3", 10);
+      return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), 20) : 3;
+    })();
     const system = buildPiTaskSystemPrompt(task, heartbeatStateText, skillsSection || undefined, connectorHint || undefined);
 
     // Multi-round loop: run, then continue while the headless plan has
@@ -573,6 +599,8 @@ async function runPiTaskInternal(
     let totalToolCount = 0;
     let totalSteps = 0;
     let round = 0;
+    let planDoneCount = headlessPlan.filter((t) => t.status === "completed").length;
+    let stalledRounds = 0;
     for (;;) {
       if (signal.aborted) throw new Error("Pi task aborted before model call");
       try {
@@ -601,13 +629,23 @@ async function runPiTaskInternal(
       combinedOutput = combinedOutput ? `${combinedOutput}\n\n${output}` : output;
 
       const unfinished = headlessPlan.filter((t) => t.status !== "completed");
-      if (unfinished.length > 0 && round + 1 < maxRounds && !signal.aborted) {
+      // Progress = a plan item completed or a tool call. Without either, the
+      // round only spun; too many of those end the run. The first round is
+      // always progress: it is the one that wrote or loaded the plan.
+      const doneCount = headlessPlan.filter((t) => t.status === "completed").length;
+      const progressed = round === 0 || doneCount > planDoneCount || toolCount > 0;
+      planDoneCount = doneCount;
+      stalledRounds = progressed ? 0 : stalledRounds + 1;
+      if (unfinished.length > 0 && round + 1 < maxRounds && stalledRounds < stallLimit && !signal.aborted) {
         round++;
-        console.log(`[pi-task] Task ${task.id} continuation round ${round}/${maxRounds - 1} — ${unfinished.length} plan item(s) unfinished`);
+        extendTimeout();
+        console.log(`[pi-task] Task ${task.id} continuation round ${round}/${maxRounds - 1} — ${unfinished.length} plan item(s) unfinished, stalled=${stalledRounds}/${stallLimit}`);
         continue;
       }
       if (unfinished.length > 0) {
-        console.warn(`[pi-task] Task ${task.id} plan budget exhausted — ${unfinished.length} item(s) still unfinished`);
+        console.warn(
+          `[pi-task] Task ${task.id} plan continuation stopped — ${stalledRounds >= stallLimit ? `no progress for ${stalledRounds} round(s)` : `round budget ${maxRounds}`}; ${unfinished.length} item(s) still unfinished`
+        );
       }
       break;
     }
@@ -635,10 +673,17 @@ async function runPiTaskInternal(
       duration,
     });
 
-    // Sync headless plan completion into the durable goal store.
+    // Sync headless plan completion into the durable goal store. When the plan
+    // still has open items the run stopped early: keep those goals open so the
+    // next heartbeat/chat resumes them instead of recording false success.
     try {
-      const { syncHeadlessPlanDone } = await import("@/lib/goals/store");
-      await syncHeadlessPlanDone(task.id).catch(() => {});
+      if (headlessPlan.some((t) => t.status !== "completed" && t.status !== "cancelled")) {
+        const { syncHeadlessPlanPartial } = await import("@/lib/goals/store");
+        await syncHeadlessPlanPartial(task.id, headlessPlan).catch(() => {});
+      } else {
+        const { syncHeadlessPlanDone } = await import("@/lib/goals/store");
+        await syncHeadlessPlanDone(task.id).catch(() => {});
+      }
     } catch {}
 
     return { status: "success" as const, output: output || "(no output)", duration };

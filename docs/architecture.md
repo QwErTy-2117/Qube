@@ -98,9 +98,12 @@ Key points, with the code that implements them:
   the AI SDK's `streamText`. A separate SQLite-backed durable harness exists
   behind `PI_DURABLE_ENABLED=1` but is an unfinished migration.
 - **Limits** live in `lib/pi/execution-limits.ts`: 60 steps per pass
-  (`PI_HARNESS_MAX_STEPS`), two verification rounds, 32 concurrent runs, plus
-  up to eight silent continuations (`QUBE_SILENT_CONTINUATIONS`) and a
-  five-minute run timeout.
+  (`PI_HARNESS_MAX_STEPS`), two verification rounds, 32 concurrent runs, a
+  five-minute rolling run timeout (extended by productive goal rounds up to
+  `PI_HARNESS_MAX_TOTAL_MS`), eight silent nudge rounds
+  (`QUBE_SILENT_CONTINUATIONS`), and up to 30 goal-continuation rounds
+  (`QUBE_GOAL_CONTINUATIONS`) while TodoWrite items are open. Goal rounds stop
+  early after three no-progress rounds or two consecutive error rounds.
 - **Steering.** A new message on the same thread aborts the previous run and
   starts a new one. Runs on different threads proceed in parallel.
 - **Context management.** `lib/pi/compaction.ts` summarizes older history

@@ -141,12 +141,19 @@ export async function mirrorChatPlan(
     for (const t of todos.slice(0, 20)) {
       const content = String(t.content || "").slice(0, 200).trim();
       if (!content) continue;
-      const status: GoalStatus = t.status === "completed" ? "done" : t.status === "in_progress" ? "in_progress" : "open";
+      const status: GoalStatus =
+        t.status === "completed"
+          ? "done"
+          : t.status === "cancelled"
+            ? "dropped"
+            : t.status === "in_progress"
+              ? "in_progress"
+              : "open";
       const hash = goalHash(content);
       const existing = items.find((g) => g.threadId === threadId && g.contentHash === hash);
       if (existing) {
         if (existing.status !== status) { existing.status = status; existing.updatedAt = now; changed = true; }
-      } else if (status !== "done") {
+      } else if (status !== "done" && status !== "dropped") {
         items.push({
           id: `goal_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
           topic: content, lane: "chat", status, source: "chat-todowrite",
@@ -172,12 +179,19 @@ export async function mirrorHeadlessPlan(
     for (const t of todos.slice(0, 20)) {
       const content = String(t.content || "").slice(0, 200).trim();
       if (!content) continue;
-      const status: GoalStatus = t.status === "completed" ? "done" : t.status === "in_progress" ? "in_progress" : "open";
+      const status: GoalStatus =
+        t.status === "completed"
+          ? "done"
+          : t.status === "cancelled"
+            ? "dropped"
+            : t.status === "in_progress"
+              ? "in_progress"
+              : "open";
       const hash = goalHash(content);
       const existing = items.find((g) => g.taskId === taskId && g.contentHash === hash);
       if (existing) {
         if (existing.status !== status) { existing.status = status; existing.updatedAt = now; changed = true; }
-      } else if (status !== "done") {
+      } else if (status !== "done" && status !== "dropped") {
         items.push({
           id: `goal_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
           topic: `${taskName}: ${content}`.slice(0, 200), lane: "monitor", status,
@@ -200,6 +214,39 @@ export async function syncHeadlessPlanDone(taskId: string): Promise<void> {
       if (g.taskId === taskId && (g.status === "open" || g.status === "in_progress")) {
         g.status = "done"; g.updatedAt = now; changed = true;
       }
+    }
+    if (changed) await saveAll(items);
+  } catch {}
+}
+
+/**
+ * Keep a run's goals open when it ended with plan items still unfinished, so
+ * the next heartbeat/chat resumes them instead of the store claiming success.
+ * Items the plan marked completed are closed; the rest stay actionable.
+ */
+export async function syncHeadlessPlanPartial(
+  taskId: string,
+  todos: Array<{ content: string; status: string }>,
+): Promise<void> {
+  try {
+    const completed = new Set(
+      todos
+        .filter((t) => t.status === "completed" || t.status === "cancelled")
+        .map((t) => goalHash(String(t.content || "").slice(0, 200).trim())),
+    );
+    const { items } = await loadAll();
+    let changed = false;
+    const now = Date.now();
+    for (const g of items) {
+      if (g.taskId !== taskId) continue;
+      if (!(g.status === "open" || g.status === "in_progress")) continue;
+      if (completed.has(g.contentHash)) {
+        g.status = "done";
+      }
+      // Touch either way so the heartbeat sees this run as the newest work and
+      // resumes the still-open items instead of treating them as stale.
+      g.updatedAt = now;
+      changed = true;
     }
     if (changed) await saveAll(items);
   } catch {}

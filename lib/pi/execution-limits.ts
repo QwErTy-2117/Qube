@@ -31,14 +31,20 @@ export function maxConcurrentRuns(raw = process.env.PI_MAX_CONCURRENT_RUNS): num
 
 /**
  * Hard ceiling on outer harness rounds: initial + overflow retry + silent
- * continuations + verification retries + slack. Kept dependent on the two
- * configurable budgets so raising one still has a finite bound.
+ * continuations + goal continuations + verification retries + slack. Kept
+ * dependent on the configurable budgets so raising one still has a finite
+ * bound. `goalBudget` is optional so callers from before goal continuation
+ * existed keep their previous (smaller) ceiling.
  */
-export function computeRoundLimit(silentBudget: number, verificationBudget: number): number {
+export function computeRoundLimit(
+  silentBudget: number,
+  verificationBudget: number,
+  goalBudget = 0,
+): number {
   const safe = (value: number, max: number): number => {
     const n = Math.floor(Number(value));
     if (!Number.isFinite(n)) return 0;
     return Math.min(Math.max(n, 0), max);
   };
-  return safe(silentBudget, 100) + safe(verificationBudget, 10) + 8;
+  return safe(silentBudget, 100) + safe(goalBudget, 500) + safe(verificationBudget, 10) + 8;
 }

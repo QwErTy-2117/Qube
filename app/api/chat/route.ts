@@ -3,7 +3,11 @@ import { runPiHarness } from "@/lib/pi/harness";
 import { currentSchedulerEpoch } from "@/lib/scheduler/runtime-state";
 import { normalizeAttachmentsForModel } from "@/lib/chat/attachment-model";
 
-export const maxDuration = 300;
+// A chat run can legitimately outlive the old 5-minute window: goal
+// continuation keeps working while TodoWrite items are open (rolling timeout
+// extends per productive round, capped by PI_HARNESS_MAX_TOTAL_MS). The
+// platform hint must not be shorter than the harness's own ceiling.
+export const maxDuration = 3600;
 
 function extractText(m: Record<string, unknown>): string {
   const parts = (m.parts as Array<Record<string, unknown>>) || [];

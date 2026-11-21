@@ -24,6 +24,21 @@ const base = {
 };
 
 describe("verifyCompletion", () => {
+  it("treats cancelled todos as terminal, not unfinished", async () => {
+    const result = await verifyCompletion({
+      ...base,
+      toolCalls: 1,
+      successfulToolCalls: 1,
+      todos: [
+        { content: "Done", status: "completed" },
+        { content: "Dropped", status: "cancelled" },
+      ],
+    });
+    assert.equal(result.checked, true);
+    assert.equal(result.complete, true);
+    assert.deepEqual(result.reasons, []);
+  });
+
   it("does not check pure Q&A turns", async () => {
     const result = await verifyCompletion({ ...base });
     assert.equal(result.checked, false);

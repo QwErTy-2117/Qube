@@ -72,11 +72,17 @@ describe("computeRoundLimit", () => {
     assert.equal(computeRoundLimit(0, 0), 8);
   });
 
+  it("includes the goal budget so goal rounds cannot be capped early", () => {
+    assert.equal(computeRoundLimit(8, 2, 30), 48);
+    assert.equal(computeRoundLimit(8, 2, 0), 18);
+  });
+
   it("is finite even for absurd inputs", () => {
     assert.equal(computeRoundLimit(Number.POSITIVE_INFINITY, Number.NaN), 8);
     assert.equal(computeRoundLimit(-5, -5), 8);
     const limit = computeRoundLimit(100, 10);
     assert.equal(limit, 118);
-    assert.ok(Number.isFinite(limit));
+    assert.equal(computeRoundLimit(100, 10, 500), 618);
+    assert.ok(Number.isFinite(computeRoundLimit(9999, 9999, 9999)));
   });
 });

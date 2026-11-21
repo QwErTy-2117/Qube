@@ -141,6 +141,25 @@ describe("durable goals shared chat <-> background (fix #5)", () => {
     const after = await goals.listOpenGoals(50);
     assert.ok(!after.some((g) => g.taskId === taskId), "headless goals close on run completion");
   });
+
+  it("partial sync keeps unfinished headless goals open (no false completion)", async () => {
+    const goals = await import("@/lib/goals/store");
+    const taskId = `task_${uid()}`;
+    const doneItem = `bg-done-${uid()}`;
+    const openItem = `bg-open-${uid()}`;
+    await goals.mirrorHeadlessPlan(taskId, "Partial Task", [
+      { content: doneItem, status: "in_progress" },
+      { content: openItem, status: "pending" },
+    ]);
+    await goals.syncHeadlessPlanPartial(taskId, [
+      { content: doneItem, status: "completed" },
+      { content: openItem, status: "pending" },
+    ]);
+    const open = await goals.listOpenGoals(50).catch(() => []);
+    const mine = open.filter((g) => g.taskId === taskId);
+    assert.equal(mine.length, 1, "only the unfinished item stays open");
+    assert.match(mine[0].topic, new RegExp(openItem));
+  });
 });
 
 describe("heartbeat engine decision (fix #4)", () => {

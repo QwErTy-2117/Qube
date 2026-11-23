@@ -313,6 +313,238 @@ describe("durable heartbeat continuation ledger", () => {
     assert.equal(resolved!.approval!.decision, "rejected");
     assert.equal((await work.listPendingHeartbeatApprovals(20)).some((w) => w.id === approval.id), false);
   });
+
+  it("never turns an infrastructure error into progress or a blocker", async () => {
+    const alpha = await work.upsertHeartbeatWork({
+      topic: "Error isolation alpha",
+      source: "agent",
+      sourceRef: "test:error-isolation:alpha",
+      kind: "other",
+      summary: "Waiting for a clean run",
+      nextStep: "Continue",
+    });
+    const beta = await work.upsertHeartbeatWork({
+      topic: "Error isolation beta",
+      source: "agent",
+      sourceRef: "test:error-isolation:beta",
+      kind: "other",
+      summary: "Waiting for a clean run",
+      nextStep: "Continue",
+    });
+    const before = await work.getHeartbeatWorkItem(alpha.id);
+    const changed = await work.recordHeartbeatRunOutcome({
+      status: "error",
+      output: "AI_NoOutputGeneratedError: No output generated. getaddrinfo EAI_AGAIN api.nano-gpt.com",
+      workIds: [alpha.id, beta.id],
+    });
+    assert.deepEqual(changed, [], "an infrastructure failure is not work progress");
+    const after = await work.getHeartbeatWorkItem(alpha.id);
+    assert.equal(after!.status, before!.status);
+    assert.equal(after!.blockers.length, before!.blockers.length);
+    assert.equal(after!.progress.length, before!.progress.length);
+    const betaAfter = await work.getHeartbeatWorkItem(beta.id);
+    assert.equal(betaAfter!.status, "open");
+    assert.equal(betaAfter!.blockers.length, 0);
+    assert.equal(betaAfter!.progress.length, 0);
+  });
+
+  it("folds success output only into the work item it actually references", async () => {
+    const alpha = await work.upsertHeartbeatWork({
+      topic: "Quarterly budget alpha",
+      source: "agent",
+      sourceRef: "test:attribution:alpha",
+      kind: "document",
+      summary: "Draft the quarterly budget",
+      nextStep: "Write the draft",
+    });
+    const beta = await work.upsertHeartbeatWork({
+      topic: "Venue booking beta",
+      source: "agent",
+      sourceRef: "test:attribution:beta",
+      kind: "other",
+      summary: "Book the venue",
+      nextStep: "Call the venue",
+    });
+    const first = await work.recordHeartbeatRunOutcome({
+      status: "success",
+      output: "Finished the quarterly budget draft and saved [file: documents/quarterly-budget.md].",
+      workIds: [alpha.id, beta.id],
+    });
+    assert.equal(first.length, 1, "unrelated work must not receive this run's progress");
+    assert.equal(first[0].id, alpha.id);
+    assert.equal(first[0].status, "in_progress");
+    assert.ok(first[0].deliverables.includes("documents/quarterly-budget.md"));
+
+    const betaAfter = await work.getHeartbeatWorkItem(beta.id);
+    assert.equal(betaAfter!.status, "open");
+    assert.equal(betaAfter!.progress.length, 0);
+    assert.equal(betaAfter!.deliverables.length, 0);
+
+    const second = await work.recordHeartbeatRunOutcome({
+      status: "success",
+      output: `All checks passed. [work_done:${alpha.id}]`,
+      workIds: [alpha.id, beta.id],
+    });
+    assert.equal(second.length, 1);
+    assert.equal(second[0].id, alpha.id);
+    assert.equal(second[0].status, "done");
+    assert.equal((await work.getHeartbeatWorkItem(beta.id))!.status, "open");
+  });
+
+  it("announces only material changes, never routine progress or completed work", async () => {
+    const item = await work.upsertHeartbeatWork({
+      topic: "Material announcement test",
+      source: "agent",
+      sourceRef: "test:material-announcement",
+      kind: "document",
+      summary: "Prepare the document",
+      nextStep: "Write it",
+    });
+    assert.equal(await work.announceHeartbeatWorkUpdates(item), null, "an open item with no deliverable is not news");
+
+    const progressed = await work.recordHeartbeatWorkProgress({
+      id: item.id,
+      note: "Wrote the first draft",
+      deliverables: ["documents/material-announcement.md"],
+    });
+    const announcedId = await work.announceHeartbeatWorkUpdates(progressed!);
+    assert.ok(announcedId, "a new deliverable is material");
+
+    const fresh = await work.getHeartbeatWorkItem(item.id);
+    assert.equal(await work.announceHeartbeatWorkUpdates(fresh!), null, "the same material state is not re-announced");
+
+    const routine = await work.recordHeartbeatWorkProgress({
+      id: item.id,
+      note: "Another routine progress note",
+      status: "in_progress",
+    });
+    assert.equal(await work.announceHeartbeatWorkUpdates(routine!), null, "routine progress is not news");
+
+    const done = await work.completeHeartbeatWork(item.id, "Finished and verified");
+    assert.equal(await work.announceHeartbeatWorkUpdates(done!), null, "completed work is never queued as pending news");
+    const announcement = await announcements.getAnnouncement(announcedId!);
+    assert.equal(announcement!.status, "superseded", "completion retires the old deliverable announcement");
+  });
+
+  it("retires an approval announcement when the approval is resolved", async () => {
+    const approval = await work.queueHeartbeatApproval({
+      topic: "Approval retirement test",
+      action: "GMAIL_SEND_EMAIL",
+      toolName: "GMAIL_SEND_EMAIL",
+      purpose: "Send the prepared retirement-test reply",
+      args: { to: "retire@example.test", body: "Hello" },
+      draftRefs: ["documents/retirement-test-draft.md"],
+    });
+    const pending = await announcements.getPendingAnnouncements(100);
+    const announcement = pending.find((a) => a.metadata?.workId === approval.id);
+    assert.ok(announcement);
+    await work.resolveHeartbeatApproval(approval.id, "rejected", "Not needed");
+    const stored = await announcements.getAnnouncement(announcement!.id);
+    assert.equal(stored!.status, "superseded");
+  });
+
+  it("never injects a pending announcement for work that is already done", async () => {
+    const existing = await announcements.getPendingAnnouncements(100);
+    if (existing.length > 0) {
+      await announcements.markAnnouncementsDelivered(existing.map((a) => a.id), { threadId: "test-cleanup" });
+    }
+    const item = await work.upsertHeartbeatWork({
+      topic: "Legacy done announcement test",
+      source: "agent",
+      sourceRef: "test:legacy-done-announcement",
+      kind: "other",
+      status: "done",
+      summary: "Already finished before this fix",
+      nextStep: "",
+    });
+    const announcement = await announcements.recordAnnouncement({
+      taskId: `heartbeat-work:${item.id}`,
+      taskName: item.topic,
+      topic: `heartbeat-work:${item.id}`,
+      source: "heartbeat",
+      output: "Legacy done announcement test — in progress. Latest progress: old state.",
+      metadata: { workId: item.id },
+      forceNew: true,
+    });
+    assert.ok(announcement);
+    const brief = await buildHeartbeatBrief();
+    assert.ok(!(brief.announcementsBlock || "").includes("Legacy done announcement test"));
+    const stored = await announcements.getAnnouncement(announcement!.id);
+    assert.equal(stored!.status, "superseded");
+  });
+
+  it("does not re-open finished deliverable documents as email work", async () => {
+    assert.equal(
+      discovery.classifyHeartbeatSignal({
+        name: "documents/inbox-brief-2026-11-22.md",
+        content: "The unread email thread needs a reply. Sender: Composio <notifications@composio.dev>.",
+        workspace: true,
+      }).actionable,
+      false,
+      "workspace prose is not message metadata",
+    );
+    assert.equal(
+      discovery.classifyHeartbeatSignal({
+        name: "documents/news-brief.md",
+        content: "The AI wipeout continued; the index closed lower.",
+        workspace: true,
+      }).actionable,
+      false,
+      "WIP must match as a word, not a substring of wipeout",
+    );
+    assert.equal(
+      discovery.classifyHeartbeatSignal({
+        name: "documents/inbox-brief-2026-11-22.md",
+        content: "The unread email thread needs a reply.\nTODO: add the follow-up section.",
+        workspace: true,
+      }).kind,
+      "document",
+    );
+
+    const finishedRel = "documents/finished-deliverable.md";
+    writeFileSync(
+      join(workspacePath, finishedRel),
+      "This summary lists unread email threads that may need a reply.\n",
+      "utf-8",
+    );
+    await work.upsertHeartbeatWork({
+      topic: `Workspace: ${finishedRel}`,
+      source: "workspace",
+      sourceRef: `workspace:${finishedRel}`,
+      kind: "document",
+      status: "done",
+      summary: "Finished deliverable",
+      nextStep: "",
+      deliverables: [finishedRel],
+    });
+    const finishedSignals = await discovery.scanWorkspaceSignals({ workspacePath });
+    assert.ok(
+      !finishedSignals.some((s) => s.sourceRef === `workspace:${finishedRel}`),
+      "a finished deliverable must not become a new email_reply item",
+    );
+
+    const openRel = "documents/open-deliverable.md";
+    writeFileSync(
+      join(workspacePath, openRel),
+      "This summary is mostly done.\nTODO: finish section 3.\n",
+      "utf-8",
+    );
+    await work.upsertHeartbeatWork({
+      topic: `Workspace: ${openRel}`,
+      source: "workspace",
+      sourceRef: `workspace:${openRel}`,
+      kind: "document",
+      status: "done",
+      summary: "Finished deliverable with a new unfinished marker",
+      nextStep: "",
+      deliverables: [openRel],
+    });
+    const openSignals = await discovery.scanWorkspaceSignals({ workspacePath });
+    assert.ok(
+      openSignals.some((s) => s.sourceRef === `workspace:${openRel}` && s.kind === "document"),
+      "a real TODO marker re-opens the deliverable",
+    );
+  });
 });
 
 describe("heartbeat approval boundaries and prompt/tool wiring", () => {

@@ -24,6 +24,7 @@ import {
   type HeartbeatWorkKind,
   sanitizeUntrustedText,
   upsertHeartbeatWork,
+  listHeartbeatWork,
   listActionableHeartbeatWork,
   listPendingHeartbeatApprovals,
   buildHeartbeatWorkBrief,
@@ -135,6 +136,8 @@ export function classifyHeartbeatSignal(
     labels?: string[];
     unread?: boolean;
     status?: string;
+    /** Workspace files are prose, not message metadata; classify them strictly. */
+    workspace?: boolean;
   },
 ): HeartbeatSignalClassification {
   const o = typeof input === "string" ? { resultText: input } : (input || {});
@@ -146,7 +149,7 @@ export function classifyHeartbeatSignal(
   ).toLowerCase();
 
   const markers = {
-    unfinished: /(todo|tbd|fixme|wip|draft|needs? (?:review|work|reply|response)|unfinished|incomplete|open question|failing test|not implemented)/.test(text),
+    unfinished: /(\b(?:todo|tbd|fixme|wip|draft|unfinished|incomplete)\b|needs? (?:review|work|reply|response)|open question|failing test|not implemented)/.test(text),
     question: /(\?|can you|could you|please (?:reply|respond|review|confirm)|awaiting (?:your|a) reply|rsvp)/.test(text),
     issue: /(github|gitlab|issue|pull request|bug|regression|help wanted|assigned to me)/.test(text),
     email: /(gmail|outlook|inbox|email|mail thread|unread|sender)/.test(text),
@@ -154,6 +157,45 @@ export function classifyHeartbeatSignal(
     code: /(\.ts|\.tsx|\.js|\.jsx|\.py|\.rs|\.go|\.java|source code|unit test|spec\.|bug|fixme|failing test)/.test(text),
     ongoing: /(in_progress|pending|open|overdue|unfinished|blocked|due|follow.?up|ongoing)/.test(text),
   };
+
+  // Workspace prose is full of words like "email", "unread", and "issue".
+  // Those describe finished deliverables, not new message metadata. Only an
+  // explicit unfinished marker or an unfinished-looking filename counts.
+  if (o.workspace === true) {
+    const workspaceMarker = /\b(?:todo|tbd|fixme|wip|unfinished|incomplete)\b|failing test|not implemented/.test(text);
+    const workspaceNameMarker = /(^|[\/_.-])(draft|todo|wip|unfinished|review|fixme|tbd)([\/_.-]|$)/i.test(name);
+    // Extension decides code vs document; prose like "fixme" in a markdown
+    // note must not turn that note into a source-code task.
+    const codeExtension = /\.(?:ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|kts|c|cc|cpp|h|hpp|cs|rb|php|swift|sh|bash|zsh|sql|html|css|scss|vue|svelte)$/i.test(name);
+    if (codeExtension && workspaceMarker) {
+      return {
+        kind: "code_fix",
+        actionable: true,
+        reason: "code file with an unfinished marker or failing test",
+        nextStep: NEXT_STEPS.code_fix,
+        confidence: 0.8,
+      };
+    }
+    if (workspaceMarker) {
+      return {
+        kind: "document",
+        actionable: true,
+        reason: "draft/TODO/WIP marker in workspace file",
+        nextStep: NEXT_STEPS.document,
+        confidence: 0.7,
+      };
+    }
+    if (workspaceNameMarker) {
+      return {
+        kind: codeExtension ? "code_fix" : "document",
+        actionable: true,
+        reason: "workspace file named as unfinished work",
+        nextStep: codeExtension ? NEXT_STEPS.code_fix : NEXT_STEPS.document,
+        confidence: 0.6,
+      };
+    }
+    return { kind: "other", actionable: false, reason: "", nextStep: "", confidence: 0.55 };
+  }
 
   let kind: HeartbeatWorkKind = "other";
   let actionable = false;
@@ -224,7 +266,7 @@ const SKIP_DIRS = new Set(["node_modules", ".git", ".next", ".cache", ".venv", "
 function markerSnippet(content: string): string {
   const line = String(content || "")
     .split("\n")
-    .find((l) => /(TODO|TBD|FIXME|WIP|NEEDS? REVIEW|UNFINISHED|INCOMPLETE|FAILING TEST|NOT IMPLEMENTED)/i.test(l));
+    .find((l) => /(\b(?:TODO|TBD|FIXME|WIP|UNFINISHED|INCOMPLETE)\b|NEEDS? REVIEW|FAILING TEST|NOT IMPLEMENTED)/i.test(l));
   return sanitizeUntrustedText(line || "", 220);
 }
 
@@ -260,12 +302,65 @@ async function listRoot(workspacePath?: string): Promise<{ entries: string[]; re
   return { entries, recent };
 }
 
+const WORKSPACE_REAL_MARKER_RE = /\b(?:todo|tbd|fixme|wip|unfinished|incomplete)\b|failing test|not implemented/i;
+
+interface CompletedWorkspaceRefs {
+  paths: Set<string>;
+  names: Set<string>;
+}
+
+function normalizeWorkspaceRef(value: string): string {
+  return String(value || "")
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/^\/+/, "")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Files already recorded as deliverables (or the source) of finished work.
+ * They are completed outputs, not new inbox items, so a later scan must not
+ * re-open them just because their prose mentions email or review.
+ */
+async function completedWorkspaceRefs(): Promise<CompletedWorkspaceRefs> {
+  const paths = new Set<string>();
+  const names = new Set<string>();
+  try {
+    const items = await listHeartbeatWork(200);
+    for (const item of items) {
+      if (item.status !== "done" && item.status !== "dropped") continue;
+      for (const deliverable of item.deliverables) {
+        const ref = normalizeWorkspaceRef(deliverable);
+        if (!ref) continue;
+        paths.add(ref);
+        if (!ref.includes("/")) names.add(ref);
+      }
+      if (item.sourceRef.startsWith("workspace:")) {
+        const ref = normalizeWorkspaceRef(item.sourceRef.slice("workspace:".length));
+        if (ref) paths.add(ref);
+      }
+    }
+  } catch {}
+  return { paths, names };
+}
+
+function isCompletedWorkspacePath(refs: CompletedWorkspaceRefs, rel: string): boolean {
+  if (!rel) return false;
+  if (refs.paths.has(rel) || refs.names.has(rel)) return true;
+  for (const path of refs.paths) {
+    if (path.endsWith(`/${rel}`)) return true;
+  }
+  return false;
+}
+
 /** Bounded workspace scan for drafts, TODOs, failing tests, and WIP files. */
 export async function scanWorkspaceSignals(opts?: { workspacePath?: string; now?: number; skipFileContents?: boolean }): Promise<HeartbeatSignal[]> {
   const { getWorkspacePath } = await import("@/lib/middleware/workspace");
   const ws = opts?.workspacePath || getWorkspacePath();
   const now = opts?.now ?? Date.now();
   const cutoff = now - 7 * 24 * 3600 * 1000;
+  const completedRefs = await completedWorkspaceRefs();
   const candidates: Array<{ rel: string; abs: string; mtime: number; size: number }> = [];
   try {
     const top = await readdir(ws, { withFileTypes: true });
@@ -298,8 +393,16 @@ export async function scanWorkspaceSignals(opts?: { workspacePath?: string; now?
       content = await readFile(c.abs, "utf-8").catch(() => "") as string;
       content = content.slice(0, 40_000);
     }
+    // A finished deliverable is not a new inbox item. Only a real unfinished
+    // marker re-opens it; prose that merely mentions email/review does not.
+    const relKey = normalizeWorkspaceRef(c.rel);
+    if (isCompletedWorkspacePath(completedRefs, relKey) && !WORKSPACE_REAL_MARKER_RE.test(content)) continue;
     const snippet = markerSnippet(content);
-    const verdict = classifyHeartbeatSignal({ name: c.rel, content: `${snippet} ${content.slice(0, 8000)}` });
+    const verdict = classifyHeartbeatSignal({
+      name: c.rel,
+      content: `${snippet} ${content.slice(0, 8000)}`,
+      workspace: true,
+    });
     if (!verdict.actionable) continue;
     const fingerprint = hashContent(`${c.rel}:${Math.floor(c.mtime)}:${snippet}:${verdict.reason}`);
     signals.push({

@@ -22,6 +22,7 @@
  */
 
 import { escapePromptData } from "@/lib/pi/prompt-context";
+import type { Announcement } from "@/lib/scheduler/announcements";
 import { hashContent } from "./store";
 
 export interface HeartbeatBrief {
@@ -67,9 +68,40 @@ export async function buildHeartbeatBrief(opts?: {
   // chat route verifies delivery from visible reply text.
   try {
     const ledger = await import("@/lib/scheduler/announcements");
-    const pending = await ledger.getPendingAnnouncementsForThread(3, opts?.threadId || "").catch(() => []);
+    const pending: Announcement[] = await ledger.getPendingAnnouncementsForThread(3, opts?.threadId || "").catch(() => [] as Announcement[]);
+    let visible = pending;
     if (pending.length > 0) {
-      const lines = pending.map(
+      // Defense in depth for ledgers written before completion retired
+      // announcements: never inject an item whose work is already closed.
+      try {
+        const work = await import("@/lib/proactivity/heartbeat-work");
+        const closedWorkIds = new Set<string>();
+        const kept: Announcement[] = [];
+        for (const announcement of pending) {
+          const workId = announcement.metadata && typeof announcement.metadata.workId === "string"
+            ? announcement.metadata.workId
+            : "";
+          if (!workId) {
+            kept.push(announcement);
+            continue;
+          }
+          const item = await work.getHeartbeatWorkItem(workId).catch(() => null);
+          if (item && (item.status === "done" || item.status === "dropped")) {
+            closedWorkIds.add(workId);
+          } else {
+            kept.push(announcement);
+          }
+        }
+        visible = kept;
+        for (const workId of closedWorkIds) {
+          await ledger.retireWorkAnnouncements(workId, "work closed").catch(() => 0);
+        }
+      } catch {
+        visible = pending;
+      }
+    }
+    if (visible.length > 0) {
+      const lines = visible.map(
         (a: any) =>
           `- [${escapePromptData(String(a.source || "scheduled"))}:${escapePromptData(String(a.id).slice(0, 24))}] "${escapePromptData(String(a.taskName).slice(0, 80))}" finished ${timeAgo(a.createdAt)}: ${escapePromptData(String(a.excerpt).slice(0, 400))}`,
       );

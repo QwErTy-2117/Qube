@@ -168,6 +168,20 @@ export async function clearHeartbeatWorkForHardReset(): Promise<void> {
 
 export const resetHeartbeatWorkForHardReset = clearHeartbeatWorkForHardReset;
 
+/**
+ * A finished/dropped/deleted item must not keep a pending announcement alive.
+ * The announcement ledger is a separate module; import it lazily so the work
+ * ledger has no static dependency on prompt-side announcement code.
+ */
+async function retireAnnouncementsForWork(id: string, reason: string): Promise<void> {
+  try {
+    const { retireWorkAnnouncements } = await import("@/lib/scheduler/announcements");
+    await retireWorkAnnouncements(id, reason);
+  } catch {
+    // Retirement is best-effort; the brief also filters closed work.
+  }
+}
+
 export function normalizeWorkTopic(topic: string): string {
   return String(topic || "")
     .toLowerCase()
@@ -318,7 +332,7 @@ export async function upsertHeartbeatWork(opts: UpsertHeartbeatWorkOpts): Promis
     const sourceRef = opts.sourceRef || `${source}:${hashContent(normalizeWorkTopic(topic))}`;
     const existing = opts.forceNew
       ? undefined
-      : items.find((w) => w.sourceRef === sourceRef || (w.contentHash === hash && normalizeWorkTopic(w.topic) === normalizeWorkTopic(topic)));
+      : [...items].reverse().find((w) => w.sourceRef === sourceRef || (w.contentHash === hash && normalizeWorkTopic(w.topic) === normalizeWorkTopic(topic)));
 
     if (existing) {
       // Completed work with the same fingerprint must never be re-opened.
@@ -407,7 +421,7 @@ export interface HeartbeatWorkProgressPatch {
 export async function recordHeartbeatWorkProgress(
   patch: HeartbeatWorkProgressPatch,
 ): Promise<HeartbeatWorkItem | null> {
-  return withLedgerLock(async () => {
+  const updated = await withLedgerLock(async () => {
     const { items } = await loadAll();
     const item = findWork(items, patch);
     if (!item) return null;
@@ -432,6 +446,10 @@ export async function recordHeartbeatWorkProgress(
     await saveAll(items);
     return { ...item };
   });
+  if (updated && (updated.status === "done" || updated.status === "dropped")) {
+    await retireAnnouncementsForWork(updated.id, `work ${updated.status}`);
+  }
+  return updated;
 }
 
 export async function completeHeartbeatWork(idOrTopic: string, note = "Work completed."): Promise<HeartbeatWorkItem | null> {
@@ -452,6 +470,15 @@ export async function blockHeartbeatWork(idOrTopic: string, blocker: string, nex
 export async function getHeartbeatWorkItem(id: string): Promise<HeartbeatWorkItem | null> {
   const { items } = await loadAll();
   return items.find((w) => w.id === id || w.sourceRef === id) ?? null;
+}
+
+/** Bounded view of the whole ledger, used by discovery and diagnostics. */
+export async function listHeartbeatWork(limit = 200): Promise<HeartbeatWorkItem[]> {
+  const { items } = await loadAll();
+  return [...items]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, Math.max(1, limit))
+    .map((w) => ({ ...w }));
 }
 
 /**
@@ -492,13 +519,15 @@ export async function updateHeartbeatWorkItem(
 
 /** Remove one ledger item completely (Tasks board delete). */
 export async function deleteHeartbeatWorkItem(id: string): Promise<boolean> {
-  return withLedgerLock(async () => {
+  const removed = await withLedgerLock(async () => {
     const { items } = await loadAll();
     const kept = items.filter((w) => w.id !== id);
     if (kept.length === items.length) return false;
     await saveAll(kept);
     return true;
   });
+  if (removed) await retireAnnouncementsForWork(id, "work deleted");
+  return removed;
 }
 
 export async function listActionableHeartbeatWork(limit = 12): Promise<HeartbeatWorkItem[]> {
@@ -591,7 +620,7 @@ export async function resolveHeartbeatApproval(
   decision: "approved" | "rejected" | "cancelled",
   note?: string,
 ): Promise<HeartbeatWorkItem | null> {
-  return withLedgerLock(async () => {
+  const resolved = await withLedgerLock(async () => {
     const { items } = await loadAll();
     const item = items.find((w) => w.id === id || w.sourceRef === id);
     if (!item || !item.approval) return null;
@@ -609,6 +638,10 @@ export async function resolveHeartbeatApproval(
     await saveAll(items);
     return { ...item };
   });
+  // The approval request is no longer pending whatever the decision: retire
+  // its announcement so a later chat cannot ask the same question again.
+  if (resolved) await retireAnnouncementsForWork(resolved.id, `approval ${decision}`);
+  return resolved;
 }
 
 /** Bounded context for the next heartbeat — all values escaped and untrusted. */
@@ -658,14 +691,24 @@ export function extractHeartbeatDeliverables(output: string): string[] {
 }
 
 /**
- * Announce only a material state change (new deliverable, blocker, completion,
- * or approval need). Routine progress notes must not become chat spam.
+ * Announce only a material state change (new deliverable, blocker, or approval
+ * need). Routine progress notes and open -> in_progress transitions must not
+ * become chat spam. Finished work is recorded in the ledger, never queued as a
+ * pending announcement that could resurface after it was already done.
  */
 export async function announceHeartbeatWorkUpdates(item: HeartbeatWorkItem): Promise<string | null> {
-  const material = `${item.id}:${item.status}:${item.deliverables.join("|")}:${item.blockers.slice(-1).join("|")}:${item.approval?.action || ""}:${item.revision}`;
+  if (item.status === "done" || item.status === "dropped") return null;
+  const deliverableSig = item.deliverables.join("|");
+  const blockerSig = item.blockers.slice(-1).join("|");
+  const approvalSig = item.status === "awaiting_approval" && item.approval && !item.approval.resolvedAt
+    ? item.approval.action
+    : "";
+  if (!deliverableSig && !blockerSig && !approvalSig) return null;
+  // Status is deliberately absent: a blocked item that resumes progress is
+  // not new news, and must not create a fresh announcement revision.
+  const material = `${item.id}:${deliverableSig}:${blockerSig}:${approvalSig}`;
   const updateHash = hashContent(material);
   if (item.lastAnnouncedHash === updateHash) return null;
-  if (item.status === "open" && item.deliverables.length === 0 && item.blockers.length === 0) return null;
   try {
     const { recordAnnouncement } = await import("@/lib/scheduler/announcements");
     const parts = [
@@ -681,7 +724,7 @@ export async function announceHeartbeatWorkUpdates(item: HeartbeatWorkItem): Pro
       topic: `heartbeat-work:${item.id}`,
       source: "heartbeat",
       output: parts.join(" "),
-      metadata: { workId: item.id, revision: item.revision, updateHash },
+      metadata: { workId: item.id, revision: item.revision, updateHash, workStatus: item.status },
       forceNew: true,
     });
     await withLedgerLock(async () => {
@@ -704,19 +747,88 @@ export interface HeartbeatRunOutcome {
   workIds?: string[];
 }
 
+const OUTCOME_STOP_WORDS = new Set([
+  "about", "after", "again", "also", "and", "are", "been", "before", "being", "but", "can", "could", "did", "does",
+  "file", "files", "for", "from", "had", "has", "have", "here", "into", "item", "just", "latest", "more", "most",
+  "need", "needs", "new", "next", "not", "now", "only", "over", "progress", "run", "runs", "said", "some", "step",
+  "steps", "still", "such", "task", "than", "that", "the", "their", "them", "then", "there", "these", "they", "this",
+  "those", "through", "very", "was", "were", "what", "when", "where", "which", "while", "who", "will", "with",
+  "work", "workspace", "would", "you", "your",
+]);
+
+function outcomeTokens(value: string): string[] {
+  return String(value || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 4 && !OUTCOME_STOP_WORDS.has(w));
+}
+
+/** True only when this output actually talks about this work item. */
+function workItemReferenced(
+  item: HeartbeatWorkItem,
+  outputLower: string,
+  outputTokens: Set<string>,
+): boolean {
+  if (outputLower.includes(item.id.toLowerCase())) return true;
+  if (item.sourceRef && outputLower.includes(item.sourceRef.toLowerCase())) return true;
+  const topic = normalizeWorkTopic(item.topic);
+  if (topic.length >= 12 && outputLower.includes(topic)) return true;
+  const itemTokens = new Set(outcomeTokens(item.topic));
+  if (itemTokens.size > 0) {
+    let hits = 0;
+    for (const token of itemTokens) if (outputTokens.has(token)) hits++;
+    if (hits >= Math.min(2, itemTokens.size)) return true;
+  }
+  for (const deliverable of item.deliverables) {
+    const path = deliverable.replace(/\\/g, "/").toLowerCase();
+    const base = path.split("/").pop() || "";
+    if (path.length >= 5 && outputLower.includes(path)) return true;
+    if (base.length >= 5 && outputLower.includes(base)) return true;
+  }
+  return false;
+}
+
+/** When several items are referenced, only attach a deliverable to the one named near it. */
+function attributableDeliverables(
+  item: HeartbeatWorkItem,
+  deliverables: string[],
+  output: string,
+  referencedCount: number,
+): string[] {
+  if (deliverables.length === 0) return [];
+  if (referencedCount <= 1) return deliverables;
+  const lower = output.toLowerCase();
+  const itemTokens = outcomeTokens(item.topic);
+  return deliverables.filter((deliverable) => {
+    const index = lower.indexOf(deliverable.toLowerCase());
+    if (index < 0) return false;
+    const window = lower.slice(Math.max(0, index - 240), Math.min(lower.length, index + deliverable.length + 240));
+    return itemTokens.some((token) => window.includes(token))
+      || item.deliverables.some((known) => window.includes(known.toLowerCase()));
+  });
+}
+
 /**
- * Fold a finished background run into the work ledger. A quiet tick changes
- * nothing; an error is recorded as a blocker; new files become deliverables;
- * only an explicit [work_done:id] marker closes an item.
+ * Fold a finished background run into the work ledger.
+ *
+ * A quiet tick changes nothing. An infrastructure/model error is not evidence
+ * about the work: it never adds a blocker and never flips a status. Success
+ * output is attributed only to items it explicitly names (id/sourceRef/topic
+ * tokens/known deliverable); an unrelated run cannot smear progress across the
+ * whole ledger. Only an explicit [work_done:id] marker closes an item, and a
+ * closed item never leaves a pending announcement behind.
  */
 export async function recordHeartbeatRunOutcome(opts: HeartbeatRunOutcome): Promise<HeartbeatWorkItem[]> {
   const output = sanitizeUntrustedText(opts.output, 4000);
   if (!output || /^heartbeat_ok\b/i.test(output) || output.toLowerCase() === "(no output)") return [];
+  if (opts.status === "error") return [];
   const doneIds = new Set<string>();
   const doneRe = /\[(?:work_done|heartbeat_work_done):([^\]\n]+)\]/gi;
   let m: RegExpExecArray | null;
   while ((m = doneRe.exec(output)) !== null) doneIds.add(sanitizeUntrustedText(m[1], 120));
   const deliverables = extractHeartbeatDeliverables(output);
+  const outputLower = output.toLowerCase();
+  const outputTokens = new Set(outcomeTokens(output));
 
   const changed = await withLedgerLock(async () => {
     const { items } = await loadAll();
@@ -725,21 +837,27 @@ export async function recordHeartbeatRunOutcome(opts: HeartbeatRunOutcome): Prom
     const active = items
       .filter((w) => ["open", "in_progress", "blocked"].includes(w.status))
       .filter((w) => ids.size === 0 || ids.has(w.id))
-      .slice(0, 6);
+      .slice(0, 12);
+    const referenced = active.filter((item) => {
+      const isDone = doneIds.has(item.id) || doneIds.has(item.sourceRef);
+      return isDone || workItemReferenced(item, outputLower, outputTokens);
+    });
     const updated: HeartbeatWorkItem[] = [];
-    for (const item of active) {
-      const note = opts.status === "error"
-        ? `Background run failed: ${output.slice(0, 300)}`
+    for (const item of referenced) {
+      const isDone = doneIds.has(item.id) || doneIds.has(item.sourceRef);
+      const itemDeliverables = attributableDeliverables(item, deliverables, output, referenced.length);
+      const note = isDone
+        ? `Background run completed this item: ${output.slice(0, 350)}`
         : `Background run progress: ${output.slice(0, 350)}`;
       item.progress.push({ at: now, note });
       item.progress = item.progress.slice(-MAX_PROGRESS);
-      item.deliverables = Array.from(new Set([...item.deliverables, ...deliverables])).slice(-12);
-      if (opts.status === "error") item.blockers.push(`Heartbeat execution error: ${output.slice(0, 240)}`);
-      const isDone = doneIds.has(item.id) || doneIds.has(item.sourceRef);
-      item.status = isDone ? "done" : opts.status === "error" ? "blocked" : "in_progress";
+      item.deliverables = Array.from(new Set([...item.deliverables, ...itemDeliverables])).slice(-12);
       if (isDone) {
+        item.status = "done";
         item.completedAt = now;
         item.nextStep = "";
+      } else if (item.status === "open" || item.status === "blocked") {
+        item.status = "in_progress";
       }
       item.lastWorkedAt = now;
       item.updatedAt = now;
@@ -748,6 +866,13 @@ export async function recordHeartbeatRunOutcome(opts: HeartbeatRunOutcome): Prom
     if (updated.length > 0) await saveAll(items);
     return updated;
   });
+  // Retire stale announcements before deciding whether a material update is
+  // worth announcing. Closed work is never announced as pending chat news.
+  for (const item of changed) {
+    if (item.status === "done" || item.status === "dropped") {
+      await retireAnnouncementsForWork(item.id, `work ${item.status}`);
+    }
+  }
   // Announce outside the lock (announceHeartbeatWorkUpdates takes the lock).
   for (const item of changed) await announceHeartbeatWorkUpdates(item);
   return changed;

@@ -734,6 +734,41 @@ export async function markAnnouncementsDelivered(
 
 export const markDelivered = markAnnouncementsDelivered;
 
+/**
+ * Retire every undelivered announcement that belongs to one work item.
+ *
+ * Completing, dropping, or deleting work must never leave an old
+ * "in progress" or "approval needed" item in the pending ledger: a later
+ * chat would otherwise re-announce something that is already finished.
+ */
+export async function retireWorkAnnouncements(workId: string, reason = "work closed"): Promise<number> {
+  const id = String(workId || "").trim();
+  if (!id) return 0;
+  return withLedgerLock(async () => {
+    const ledger = await loadAll();
+    const now = Date.now();
+    let changed = 0;
+    for (const a of ledger.items) {
+      if (a.status === "superseded" || a.deliveredAt) continue;
+      const metaWorkId = a.metadata && typeof a.metadata.workId === "string" ? a.metadata.workId : "";
+      const matches = metaWorkId === id
+        || a.taskId === `heartbeat-work:${id}`
+        || a.taskId === `heartbeat-approval:${id}`;
+      if (!matches) continue;
+      a.status = "superseded";
+      a.claimedBy = null;
+      a.claimExpiresAt = null;
+      a.metadata = { ...(a.metadata || {}), retiredReason: reason, retiredAt: now };
+      a.updatedAt = now;
+      changed++;
+    }
+    if (changed > 0) await saveAll(ledger);
+    return changed;
+  });
+}
+
+export const retireAnnouncementsForWork = retireWorkAnnouncements;
+
 export async function getAnnouncement(id: string): Promise<Announcement | null> {
   const ledger = await loadAll();
   const found = ledger.items.find((a) => a.id === id);

@@ -20,6 +20,8 @@ import {
   SiDropbox,
   SiGooglecalendar,
   SiGoogledrive,
+  SiReddit,
+  SiYoutube,
 } from "react-icons/si";
 
 /** Official Gmail (2020) mark — multicolor envelope, same as the home-page strip. */
@@ -141,6 +143,8 @@ export const CONNECTOR_ICONS: Record<string, React.ComponentType<{ size?: number
   asana: SiAsana,
   dropbox: SiDropbox,
   canva: CanvaIcon,
+  reddit: SiReddit,
+  youtube: SiYoutube,
 };
 
 export function renderConnectorIcon(id: string, size: number = 24) {

@@ -13,6 +13,7 @@ const CONNECTOR_NAMES: Record<string, string> = {
   airtable: "Airtable", notion: "Notion", slack: "Slack",
   github: "GitHub", google: "Google", hubspot: "HubSpot",
   asana: "Asana", dropbox: "Dropbox", canva: "Canva",
+  reddit: "Reddit", youtube: "YouTube",
 };
 
 const CONNECTOR_COLORS: Record<string, string> = {
@@ -20,6 +21,7 @@ const CONNECTOR_COLORS: Record<string, string> = {
   airtable: "#FFBF00", notion: "currentColor", slack: "#4A154B",
   github: "currentColor", google: "#4285F4", hubspot: "#FF7A59",
   asana: "#F06A6A", dropbox: "#0061FF", canva: "#7D2AE8",
+  reddit: "#FF4500", youtube: "#FF0000",
 };
 
 export const ConnectServiceToolUI: ToolCallMessagePartComponent = ({ args: rawArgs, result, status }) => {

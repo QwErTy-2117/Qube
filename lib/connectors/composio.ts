@@ -226,7 +226,7 @@ export { composioLogoUrl } from "./composio-logo";
 const KNOWN_ICON_IDS = new Set([
   "linear","atlassian","trello","airtable","notion",
   "slack","github","google","hubspot","asana","dropbox",
-  "canva",
+  "canva","reddit","youtube",
 ]);
 
 const KNOWN_COLORS: Record<string, string> = {
@@ -242,6 +242,8 @@ const KNOWN_COLORS: Record<string, string> = {
   asana: "#F06A6A",
   dropbox: "#0061FF",
   canva: "#00C4CC",
+  reddit: "#FF4500",
+  youtube: "#FF0000",
 };
 
 // Static metadata for the curated connectors — lets listConnectors return
@@ -260,6 +262,8 @@ const STATIC_CONNECTOR_META: Record<string, { name: string; description: string;
   asana: { name: "Asana", description: "Task management and team project tracking.", appUrl: "https://asana.com" },
   dropbox: { name: "Dropbox", description: "Cloud file storage and sharing.", appUrl: "https://dropbox.com" },
   canva: { name: "Canva", description: "Design graphics, slides, and social posts.", appUrl: "https://canva.com" },
+  reddit: { name: "Reddit", description: "Posts, comments, and subreddit discussions.", appUrl: "https://www.reddit.com" },
+  youtube: { name: "YouTube", description: "Videos, channels, and playlists.", appUrl: "https://www.youtube.com" },
 };
 
 // --- Caches: toolkit catalog (slow, rarely changes) + per-user list (connected flags change) ---
@@ -303,7 +307,30 @@ export const COMPOSIO_TOOLKIT_MAP: Record<string, string[]> = {
   asana: ["asana"],
   dropbox: ["dropbox"],
   canva: ["canva"],
+  reddit: ["reddit"],
+  youtube: ["youtube"],
 };
+
+/**
+ * Toolkit allowlist for a Composio session.
+ *
+ * `sessions.create({ toolkits })` is a HARD allowlist: calling a tool whose
+ * toolkit is missing returns
+ * `[Session Restriction] Toolkit '<slug>' is not allowed for this session.`
+ * The curated map above is only a catalog default, not the set of apps the
+ * user actually connected — so the allowlist must be the connected toolkits
+ * themselves. Otherwise apps connected outside the curated set (Reddit,
+ * YouTube, anything newly added to the Composio project) show as connected in
+ * Settings but every call is rejected by the session.
+ */
+export function sessionToolkitsForConnected(connectedSlugs: Iterable<string>): string[] {
+  const toolkits = new Set<string>();
+  for (const slug of connectedSlugs) {
+    const normalized = (slug || "").trim().toLowerCase();
+    if (normalized) toolkits.add(normalized);
+  }
+  return [...toolkits].sort();
+}
 
 export async function listConnectors(userId?: string, opts?: { bypassCache?: boolean }): Promise<ConnectorDisplay[]> {
   const uid = resolveComposioUserId(userId);
@@ -517,8 +544,16 @@ export function getToolkitSlugs(connectorId: string): string[] {
 
 export async function getSessionForUser(userId: string) {
   const client = getClient();
-  const toolkits = Object.values(COMPOSIO_TOOLKIT_MAP).flat();
-  const session = await client.sessions.create(userId, {
+  const uid = resolveComposioUserId(userId);
+  // Curated catalog (so connection-management helpers can link any app Qube
+  // advertises) + everything this user already connected — including apps
+  // outside the curated map, e.g. Reddit and YouTube.
+  const connected = await getConnectedToolkits(uid);
+  const toolkits = sessionToolkitsForConnected([
+    ...Object.values(COMPOSIO_TOOLKIT_MAP).flat(),
+    ...connected,
+  ]);
+  const session = await client.sessions.create(uid, {
     toolkits,
     manageConnections: true,
   });
@@ -531,25 +566,37 @@ export async function getConnectorTools(userId?: string) {
   const allTools: Record<string, any> = {};
 
   const connectedSlugs = await getConnectedToolkits(uid);
+  const toolkits = sessionToolkitsForConnected(connectedSlugs);
+  if (toolkits.length === 0) return allTools;
 
-  const connectorIds = Object.keys(COMPOSIO_TOOLKIT_MAP);
-  await Promise.all(
-    connectorIds.map(async (cid) => {
-      const toolkits = COMPOSIO_TOOLKIT_MAP[cid];
-      const hasConnection = toolkits.some((slug) => connectedSlugs.includes(slug));
-      if (!hasConnection) return;
-      try {
-        const session = await client.sessions.create(uid, {
-          toolkits,
-          manageConnections: true,
-        });
-        const tools = await session.tools();
-        Object.assign(allTools, tools);
-      } catch (e) {
-        console.error(`[composio] failed to get tools for connector ${cid}:`, e);
-      }
-    })
-  );
+  const loadSessionTools = async (allowlist: string[]): Promise<Record<string, any>> => {
+    const session = await client.sessions.create(uid, {
+      toolkits: allowlist,
+      manageConnections: true,
+    });
+    return session.tools();
+  };
+
+  // ONE session with every connected toolkit. Composio's session tools
+  // (search / multi-execute / manage-connections) can only reach toolkits in
+  // the session allowlist, and every session returns the same helper-tool
+  // keys — the old one-session-per-connector loop merged those maps, so an
+  // arbitrary connector's narrow allowlist was the one actually in effect.
+  // That made tools from other connected apps (Reddit, YouTube, …) fail with
+  // "[Session Restriction] Toolkit '…' is not allowed for this session".
+  try {
+    Object.assign(allTools, await loadSessionTools(toolkits));
+  } catch (e) {
+    console.error("[composio] combined connector session failed, retrying per toolkit:", e);
+    // Degraded path: isolate a single bad toolkit so the rest still load.
+    const results = await Promise.allSettled(
+      toolkits.map((toolkit) => loadSessionTools([toolkit])),
+    );
+    for (const result of results) {
+      if (result.status === "fulfilled") Object.assign(allTools, result.value);
+      else console.error("[composio] failed to load toolkit session:", result.reason);
+    }
+  }
 
   const tools = allTools;
 

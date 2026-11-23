@@ -52,6 +52,8 @@ export function toolkitSlugForIconId(id: string): string | null {
     case "asana":
     case "dropbox":
     case "canva":
+    case "reddit":
+    case "youtube":
       return s;
     default:
       return null;

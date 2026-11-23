@@ -28,6 +28,8 @@ const TOOLKIT_SLUGS: Record<string, string[]> = {
   asana: ["asana"],
   dropbox: ["dropbox"],
   canva: ["canva"],
+  reddit: ["reddit"],
+  youtube: ["youtube"],
 };
 
 interface DisplayConnector {

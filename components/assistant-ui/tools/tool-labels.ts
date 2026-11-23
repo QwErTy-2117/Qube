@@ -152,6 +152,8 @@ export const CONNECTOR_PREFIX_LABELS: Record<string, string> = {
   jira: "Ticketing around",
   atlassian: "Ticketing around",
   canva: "Doodling a design",
+  reddit: "Scrolling Reddit",
+  youtube: "Watching videos",
   composio: "Rooting around your apps",
 };
 

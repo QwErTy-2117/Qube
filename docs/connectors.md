@@ -7,9 +7,8 @@ using that app's normal sign-in. There are no bot tokens to create by hand.
 ## Which apps are supported
 
 Connectors are provided through [Composio](https://composio.dev/), an
-integration service that handles each app's sign-in and API. Qube has a
-curated set of twelve connectors, and these are the apps whose tools the
-agent can use:
+integration service that handles each app's sign-in and API. Qube highlights
+a curated set of connectors:
 
 - **Google** (one connection): Gmail, Google Calendar, Google Drive
 - **Team chat:** Slack
@@ -18,10 +17,13 @@ agent can use:
 - **Project management:** Linear, Jira, Trello, Asana
 - **Data and CRM:** Airtable, HubSpot
 - **Files and design:** Dropbox, Canva
+- **Social and video:** Reddit, YouTube
 
 **Settings → Connectors** has a search box and may also list other apps that
-are configured in the Composio project behind the API key, but the agent only
-loads tools for the curated apps above.
+are configured in the Composio project behind the API key. The agent loads
+tools for every app you actually connect — the curated list only controls
+which apps Qube features by default, not which connected apps the agent can
+use.
 
 ## Connecting an app
 

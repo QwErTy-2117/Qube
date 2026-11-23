@@ -154,6 +154,22 @@ export const CONNECTOR_METAS: ConnectorMeta[] = [
     prefixes: ["canva"],
   },
   {
+    displayId: "reddit",
+    iconId: "reddit",
+    name: "Reddit",
+    playful: "Scrolling Reddit",
+    brandColor: "#FF4500",
+    prefixes: ["reddit"],
+  },
+  {
+    displayId: "youtube",
+    iconId: "youtube",
+    name: "YouTube",
+    playful: "Watching videos",
+    brandColor: "#FF0000",
+    prefixes: ["youtube"],
+  },
+  {
     displayId: "composio",
     iconId: "composio",
     name: "Apps",

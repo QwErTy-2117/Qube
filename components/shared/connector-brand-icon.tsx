@@ -15,7 +15,7 @@ export const STATIC_CONNECTOR_ICON_IDS = new Set([
   "linear", "atlassian", "trello", "airtable", "notion",
   "slack", "github", "google", "gmail", "googlecalendar", "googledrive",
   "hubspot", "asana", "dropbox",
-  "canva",
+  "canva", "reddit", "youtube",
 ]);
 
 /**

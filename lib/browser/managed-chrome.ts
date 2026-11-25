@@ -46,7 +46,7 @@ type ManagedBrowser = {
  * behavior is unchanged: Qube launches/adopts its own Chromium on
  * BROWSER_CDP_PORT.
  */
-function normalizeEndpoint(raw: string | undefined): string | null {
+export function normalizeEndpoint(raw: string | undefined): string | null {
   if (!raw) return null;
   try {
     const u = new URL(raw.trim());

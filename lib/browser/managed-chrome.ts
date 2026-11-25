@@ -32,14 +32,62 @@ type ManagedBrowser = {
   pid: number;
 };
 
+/**
+ * Optional external Chromium to attach to instead of launching our own.
+ *
+ * Set BROWSER_CDP_ENDPOINT (or BROWSER_CDP_URL) to a Chromium/Chrome that
+ * already exposes a DevTools endpoint — for example the OpenBot browser —
+ * and Qube drives that same backend over CDP rather than spawning a private
+ * one. This is what lets Qube "use the same backend as the OpenBot browser":
+ * both are Chromium over the Chrome DevTools Protocol, and pointing this at
+ * OpenBot's endpoint makes Qube attach to it instead of a separate instance.
+ *
+ * Accepts `http(s)://host:port[/path]`; any path is ignored. When unset,
+ * behavior is unchanged: Qube launches/adopts its own Chromium on
+ * BROWSER_CDP_PORT.
+ */
+function normalizeEndpoint(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw.trim());
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    const port = u.port ? parseInt(u.port, 10) : u.protocol === "https:" ? 443 : 80;
+    if (!Number.isFinite(port) || port <= 0) return null;
+    return `${u.protocol}//${u.hostname}:${port}`;
+  } catch {
+    return null;
+  }
+}
+
+const EXTERNAL_CDP_BASE = normalizeEndpoint(
+  process.env.BROWSER_CDP_ENDPOINT || process.env.BROWSER_CDP_URL,
+);
+
 let browserProc: ReturnType<typeof spawn> | null = null;
 let ensurePromise: Promise<ManagedBrowser> | null = null;
-let activePort: number = BROWSER_CDP_PORT;
+let activePort: number = EXTERNAL_CDP_BASE
+  ? parseInt(new URL(EXTERNAL_CDP_BASE).port, 10) || BROWSER_CDP_PORT
+  : BROWSER_CDP_PORT;
 let weOwnProc = false;
 
 /** The CDP port currently in use (adopted instances may differ). */
 export function getBrowserPort(): number {
   return activePort;
+}
+
+/**
+ * Base URL of the CDP endpoint every browser path targets (no trailing
+ * slash). External attach (BROWSER_CDP_ENDPOINT) wins; otherwise the local
+ * managed Chromium on `127.0.0.1:<port>`. Callers should build DevTools URLs
+ * from this so an external host (e.g. the OpenBot browser) works everywhere.
+ */
+export function getBrowserBaseUrl(): string {
+  return EXTERNAL_CDP_BASE ?? `http://127.0.0.1:${activePort}`;
+}
+
+/** True when Qube is attached to an external Chromium (e.g. the OpenBot browser). */
+export function isExternalBrowser(): boolean {
+  return EXTERNAL_CDP_BASE != null;
 }
 
 function profileDir(): string {
@@ -162,18 +210,23 @@ export function findChromeBinary(): string | null {
 }
 
 async function waitForEndpoint(port: number, timeoutMs: number): Promise<void> {
+  await waitForEndpointUrl(`http://127.0.0.1:${port}`, timeoutMs);
+}
+
+/** Like waitForEndpoint but for an arbitrary base URL (external attach). */
+async function waitForEndpointUrl(baseUrl: string, timeoutMs: number): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 1500);
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: ctrl.signal });
+      const res = await fetch(`${baseUrl}/json/version`, { signal: ctrl.signal });
       clearTimeout(t);
       if (res.ok) return;
     } catch {}
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error(`Chrome DevTools endpoint did not respond on port ${port} within ${timeoutMs}ms`);
+  throw new Error(`Chrome DevTools endpoint did not respond at ${baseUrl} within ${timeoutMs}ms`);
 }
 
 function installShutdownHooks() {
@@ -207,6 +260,19 @@ let hooksInstalled = false;
 export function ensureManagedChrome(): Promise<ManagedBrowser> {
   if (ensurePromise) return ensurePromise;
   ensurePromise = (async () => {
+    // External backend (e.g. the OpenBot browser): attach over CDP and never
+    // launch or kill it — it belongs to whoever started it.
+    if (EXTERNAL_CDP_BASE) {
+      await waitForEndpointUrl(EXTERNAL_CDP_BASE, 8000);
+      activePort = parseInt(new URL(EXTERNAL_CDP_BASE).port, 10) || activePort;
+      weOwnProc = false;
+      console.log(`[managed-chrome] Attached to external Chromium at ${EXTERNAL_CDP_BASE}`);
+      try {
+        const { noteBrowserReady } = await import("./screencast");
+        noteBrowserReady();
+      } catch {}
+      return { port: activePort, endpoint: EXTERNAL_CDP_BASE, pid: 0 };
+    }
     if (browserProc && !browserProc.killed && browserProc.exitCode === null) {
       try {
         await waitForEndpoint(activePort, 3000);
@@ -342,10 +408,11 @@ export async function getBrowserStatus(): Promise<BrowserStatus> {
   const procAlive =
     !!browserProc && !browserProc.killed && (browserProc.exitCode === null || browserProc.exitCode === undefined);
   let listening = false;
+  const base = getBrowserBaseUrl();
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 2000);
-    const res = await fetch(`http://127.0.0.1:${activePort}/json/version`, { signal: ctrl.signal });
+    const res = await fetch(`${base}/json/version`, { signal: ctrl.signal });
     clearTimeout(t);
     listening = res.ok;
   } catch {}
@@ -354,7 +421,7 @@ export async function getBrowserStatus(): Promise<BrowserStatus> {
     listening,
     pid: procAlive ? (browserProc?.pid ?? 0) : 0,
     port: activePort,
-    endpoint: `http://127.0.0.1:${activePort}`,
+    endpoint: base,
   };
 }
 

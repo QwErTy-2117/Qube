@@ -134,9 +134,8 @@ async function fallbackBrowserViaManagedChrome(toolName: string, args: unknown):
   const fallbackTools = new Set(["open_tab", "navigate", "tabs", "user_tabs", "page_info", "cdp", "ping", "info", "wait_load", "move_mouse", "name_session", "turn_ended", "finalize_tabs"]);
   if (!fallbackTools.has(toolName)) return null;
   try {
-    const { getBrowserPort } = await import("@/lib/browser/managed-chrome");
-    const port = getBrowserPort();
-    const base = `http://127.0.0.1:${port}`;
+    const { getBrowserBaseUrl } = await import("@/lib/browser/managed-chrome");
+    const base = getBrowserBaseUrl();
     // Quick probe
     const probe = await fetch(`${base}/json/version`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
     if (!probe || !probe.ok) return null;

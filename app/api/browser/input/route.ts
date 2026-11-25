@@ -1,5 +1,5 @@
 import { panelClick, panelMouseMove, panelWheel, panelKey, panelType } from "@/lib/browser/screencast";
-import { getBrowserPort } from "@/lib/browser/managed-chrome";
+import { getBrowserBaseUrl } from "@/lib/browser/managed-chrome";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,8 +54,8 @@ export async function POST(req: Request) {
       // the matching CDP response so failures reach the panel UI instead of
       // silently leaving the user on the old page.
       try {
-        const port = getBrowserPort();
-        const listRes = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000) });
+        const base = getBrowserBaseUrl();
+        const listRes = await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(5000) });
         if (!listRes.ok) return Response.json({ error: `browser list failed (${listRes.status})` }, { status: 502 });
         const targets = (await listRes.json()) as Array<{ id: string; type: string; url: string; webSocketDebuggerUrl?: string }>;
         const pages = targets.filter((t) => t.type === "page" && t.webSocketDebuggerUrl);
@@ -64,8 +64,8 @@ export async function POST(req: Request) {
         if (!current?.webSocketDebuggerUrl) {
           // No live target at all: open a fresh tab so the user still lands
           // on the page instead of staring at the old one.
-          const put = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURI(url)}`, { method: "PUT", signal: AbortSignal.timeout(5000) });
-          if (!put.ok) return Response.json({ error: `browser is not answering (port ${port})` }, { status: 502 });
+          const put = await fetch(`${base}/json/new?${encodeURI(url)}`, { method: "PUT", signal: AbortSignal.timeout(5000) });
+          if (!put.ok) return Response.json({ error: `browser is not answering (${base})` }, { status: 502 });
           return Response.json({ ok: true });
         }
         const { default: WebSocket } = await import("ws");

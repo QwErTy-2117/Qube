@@ -281,8 +281,8 @@ let activeTargetId: string | null = null;
 export async function getPageTarget(): Promise<{ id: string; webSocketDebuggerUrl?: string; url?: string } | null> {
   try {
     const mod = await import("@/lib/browser/managed-chrome");
-    const p = mod.getBrowserPort();
-    const res = await fetch(`http://127.0.0.1:${p}/json/list`, { signal: AbortSignal.timeout(5000) });
+    const base = mod.getBrowserBaseUrl();
+    const res = await fetch(`${base}/json/list`, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;
     const targets = (await res.json()) as Array<{ id: string; type: string; url: string; webSocketDebuggerUrl?: string }>;
     const pages = targets.filter((t) => t.type === "page" && t.webSocketDebuggerUrl);

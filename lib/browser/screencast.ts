@@ -13,7 +13,7 @@
  */
 
 import WebSocket from "ws";
-import { getBrowserPort } from "./managed-chrome";
+import { getBrowserBaseUrl } from "./managed-chrome";
 
 export type FrameMeta = { deviceWidth: number; deviceHeight: number };
 export type FrameListener = (frame: { jpg: string; url: string; meta: FrameMeta | null }) => void;
@@ -71,7 +71,7 @@ export function getFramesStats(): {
 function devtoolsHttp(path: string, init?: RequestInit): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 8000);
-  return fetch(`http://127.0.0.1:${getBrowserPort()}${path}`, { ...init, signal: ctrl.signal }).finally(() =>
+  return fetch(`${getBrowserBaseUrl()}${path}`, { ...init, signal: ctrl.signal }).finally(() =>
     clearTimeout(t)
   );
 }

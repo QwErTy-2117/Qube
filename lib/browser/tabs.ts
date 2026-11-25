@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { getDataDir } from "@/lib/data-dir";
-import { getBrowserPort } from "./managed-chrome";
+import { getBrowserBaseUrl } from "./managed-chrome";
 
 const MAX_TABS = 10;
 
@@ -27,7 +27,7 @@ async function listTargets(): Promise<Array<{ id: string; type: string; url: str
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 5000);
   try {
-    const res = await fetch(`http://127.0.0.1:${getBrowserPort()}/json/list`, { signal: ctrl.signal });
+    const res = await fetch(`${getBrowserBaseUrl()}/json/list`, { signal: ctrl.signal });
     if (!res.ok) return [];
     return (await res.json()) as Array<{ id: string; type: string; url: string }>;
   } catch {
@@ -85,7 +85,7 @@ export async function restoreBrowserTabs(): Promise<void> {
     for (const url of missing) {
       try {
         // DevTools API takes the raw URL as the query string (not ?url=).
-        await fetch(`http://127.0.0.1:${getBrowserPort()}/json/new?${encodeURI(url)}`, { method: "PUT" });
+        await fetch(`${getBrowserBaseUrl()}/json/new?${encodeURI(url)}`, { method: "PUT" });
         await new Promise((r) => setTimeout(r, 150));
       } catch {}
     }

@@ -21,7 +21,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { getDataDir } from "@/lib/data-dir";
 
 export const BROWSER_CDP_PORT = parseInt(process.env.BROWSER_CDP_PORT || "9222", 10);
@@ -122,11 +122,43 @@ function clearStaleLocks(): void {
   }
 }
 
+/**
+ * Bundled-Chromium candidate paths under a sidecar root, in priority order,
+ * for the given platform. Mirrors the Playwright cache layout that
+ * scripts/build-sidecar.js copies into sidecar-dist/browser/chromium.
+ * Pure + exported so the resolution order is unit-testable.
+ */
+export function bundledChromiumCandidates(root: string, plat: NodeJS.Platform = process.platform): string[] {
+  const base = join(root, "browser", "chromium");
+  if (plat === "win32") {
+    return [join(base, "chrome-win64", "chrome.exe"), join(base, "chrome-win", "chrome.exe")];
+  }
+  if (plat === "darwin") {
+    return [join(base, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium")];
+  }
+  return [join(base, "chrome-linux64", "chrome"), join(base, "chrome-linux", "chrome")];
+}
+
 function candidateBinaries(): string[] {
   const fromEnv = process.env.CHROME_PATH;
   const home = homedir();
   const list: string[] = [];
   if (fromEnv) list.push(fromEnv);
+  // Bundled Chromium shipped inside the sidecar (sidecar-dist/browser/chromium).
+  // The sidecar runs with cwd = the writable app dir (see src-tauri sidecar.rs),
+  // and process.execPath is <app>/node-bin/node — so both cwd and ../ from the
+  // node binary resolve to the sidecar root. Prefer this so end-user machines
+  // need no separate Chrome/Edge install.
+  const sidecarRoots: string[] = [];
+  try { sidecarRoots.push(process.cwd()); } catch {}
+  try {
+    const execDir = dirname(process.execPath || "");
+    if (execDir) sidecarRoots.push(join(execDir, ".."));
+  } catch {}
+  for (const root of sidecarRoots) {
+    if (!root) continue;
+    for (const c of bundledChromiumCandidates(root)) list.push(c);
+  }
   if (platform() === "win32") {
     // Use env vars — C: is not always the system drive, and Program Files
     // can be localized/redirected. LOCALAPPDATA covers per-user installs.

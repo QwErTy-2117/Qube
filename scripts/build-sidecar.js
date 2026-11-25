@@ -126,6 +126,75 @@ try {
   process.exit(1);
 }
 
+/**
+ * Copy a Playwright Chromium build into sidecar-dist/browser/chromium so the
+ * packaged app ships its own browser engine (no separate Chrome install).
+ * Returns the bundled chromium executable path, or null if none was found.
+ *
+ * Layout mirrors Playwright's cache: chromium-<rev>/chrome-linux64/chrome,
+ * chrome-mac/Chromium.app/.../Chromium, chrome-win64/chrome.exe (and the
+ * older chrome-linux / chrome-win variants). managed-chrome.ts searches the
+ * same relative locations under the sidecar root.
+ */
+function findPlaywrightChromium() {
+  const caches = [];
+  if (process.env.PLAYWRIGHT_BROWSERS_PATH) caches.push(process.env.PLAYWRIGHT_BROWSERS_PATH);
+  const home = os.homedir();
+  if (os.platform() === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    caches.push(path.join(localAppData, 'ms-playwright'));
+    caches.push(path.join(home, '.cache', 'ms-playwright'));
+  } else if (os.platform() === 'darwin') {
+    caches.push(path.join(home, 'Library', 'Caches', 'ms-playwright'));
+    caches.push(path.join(home, '.cache', 'ms-playwright'));
+  } else {
+    caches.push(path.join(home, '.cache', 'ms-playwright'));
+  }
+  for (const cache of caches) {
+    let entries = [];
+    try { entries = fs.readdirSync(cache); } catch { continue; }
+    for (const e of entries) {
+      if (!e.startsWith('chromium-') || e.includes('headless')) continue;
+      const base = path.join(cache, e);
+      const candidates = os.platform() === 'win32'
+        ? [path.join(base, 'chrome-win64', 'chrome.exe'), path.join(base, 'chrome-win', 'chrome.exe')]
+        : os.platform() === 'darwin'
+          ? [path.join(base, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium')]
+          : [path.join(base, 'chrome-linux64', 'chrome'), path.join(base, 'chrome-linux', 'chrome')];
+      for (const c of candidates) {
+        if (fs.existsSync(c)) return { base, bin: c };
+      }
+    }
+  }
+  return null;
+}
+
+function bundleChromium() {
+  let found = findPlaywrightChromium();
+  if (!found) {
+    console.log('  No Playwright Chromium in cache — trying `npx playwright install chromium`...');
+    try {
+      execSync('npx --yes playwright install chromium', { stdio: 'inherit' });
+    } catch (e) {
+      throw new Error(`playwright install failed: ${e.message}`);
+    }
+    found = findPlaywrightChromium();
+  }
+  if (!found) throw new Error('no Chromium build found after install attempt');
+
+  const destRoot = path.join(sidecarDistDir, 'browser', 'chromium');
+  if (fs.existsSync(destRoot)) fs.rmSync(destRoot, { recursive: true, force: true });
+  // Copy the whole chromium-<rev> dir (engine + resources + ICU data).
+  copySync(found.base, destRoot);
+  // Ensure the executable bit survives the copy on Unix.
+  if (os.platform() !== 'win32') {
+    const relBin = path.relative(found.base, found.bin);
+    const destBin = path.join(destRoot, relBin);
+    try { fs.chmodSync(destBin, 0o755); } catch {}
+  }
+  console.log(`  Bundled Chromium -> ${destRoot}`);
+}
+
 function copySync(src, dest) {
   if (!fs.existsSync(src)) return;
   const stat = fs.lstatSync(src);
@@ -282,6 +351,22 @@ try {
     console.error(`  ERROR: could not bundle Node.js runtime: ${e.message}`);
     console.error('  Without it the app cannot start on machines without Node.js. Failing build.');
     process.exit(1);
+  }
+
+  // Bundle a Chromium build so end-user machines need no separate Chrome/Edge
+  // install for the browser tools. Qube's browser is Chromium over CDP; the
+  // managed-chrome launcher already searches a bundled path (see
+  // lib/browser/managed-chrome.ts candidateBinaries). We copy a Playwright
+  // Chromium (same engine the e2e tests use) into sidecar-dist/browser/chromium.
+  // Source: $PLAYWRIGHT_BROWSERS_PATH or the OS Playwright cache; if absent we
+  // try `npx playwright install chromium` once. Non-fatal: if no Chromium can be
+  // provisioned the app still builds and falls back to system Chrome/Edge.
+  console.log('Bundling Chromium for browser tools...');
+  try {
+    bundleChromium();
+  } catch (e) {
+    console.warn(`  WARNING: could not bundle Chromium (${e.message}).`);
+    console.warn('  Browser tools will fall back to a system Chrome/Edge install.');
   }
 
   // Embed COMPOSIO_API_KEY into a runtime config file

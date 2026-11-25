@@ -70,6 +70,13 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Install Chromium for bundling
+        # build-sidecar.js bundles a Playwright Chromium into sidecar-dist so
+        # the packaged app needs no separate Chrome install. Prefer an explicit
+        # install here (cached across runs) over the in-script npx fallback.
+        shell: bash
+        run: npx --yes playwright install chromium
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -232,6 +239,12 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
+
+      - name: Install Chromium for bundling
+        # Bundled into sidecar-dist by build-sidecar.js (via tauri
+        # beforeBuildCommand) so the shipped app needs no separate Chrome.
+        shell: bash
+        run: npx --yes playwright install chromium
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v1

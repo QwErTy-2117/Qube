@@ -3,6 +3,8 @@ import path from 'path';
 import { execSync } from 'child_process';
 import os from 'os';
 
+import { normalizeSidecarPermissions, assertWorldReadable } from './sidecar-permissions.mjs';
+
 const rootDir = process.cwd();
 const sidecarDistDir = path.join(rootDir, 'sidecar-dist');
 const nextDir = path.join(rootDir, '.next');
@@ -386,6 +388,21 @@ try {
     console.log('  COMPOSIO_API_KEY embedded in env.json');
   } else {
     console.warn('  WARNING: COMPOSIO_API_KEY not found — connectors will not work');
+  }
+
+  // Qube copies the whole sidecar to a temp dir as the installing user at
+  // startup. Playwright's Chromium cache has 0600 files (deb.deps/rpm.deps)
+  // and 0700 dirs (extensions); copyFileSync preserved them, so the deb'd
+  // app failed with EACCES on first launch (v0.0.123). Normalize everything
+  // after all copies, then fail the build if the guard still sees a bad mode.
+  console.log('Normalizing sidecar permissions...');
+  const perms = normalizeSidecarPermissions(sidecarDistDir);
+  if (perms.skipped) {
+    console.log('  POSIX permission normalization skipped on Windows');
+  } else {
+    console.log(`  Normalized ${perms.changed} of ${perms.checked} entries (dirs 0755, files >= 0644; exec/setuid preserved)`);
+    assertWorldReadable(sidecarDistDir);
+    console.log('  World-readable guard passed');
   }
 
   console.log('Sidecar distribution prepared successfully!');

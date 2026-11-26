@@ -2792,7 +2792,7 @@ dependencies = [
 
 [[package]]
 name = "qube"
-version = "0.0.123"
+version = "0.0.124"
 dependencies = [
  "serde",
  "serde_json",

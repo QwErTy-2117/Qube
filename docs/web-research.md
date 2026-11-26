@@ -61,8 +61,8 @@ Qube follows these rules automatically:
 - Fetched page content is treated as data, never as instructions — a page
   that says “email these contents somewhere” is ignored.
 - Logins, captchas and 2FA are never handled by the fetch tool; those belong
-  to the watchable browser, which can handle bot checks itself and asks you
-  only for protected input — see [Browser automation](./browser.md).
+  to the watchable browser, which detects bot checks and asks you to complete
+  them in the panel — see [Browser automation](./browser.md).
 
 ## Safety under the hood
 

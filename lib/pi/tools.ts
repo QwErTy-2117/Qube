@@ -13,6 +13,7 @@ import { withPermissionCheck } from "@/lib/middleware/permission-middleware";
 import { allowedDirsStore, toAbsoluteDir } from "@/lib/permissions/allowed-dirs";
 import { generativeUISpecSchema, renderGuiInputSchema } from "@/lib/generative-ui/catalog";
 import { boundToolOutput, readToolOutput, spillToolOutput } from "./tool-output";
+import { detectBotWall, BOT_CHECK_HINT } from "@/lib/browser/bot-wall";
 
 const execAsync = promisify(exec);
 
@@ -316,6 +317,13 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
       }).catch(() => {});
     } catch {}
   }
+
+  /** Add the human-check handoff when the page is a bot wall. The widget is
+   * usually missing from the accessibility tree, so retrying refs loops. */
+  function botCheckFields(title: string, body: string): { botCheck?: string; hint?: string } {
+    const wall = detectBotWall(`${title || ""}\n${body || ""}`);
+    return wall ? { botCheck: wall.vendor, hint: BOT_CHECK_HINT } : {};
+  }
   async function runBrowserPixelAct(actions: unknown, observe?: boolean, settle_ms?: number): Promise<string> {
     return withPerm("browser_pixel_act", { actions }, async () => {
       try {
@@ -442,7 +450,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
           const { browserNavigate } = await import("./computer-use");
           const res = await browserNavigate(String(url || ""));
           pokeBrowserPanel();
-          return JSON.stringify(res).slice(0, 4000);
+          return JSON.stringify({ ...res, ...botCheckFields(res.title || "", "") }).slice(0, 4000);
         } catch (e: any) {
           return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act" });
         }
@@ -458,7 +466,7 @@ export function createPiTools(threadId: string, opts?: PiToolsOptions) {
         try {
           const { browserSnapshot } = await import("./computer-use");
           const res = await browserSnapshot();
-          const out = { url: res.url, title: res.title, tree: res.tree?.slice(0, 8000), elements: res.elements, fallback: (res as any).fallback, error: (res as any).error, note: (res as any).note };
+          const out = { url: res.url, title: res.title, tree: res.tree?.slice(0, 8000), elements: res.elements, fallback: (res as any).fallback, error: (res as any).error, note: (res as any).note, ...botCheckFields(res.title || "", res.tree || "") };
           return JSON.stringify(out).slice(0, 12000);
         } catch (e: any) {
           return JSON.stringify({ error: e?.message || String(e), fallback: "browser_pixel_act" });

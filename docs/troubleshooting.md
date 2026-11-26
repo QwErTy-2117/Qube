@@ -96,9 +96,9 @@ finish; file and shell tools keep working in the meantime.
 ### A login or 2FA stops the task
 
 That's intended — Qube requests a takeover. Click into the Browser panel,
-complete the human step yourself, and confirm to resume. CAPTCHAs and bot
-checks are handled by Qube automatically. The request waits up to fifteen
-minutes.
+complete the human step yourself, and confirm to resume. Qube detects
+CAPTCHAs and bot checks, stops retrying, and asks you to finish them in the
+panel. The request waits up to fifteen minutes.
 
 ## Computer use
 

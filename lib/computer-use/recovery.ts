@@ -5,7 +5,7 @@ export function planRecovery(v: Verification, opts?: { failures?: number }): Rec
   const s = v.signals;
   const n = opts?.failures ?? 1;
   if (s.includes("captcha")) {
-    hints.push("CAPTCHA/anti-bot challenge detected — try to pass it in the page (click the checkbox or solve the challenge) and continue. Use request_takeover only if it needs input you cannot provide.");
+    hints.push("CAPTCHA/anti-bot challenge detected — click the checkbox once if it is visible in the snapshot. Cloudflare Turnstile and reCAPTCHA usually hide the widget from the snapshot: then do NOT retry ref clicks. Ask the user to complete the check in the Browser panel (request_takeover), wait, then re-snapshot and continue.");
     return { autoSteps: [], hints };
   }
   if (s.includes("auth_wall")) {

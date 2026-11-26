@@ -8,8 +8,13 @@
  *
  * Runs HEADLESS by default so there is no separate OS window: the side
  * panel IS the browser window. Set BROWSER_HEADED=1 to show the OS
- * window instead (useful on bot-walled sites).
+ * window instead.
  * BROWSER_HEADLESS=0 is accepted as an alias of BROWSER_HEADED=1.
+ *
+ * In headless mode the User-Agent is rewritten to a normal desktop Chrome
+ * UA of the same major version (read from the binary). Chrome's default
+ * "HeadlessChrome/..." token makes Cloudflare's managed challenge loop
+ * forever; the rewritten UA passes it without opening a window.
  *
  * - One shared instance, launched lazily and kept alive across tool
  *   calls and chat runs. It is NEVER closed when a run finishes — only
@@ -18,7 +23,7 @@
  *   degrade to a standalone MCP launch.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
@@ -241,6 +246,57 @@ export function findChromeBinary(): string | null {
   return null;
 }
 
+/**
+ * Chrome's `--headless=new` mode sends "HeadlessChrome/<version>" in the
+ * User-Agent. Cloudflare's managed challenge detects that token and never
+ * lets the page through, so the agent sees "Just a moment…" forever. A
+ * normal desktop Chrome UA of the SAME major version passes (a stale major
+ * is rejected too), so the version is read from the binary at launch
+ * rather than hardcoded. Headed mode keeps Chrome's native UA.
+ */
+export function parseChromeMajorVersion(output: string): number | null {
+  // "Google Chrome for Testing 149.0.7827.55", "Chromium 149.0.7827.55",
+  // "Microsoft Edge 149.0.7827.55" — first dotted triple is the version.
+  const m = /(\d+)\.\d+\.\d+/.exec(output || "");
+  if (!m) return null;
+  const major = parseInt(m[1], 10);
+  return Number.isFinite(major) && major > 0 ? major : null;
+}
+
+/** A normal desktop Chrome UA for headless mode, matching the real version. */
+export function headlessUserAgent(
+  plat: NodeJS.Platform,
+  arch: string,
+  major: number
+): string {
+  const platformToken =
+    plat === "win32"
+      ? // Chrome on Windows ARM64 still reports the x64 token.
+        "Windows NT 10.0; Win64; x64"
+      : plat === "darwin"
+        ? // Chrome freezes the macOS token and never exposes the CPU arch.
+          "Macintosh; Intel Mac OS X 10_15_7"
+        : arch === "arm64"
+          ? "X11; Linux aarch64"
+          : "X11; Linux x86_64";
+  return `Mozilla/5.0 (${platformToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
+}
+
+/** Read the real Chrome major version; null when neither flag is usable. */
+function detectChromeMajor(binary: string): number | null {
+  // --version is the usual form; --product-version prints the bare number
+  // and is supported by Chrome/Chromium/Edge installers on every platform.
+  for (const flag of ["--version", "--product-version"]) {
+    try {
+      const out = spawnSync(binary, [flag], { encoding: "utf8", timeout: 3000 });
+      if (out.status !== 0) continue;
+      const major = parseChromeMajorVersion(`${out.stdout || ""} ${out.stderr || ""}`);
+      if (major) return major;
+    } catch {}
+  }
+  return null;
+}
+
 async function waitForEndpoint(port: number, timeoutMs: number): Promise<void> {
   await waitForEndpointUrl(`http://127.0.0.1:${port}`, timeoutMs);
 }
@@ -283,6 +339,41 @@ function installShutdownHooks() {
 }
 
 let hooksInstalled = false;
+
+/**
+ * Chromium launch flags for the managed browser. Pure so tests can lock the
+ * headless UA override and the absence of automation flags (webdriver).
+ */
+export function buildChromeLaunchArgs(opts: {
+  port: number;
+  profileDir: string;
+  headed: boolean;
+  headlessUa?: string | null;
+}): string[] {
+  return [
+    `--remote-debugging-port=${opts.port}`,
+    `--user-data-dir=${opts.profileDir}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    // Playwright launches Chromium unsandboxed by default; match that
+    // (sandboxed launches crash in minimal containers).
+    "--no-sandbox",
+    "--disable-features=Translate",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    // Headless by default: the side panel is the only window. The UA must
+    // not contain "HeadlessChrome" (Cloudflare rejects it).
+    ...(opts.headed
+      ? ["--start-maximized"]
+      : [
+          "--headless=new",
+          "--disable-gpu",
+          "--window-size=1280,900",
+          ...(opts.headlessUa ? [`--user-agent=${opts.headlessUa}`] : []),
+        ]),
+    "about:blank",
+  ];
+}
 
 /**
  * Launch (or reuse) the shared headed Chromium. Resolves with the CDP
@@ -347,21 +438,21 @@ export function ensureManagedChrome(): Promise<ManagedBrowser> {
     const headed =
       process.env.BROWSER_HEADED === "1" || process.env.BROWSER_HEADLESS === "0";
     activePort = BROWSER_CDP_PORT;
-    const args = [
-      `--remote-debugging-port=${activePort}`,
-      `--user-data-dir=${dir}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      // Playwright launches Chromium unsandboxed by default; match that
-      // (sandboxed launches crash in minimal containers).
-      "--no-sandbox",
-      "--disable-features=Translate",
-      "--disable-background-timer-throttling",
-      "--disable-backgrounding-occluded-windows",
-      // Headless by default: the side panel is the only window.
-      ...(headed ? ["--start-maximized"] : ["--headless=new", "--disable-gpu", "--window-size=1280,900"]),
-      "about:blank",
-    ];
+    // Headless Chrome's native UA contains "HeadlessChrome", which Cloudflare
+    // rejects outright. Use the same Chrome version without that token.
+    const major = headed ? null : detectChromeMajor(binary);
+    const headlessUa = major ? headlessUserAgent(platform(), process.arch, major) : null;
+    if (!headed && !headlessUa) {
+      console.warn(
+        "[managed-chrome] Could not read Chrome's version; leaving the headless UA unchanged (Cloudflare may challenge)."
+      );
+    }
+    const args = buildChromeLaunchArgs({
+      port: activePort,
+      profileDir: dir,
+      headed,
+      headlessUa,
+    });
     console.log(`[managed-chrome] Launching ${headed ? "headed" : "headless"} Chromium: ${binary}`);
     const proc = spawn(binary, args, {
       // Inherit stdin as ignored; capture stderr for launch diagnostics.

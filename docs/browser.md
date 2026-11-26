@@ -54,9 +54,11 @@ rather than typing into search boxes.
 
 ## When you need to take over
 
-Qube handles public pages on its own, including CAPTCHAs, bot checks, and
-payment steps. When it hits a login or two-factor prompt that only you can
-complete, it pauses with a **takeover request** explaining why. You then:
+Qube handles public pages on its own, including ordinary payment steps. When a
+site shows a CAPTCHA or bot check, Qube detects it, stops retrying, and asks
+you to complete it in the Browser panel. When it hits a login or two-factor
+prompt that only you can complete, it pauses with a **takeover request**
+explaining why. You then:
 
 1. Click into the Browser panel.
 2. Complete the login, 2FA, or other protected step yourself.
@@ -82,8 +84,10 @@ the final step by default.
 - It does not open untrusted links from emails inside this signed-in browser;
   those are read as plain text instead. See
   [Web research](./web-research.md#links-in-emails-and-messages-are-treated-cautiously).
-- It attempts bot checks and CAPTCHAs itself, and asks for takeover only when
-  the challenge needs input it cannot supply.
+- It detects bot checks and CAPTCHAs and hands them to you in the Browser
+  panel. It does not solve them automatically, because the challenge widget is
+  usually hidden from the page snapshot and solving one for you would defeat
+  the site's protection.
 
 ## Advanced options
 

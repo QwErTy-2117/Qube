@@ -328,6 +328,9 @@ export function panelMouseMove(x: number, y: number): void {
 
 export function panelClick(x: number, y: number, button: "left" | "middle" | "right" = "left"): void {
   const r = { x: Math.round(x), y: Math.round(y), button, clickCount: 1 };
+  // Move first: hover-sensitive widgets (including Cloudflare Turnstile and
+  // reCAPTCHA) ignore a press that arrives without a pointer position.
+  sendInput({ method: "Input.dispatchMouseEvent", params: { type: "mouseMoved", x: r.x, y: r.y } });
   sendInput({ method: "Input.dispatchMouseEvent", params: { ...r, type: "mousePressed" } });
   sendInput({ method: "Input.dispatchMouseEvent", params: { ...r, type: "mouseReleased" } });
   setTimeout(poke, 350);

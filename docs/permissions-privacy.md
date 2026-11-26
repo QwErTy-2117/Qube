@@ -73,10 +73,10 @@ flowchart TD
 
 ### Handled by you in person
 
-Qube handles CAPTCHAs and bot checks in the browser itself. It requests a
-takeover only when the page needs credentials or another protected input that
-only you can supply — a login or two-factor prompt, for example. You act in
-the Browser panel, and the task resumes.
+Qube detects CAPTCHAs and bot checks and asks you to complete them in the
+Browser panel. It requests a takeover for those, and for credentials or
+another protected input that only you can supply — a login or two-factor
+prompt, for example. You act in the Browser panel, and the task resumes.
 
 ### Background runs have stricter rules
 

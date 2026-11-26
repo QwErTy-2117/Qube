@@ -7,6 +7,7 @@
 
 import { mcpStore, type McpServerConfig } from "./mcp-store";
 import { getBuiltInMcpServers, BROWSER_MCP_SERVER_ID } from "./browser-mcp";
+import { detectBotWall, BOT_CHECK_HINT } from "@/lib/browser/bot-wall";
 import { existsSync } from "node:fs";
 import { isAbsolute, win32 } from "node:path";
 
@@ -317,6 +318,41 @@ async function fallbackBrowserViaManagedChrome(toolName: string, args: unknown):
 }
 
 /**
+ * Append a text hint to an MCP tool result without changing its shape.
+ * MCP clients return either a CallToolResult object (`content: [...]`) or a
+ * plain string, depending on the server; both must keep working.
+ */
+function appendTextHint(result: unknown, hint: string): unknown {
+  if (typeof result === "string") return `${result}\n\n${hint}`;
+  if (result && typeof result === "object") {
+    const r = result as any;
+    if (Array.isArray(r.content)) {
+      const content = [...r.content];
+      let appended = false;
+      const next = content.map((part: any) => {
+        if (!appended && part && part.type === "text" && typeof part.text === "string") {
+          appended = true;
+          return { ...part, text: `${part.text}\n\n${hint}` };
+        }
+        return part;
+      });
+      if (!appended) next.push({ type: "text", text: hint });
+      return { ...r, content: next };
+    }
+    if (typeof r.text === "string") return { ...r, text: `${r.text}\n\n${hint}` };
+  }
+  return result;
+}
+
+/** True for the built-in Browser Use server and other browser MCP servers. */
+function isBrowserMcpTool(serverName: string, toolName: string): boolean {
+  if (serverName === BROWSER_MCP_SERVER_ID || /browser/i.test(serverName || "")) return true;
+  return /^(browser_|obu_|navigate$|snapshot$|page_info$|screenshot$|open_tab$|act$|click$|type$|press_key$|run_action_plan$)/.test(
+    toolName || "",
+  );
+}
+
+/**
  * Wrap an MCP tool so execution failures come back as detailed JSON
  * (server, args, real error) instead of a generic "An error occurred."
  * throw that leaves the agent guessing. The model can then narrate the
@@ -344,6 +380,16 @@ function withMcpErrorDetail(toolName: string, serverName: string, tool: Record<s
           if (typeof result === "string") resultStr = result;
           else if (result && typeof result === "object") resultStr = JSON.stringify(result);
         } catch {}
+        // A Cloudflare/reCAPTCHA wall is not a normal page: the widget is
+        // usually absent from the snapshot, so retrying ref clicks loops
+        // forever. Hand off to the user in the Browser panel instead.
+        if (isBrowserMcpTool(serverName, toolName) && !/BOT CHECK DETECTED/i.test(resultStr)) {
+          const wall = detectBotWall(resultStr);
+          if (wall) {
+            console.warn(`[pi-mcp] ${wall.label} human check detected in "${toolName}" — handing off to the user`);
+            return appendTextHint(result, BOT_CHECK_HINT);
+          }
+        }
         if (/socket not provided|active\.json|no connectable socket/i.test(resultStr)) {
           console.warn(`[pi-mcp] Tool "${toolName}" obu socket missing — trying managed-Chrome fallback`);
           const fb = await fallbackBrowserViaManagedChrome(toolName, args);

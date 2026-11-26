@@ -41,7 +41,7 @@ const DISABLED_RE = /disabled|not clickable|not interactable|obscured|intercepte
 const NAVFAIL_RE = /timeout|net::|ERR_|DNS|connection refused|not attached|no live browser|navigation failed|404\b/i;
 const CRASH_RE = /target closed|session closed|browser.*(crash|disconnect|unreachable)|ECONNREFUSED|socket hang up|websocket.*clos/i;
 const AUTHWALL_RE = /sign in|log ?in|password|2fa|two-?factor|verify.*identity/i;
-const CAPTCHA_RE = /captcha|recaptcha|hcaptcha|verify you are human|i am not a robot|challenge/i;
+const CAPTCHA_RE = /captcha|recaptcha|hcaptcha|verify you are human|i am not a robot|challenge|just a moment|performing security verification|checking your browser|attention required/i;
 
 export function verifyResult(raw: RawResult, pre: PageFingerprint | null, post: PageFingerprint | null, kind: string): Verification {
   const signals: string[] = [];

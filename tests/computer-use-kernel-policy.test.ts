@@ -46,12 +46,19 @@ describe("kernel policy", () => {
     const v = verifyResult({ ok: true, errorText: "" }, fp, fp, "interact");
     assert.equal(v.verdict, "no_effect");
   });
-  it("allows solving a captcha instead of forcing takeover", () => {
+  it("suggests one visible captcha click, then a human handoff when the widget is hidden", () => {
     const p = planRecovery({ verdict: "failed", changed: false, signals: ["captcha"] });
     const hint = p.hints.join(" ");
-    assert.match(hint, /pass it in the page|solve/i);
+    assert.match(hint, /click the checkbox/i);
+    assert.match(hint, /Browser panel/i);
+    assert.match(hint, /request_takeover/i);
     assert.doesNotMatch(hint, /do NOT try to solve/i);
     assert.equal(p.autoSteps.length, 0);
+  });
+  it("recognizes Cloudflare's interstitial title as a captcha signal", () => {
+    const fp = { at: 1, url: "https://example.com/", title: "Just a moment...", textHash: "h", textLen: 5, dialog: false };
+    const v = verifyResult({ ok: true, errorText: "" }, null, fp, "interact");
+    assert.ok(v.signals.includes("captcha"));
   });
   it("does not fail a changed page just because a captcha signal is present", () => {
     const pre = { at: 1, url: "https://x.com/", title: "t", textHash: "h1", textLen: 5, dialog: false };

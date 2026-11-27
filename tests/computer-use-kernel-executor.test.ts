@@ -285,7 +285,12 @@ describe("kernel executor", () => {
     StateTracker.resetForTests();
     const tools = { browser_act: strTool(async () => JSON.stringify({ error: "Stale ref vanished mid-render" })) };
     const fp = { at: 1, url: "https://x.com/", title: "t", textHash: "h", textLen: 5, dialog: false };
-    const out = applyKernel(tools, { threadId: "t16", interactive: true, probePage: async () => fp });
+    const out = applyKernel(tools, {
+      threadId: "t16",
+      interactive: true,
+      probePage: async () => fp,
+      describeRef: async () => null,
+    });
     let last = "";
     for (const ref of ["e1", "e2", "e3"]) {
       last = String(await (out.browser_act as any).execute({ actions: [{ kind: "click", ref }] }));

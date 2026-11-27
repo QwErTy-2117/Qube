@@ -155,7 +155,7 @@ export function TaskTodoList({
         key: `work:${entry.id}`,
         title: cleanTaskTitle(entry.title, taskNames),
         instructions: entry.instructions,
-        done: false,
+        done: entry.status === "done" || entry.status === "dropped",
         workId: entry.id,
       }));
     return [...taskRows, ...workRows];

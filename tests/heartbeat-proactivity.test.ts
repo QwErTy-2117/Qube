@@ -545,6 +545,158 @@ describe("durable heartbeat continuation ledger", () => {
       "a real TODO marker re-opens the deliverable",
     );
   });
+  it("groups only the same topic and strips heartbeat boilerplate", () => {
+    const a = work.heartbeatTopicKey("Heartbeat: Scan relevant subreddits for recent threads worth replying to (hbwork_abc)");
+    const b = work.heartbeatTopicKey("Scan relevant subreddits for recent threads worth replying to");
+    assert.equal(a, b);
+    const c = work.heartbeatTopicKey('Workspace empty + connector calls failing (environment check) — list_directory("/tmp")');
+    const d = work.heartbeatTopicKey('Workspace empty + connector calls failing (environment check) — list_directory("/home")');
+    assert.equal(c, d);
+    assert.notEqual(work.heartbeatTopicKey("Quarterly budget"), work.heartbeatTopicKey("Venue booking"));
+  });
+
+  it("consolidates same-topic duplicates, keeps different topics, and does not mix summaries", async () => {
+    const alpha1 = await work.upsertHeartbeatWork({
+      topic: "Consolidation alpha — first wording",
+      source: "agent",
+      sourceRef: "test:consolidate:alpha1",
+      summary: "Alpha first",
+      nextStep: "Do alpha first",
+      evidence: ["alpha evidence one"],
+      deliverables: ["documents/alpha-one.md"],
+    });
+    const alpha2 = await work.upsertHeartbeatWork({
+      topic: "Consolidation alpha — second wording",
+      source: "agent",
+      sourceRef: "test:consolidate:alpha2",
+      summary: "Alpha second",
+      nextStep: "Do alpha second",
+      evidence: ["alpha evidence two"],
+      deliverables: ["documents/alpha-two.md"],
+      forceNew: true,
+    });
+    const gamma = await work.upsertHeartbeatWork({
+      topic: "Consolidation gamma",
+      source: "agent",
+      sourceRef: "test:consolidate:gamma",
+      summary: "Gamma",
+      nextStep: "Do gamma",
+    });
+
+    const result = await work.consolidateHeartbeatWork();
+    assert.ok(result.merged >= 1);
+    const after = await work.listActionableHeartbeatWork(200);
+    const alpha = after.filter((w) => work.heartbeatTopicKey(w.topic) === "consolidation alpha");
+    assert.equal(alpha.length, 1, "one row per topic");
+    assert.ok(alpha[0].deliverables.includes("documents/alpha-one.md"));
+    assert.ok(alpha[0].deliverables.includes("documents/alpha-two.md"));
+    assert.ok(["Alpha first", "Alpha second"].includes(alpha[0].summary), "survivor keeps its own summary");
+    assert.ok(alpha[0].progress.some((p) => /Consolidated/i.test(p.note)));
+    assert.ok(after.some((w) => w.id === gamma.id), "a different topic is untouched");
+    const survivors = [alpha1.id, alpha2.id].filter((id) => after.some((w) => w.id === id));
+    assert.equal(survivors.length, 1);
+    assert.equal(await work.getHeartbeatWorkItem(alpha1.id === survivors[0] ? alpha2.id : alpha1.id), null);
+  });
+
+  it("updates an exact topic and refuses an ambiguous prefix", async () => {
+    const one = await work.upsertHeartbeatWork({
+      topic: "Exact match alpha",
+      source: "agent",
+      sourceRef: "test:exact:a",
+      summary: "Alpha",
+      nextStep: "Do alpha",
+    });
+    const two = await work.upsertHeartbeatWork({
+      topic: "Exact match alpha extended",
+      source: "agent",
+      sourceRef: "test:exact:b",
+      summary: "Extended",
+      nextStep: "Do extended",
+    });
+    const exact = await work.recordHeartbeatWorkProgress({ topic: "Exact match alpha", note: "exact only" });
+    assert.equal(exact?.id, one.id);
+    const ambiguous = await work.recordHeartbeatWorkProgress({ topic: "Exact match", note: "ambiguous" });
+    assert.equal(ambiguous, null, "a prefix shared by two topics must not update either");
+    const twoAfter = await work.getHeartbeatWorkItem(two.id);
+    assert.equal(twoAfter?.progress.length, 0, "the extended topic must not receive the exact topic's progress");
+  });
+
+  it("updates a similar topic instead of creating a new row", async () => {
+    const first = await work.upsertHeartbeatWork({
+      topic: "Create outreach tracker file and log threads",
+      source: "agent",
+      sourceRef: "test:similar:first",
+      summary: "First wording",
+      nextStep: "Create it",
+    });
+    const second = await work.upsertHeartbeatWork({
+      topic: "Create outreach tracker file skeleton",
+      source: "agent",
+      sourceRef: "test:similar:second",
+      summary: "Second wording",
+      nextStep: "Create the skeleton",
+    });
+    assert.equal(second.id, first.id, "a strong paraphrase updates the existing row");
+    assert.equal(second.created, false);
+    const items = await work.listActionableHeartbeatWork(200);
+    assert.equal(items.filter((w) => /create outreach tracker file/i.test(w.topic)).length, 1);
+  });
+
+  it("consolidates paraphrased same-topic rows but keeps a different step separate", async () => {
+    const read1 = await work.upsertHeartbeatWork({
+      topic: "Read candidate threads fully + check subreddit rules",
+      source: "agent",
+      sourceRef: "test:paraphrase:read1",
+      summary: "Read the threads",
+      nextStep: "Read them",
+    });
+    const read2 = await work.upsertHeartbeatWork({
+      topic: "Heartbeat: Read candidate threads + check subreddit self-promotion rules (hbwork_xyz)",
+      source: "agent",
+      sourceRef: "test:paraphrase:read2",
+      summary: "Read the threads and check rules",
+      nextStep: "Read them",
+      forceNew: true,
+    });
+    const scan = await work.upsertHeartbeatWork({
+      topic: "Scan relevant subreddits for recent threads worth replying to",
+      source: "agent",
+      sourceRef: "test:paraphrase:scan",
+      summary: "Scan the subreddits",
+      nextStep: "Scan them",
+    });
+    assert.equal(work.heartbeatTopicsSimilar(read1.topic, read2.topic), true);
+    assert.equal(work.heartbeatTopicsSimilar(read1.topic, scan.topic), false);
+    await work.consolidateHeartbeatWork();
+    const after = await work.listActionableHeartbeatWork(200);
+    assert.equal(after.filter((w) => /read candidate threads/i.test(w.topic)).length, 1);
+    assert.ok(after.some((w) => w.id === scan.id), "the scan step stays a separate topic");
+  });
+
+  it("does not attach a generic run summary to every item that shares one word", async () => {
+    const report = await work.upsertHeartbeatWork({
+      topic: "Report alpha",
+      source: "agent",
+      sourceRef: "test:cross:report",
+      summary: "Report alpha",
+      nextStep: "Write report alpha",
+    });
+    const budget = await work.upsertHeartbeatWork({
+      topic: "Report beta",
+      source: "agent",
+      sourceRef: "test:cross:budget",
+      summary: "Report beta",
+      nextStep: "Write report beta",
+    });
+    const changed = await work.recordHeartbeatRunOutcome({
+      status: "success",
+      output: "Finished the report and saved [file: documents/report.md].",
+      workIds: [report.id, budget.id],
+    });
+    assert.equal(changed.length, 0, "one shared word is not enough to attribute the run");
+    assert.equal((await work.getHeartbeatWorkItem(report.id))!.progress.length, 0);
+    assert.equal((await work.getHeartbeatWorkItem(budget.id))!.progress.length, 0);
+  });
 });
 
 describe("heartbeat approval boundaries and prompt/tool wiring", () => {

@@ -7,6 +7,7 @@ import { taskOccurrencesInRange } from "@/lib/scheduler/calendar";
 import {
   deleteHeartbeatWorkItem,
   listActionableHeartbeatWork,
+  listHeartbeatWork,
   updateHeartbeatWorkItem,
 } from "@/lib/proactivity/heartbeat-work";
 import { cleanTaskTitle } from "@/lib/todo/display";
@@ -47,10 +48,13 @@ function heartbeatWorkTitle(
     "Heartbeat work";
   const withoutChecklistLabel = raw.replace(/^due checklist item:\s*/i, "");
   const withoutMarker = withoutChecklistLabel.replace(MANUAL_TASK_REF, "");
+  // Headless-plan rows often append the referenced ledger id in parentheses.
+  // It is bookkeeping, not part of the title.
+  const withoutRef = withoutMarker.replace(/\s*\((?:hbwork|goal|task|checklist)[^)]*\)\s*$/i, "");
   // Topics are stored as "<name> — <short description>" so the name alone
   // stays readable in the widget. Headless plans also prefix the owner task
   // (`<task>: <step>`); taskNames lets cleanTaskTitle drop that prefix.
-  const nameOnly = withoutMarker.split(/\s+—\s+/)[0] || withoutMarker;
+  const nameOnly = withoutRef.split(/\s+—\s+/)[0] || withoutRef;
   return cleanTaskTitle(nameOnly, taskNames);
 }
 
@@ -74,7 +78,13 @@ export async function GET(req: Request) {
       // The task store is optional; ledger rows can still render.
     }
     const taskNames = ledgerTasks.map((task) => task.name);
-    const work = await listActionableHeartbeatWork(200);
+    // Active rows plus recent completions: the user needs to SEE that a
+    // heartbeat item finished, not just watch it vanish from the list.
+    const allWork = await listHeartbeatWork(200);
+    const cutoff = Date.now() - 7 * 86_400_000;
+    const work = allWork.filter(
+      (entry) => !["done", "dropped"].includes(entry.status) || entry.updatedAt >= cutoff,
+    );
     return NextResponse.json(
       {
         work: work.map((entry) => ({
@@ -82,6 +92,7 @@ export async function GET(req: Request) {
           title: heartbeatWorkTitle(entry.topic, entry.summary, taskNames),
           instructions: entry.summary || entry.nextStep || "",
           status: entry.status,
+          done: entry.status === "done" || entry.status === "dropped",
           // Manual reminders are already listed as tasks; the UI merges the
           // two sources and keeps only the task row for these.
           taskId:

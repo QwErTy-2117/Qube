@@ -29,6 +29,10 @@ through the updater (the updater metadata is hosted on GitHub Releases):
   uses a passive install that prompts for permission as usual.
 - On Linux, Qube hands the new package to your system package manager, so
   expect the normal administrator password prompt.
+- Linux packages are per distro family: use the `.deb` on Debian/Ubuntu and
+  the `.rpm` on Fedora/RHEL/openSUSE. If you install the other family's
+  package, the in-app updater cannot replace it — install the native package
+  once to get automatic updates back.
 - You can also download the latest package manually and install it over the
   existing one — uninstalling first is not necessary.
 

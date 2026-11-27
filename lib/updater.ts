@@ -4,6 +4,8 @@
  * (.memory, workspace, etc.) and app_data_dir is preserved. No user data is wiped.
  */
 
+import { buildPackageInstallHint, type PackageState } from "@/lib/system/package-info";
+
 export type UpdateInfo = {
   version: string;
   currentVersion: string;
@@ -170,8 +172,35 @@ export async function checkForUpdates(): Promise<CheckResult> {
  * administrator prompt (polkit/pkexec). When that prompt is missing the raw
  * plugin error ("Authentication failed") tells a user nothing actionable, so
  * add where to get the package manually.
+ *
+ * A second, common failure is a package-type mismatch: a .deb installed on
+ * Fedora (or an .rpm on Ubuntu). The updater dispatches on the bundle type the
+ * app was built as, so it will keep trying dpkg on a system that needs rpm.
+ * Ask the sidecar which distro/package managers are present and say exactly
+ * which package to install once.
  */
-function withInstallHint(message: string): string {
+async function fetchPackageState(): Promise<PackageState | null> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2_500);
+    try {
+      const res = await fetch("/api/system/package-info", {
+        signal: ctrl.signal,
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data?.supported) return null;
+      return data as PackageState;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return null;
+  }
+}
+
+async function withInstallHint(message: string): Promise<string> {
   const isLinux =
     typeof navigator !== "undefined" && /linux/i.test(navigator.platform || "");
   if (!isLinux) return message;
@@ -180,13 +209,28 @@ function withInstallHint(message: string): string {
       message
     );
   if (!installProblem) return message;
-  return `${message}. If no administrator password prompt appeared, download the latest package from https://github.com/QwErTy-2117/Qube/releases and install it with "sudo dnf install ./Qube-<version>-1.x86_64.rpm" (Fedora) or "sudo apt install ./Qube_<version>_amd64.deb" (Debian/Ubuntu).`;
+  const state = await fetchPackageState();
+  if (!state) {
+    // Detection unavailable (older sidecar, non-standard host): keep the
+    // generic two-command hint rather than a bare "Failed to install".
+    return `${message}. Download the latest package from https://github.com/QwErTy-2117/Qube/releases and install it with "sudo dnf install ./Qube-<version>-1.x86_64.rpm" (Fedora) or "sudo apt install ./Qube_<version>_amd64.deb" (Debian/Ubuntu).`;
+  }
+  return buildPackageInstallHint(message, state);
 }
 
 export async function downloadAndInstall(
   onProgress?: (ev: { event: string; data: any }) => void
 ): Promise<void> {
   if (isTauri() && cachedUpdate) {
+    // Refuse a doomed install before downloading hundreds of MB: a .deb
+    // binary on Fedora will always run `dpkg` and fail. The one-time RPM
+    // install fixes the package type; after that this check passes.
+    const pkgState = await fetchPackageState();
+    if (pkgState?.mismatch) {
+      throw new Error(
+        buildPackageInstallHint("This installation cannot be updated automatically.", pkgState)
+      );
+    }
     let downloaded = 0;
     let contentLength: number | undefined;
     try {
@@ -201,7 +245,7 @@ export async function downloadAndInstall(
       try {
         console.error("[updater] downloadAndInstall failed:", msg.slice(0, 500));
       } catch {}
-      throw new Error(withInstallHint(msg));
+      throw new Error(await withInstallHint(msg));
     }
     // Note: on Windows (NSIS passive), the installer exits the app during
     // install — relaunch is best-effort only. Previously an unconditional
